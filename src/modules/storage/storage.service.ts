@@ -60,6 +60,24 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Baixa um objeto como buffer + content-type, ou null se ausente/desativado. */
+  async getObject(key: string): Promise<{ buffer: Buffer; contentType: string } | null> {
+    if (!this.client) return null;
+    try {
+      const stat = await this.client.statObject(this.bucket, key);
+      const stream = await this.client.getObject(this.bucket, key);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream as AsyncIterable<Buffer>) chunks.push(chunk);
+      const contentType =
+        (stat.metaData && (stat.metaData["content-type"] || stat.metaData["Content-Type"])) ||
+        "application/octet-stream";
+      return { buffer: Buffer.concat(chunks), contentType };
+    } catch (err) {
+      this.logger.warn(`Falha ao baixar do MinIO: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   /** URL temporária para download (presigned), ou null se desativado. */
   async presignedUrl(key: string, expirySeconds = 3600): Promise<string | null> {
     if (!this.client) return null;
