@@ -43,6 +43,21 @@ export class UsersService {
     return rest;
   }
 
+  /** Atualização do próprio perfil — apenas campos pessoais (não troca papel/e-mail). */
+  async updateSelf(
+    userId: string,
+    dto: { name?: string; phone?: string; whatsapp?: string; avatar?: string }
+  ) {
+    const user = await this.usersRepo.findOneOrFail({ where: { id: userId } });
+    if (dto.name !== undefined) user.name = dto.name;
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.whatsapp !== undefined) user.whatsapp = dto.whatsapp;
+    if (dto.avatar !== undefined) user.avatar = dto.avatar;
+    const saved = await this.usersRepo.save(user);
+    const { passwordHash, ...rest } = saved as any;
+    return rest;
+  }
+
   async update(id: string, dto: UpdateUserDto) {
     const user = await this.usersRepo.findOneOrFail({ where: { id } });
     Object.assign(user, dto);

@@ -34,7 +34,8 @@ export class User {
   @Column({ type: "enum", enum: UserRole, default: UserRole.CORRETOR })
   role: UserRole;
 
-  @Column({ nullable: true })
+  // Foto de perfil (data URI base64 ou URL). text para comportar imagens embutidas.
+  @Column({ type: "text", nullable: true })
   avatar: string;
 
   @Column({ nullable: true })
