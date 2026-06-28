@@ -22,6 +22,15 @@ export class UsersController {
     return this.usersService.findAll(req.user);
   }
 
+  @Put("me")
+  @ApiOperation({ summary: "Atualizar o próprio perfil (nome, telefone, foto)" })
+  updateSelf(
+    @Body() dto: { name?: string; phone?: string; whatsapp?: string; avatar?: string },
+    @Request() req: any
+  ) {
+    return this.usersService.updateSelf(req.user.id, dto);
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Buscar usuário por ID" })
   findOne(@Param("id") id: string) {
