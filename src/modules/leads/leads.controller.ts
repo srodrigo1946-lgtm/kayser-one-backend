@@ -45,6 +45,12 @@ export class LeadsController {
     return this.leadsService.findOne(id);
   }
 
+  @Get(":id/history")
+  @ApiOperation({ summary: "Histórico/timeline do lead" })
+  history(@Param("id") id: string) {
+    return this.leadsService.findHistory(id);
+  }
+
   @Post()
   @ApiOperation({ summary: "Criar novo lead" })
   create(@Body() dto: CreateLeadDto, @Request() req: any) {
@@ -59,8 +65,12 @@ export class LeadsController {
 
   @Put(":id/status")
   @ApiOperation({ summary: "Mover lead no Kanban" })
-  updateStatus(@Param("id") id: string, @Body() body: { status: string; order?: number }) {
-    return this.leadsService.updateStatus(id, body.status, body.order);
+  updateStatus(
+    @Param("id") id: string,
+    @Body() body: { status: string; order?: number },
+    @Request() req: any
+  ) {
+    return this.leadsService.updateStatus(id, body.status, body.order, req.user);
   }
 
   @Delete(":id")

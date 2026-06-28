@@ -6,13 +6,20 @@ import { Lead, LeadStatus } from "./lead.entity";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { User, UserRole } from "../users/user.entity";
+import { LeadHistoryService } from "../lead-history/lead-history.service";
+import { LeadHistoryType } from "../lead-history/lead-history.entity";
 
 @Injectable()
 export class LeadsService {
   constructor(
     @InjectRepository(Lead)
-    private readonly leadsRepo: Repository<Lead>
+    private readonly leadsRepo: Repository<Lead>,
+    private readonly history: LeadHistoryService
   ) {}
+
+  findHistory(leadId: string) {
+    return this.history.findByLead(leadId);
+  }
 
   async findAll(params: {
     status?: string;
@@ -71,7 +78,14 @@ export class LeadsService {
       ...dto,
       responsavelId: dto.responsavelId || (user.role === UserRole.CORRETOR ? user.id : undefined),
     });
-    return this.leadsRepo.save(lead);
+    const saved = await this.leadsRepo.save(lead);
+    await this.history.log({
+      leadId: saved.id,
+      type: LeadHistoryType.CRIACAO,
+      description: `Lead criado por ${user.name}.`,
+      userId: user.id,
+    });
+    return saved;
   }
 
   async update(id: string, dto: UpdateLeadDto) {
@@ -80,12 +94,23 @@ export class LeadsService {
     return this.leadsRepo.save(lead);
   }
 
-  async updateStatus(id: string, status: string, order?: number) {
+  async updateStatus(id: string, status: string, order?: number, user?: User) {
     const lead = await this.findOne(id);
+    const fromStatus = lead.status;
     lead.status = status as LeadStatus;
     if (order !== undefined) lead.kanbanOrder = order;
-    // Log history would go here
-    return this.leadsRepo.save(lead);
+    const saved = await this.leadsRepo.save(lead);
+    if (fromStatus !== saved.status) {
+      await this.history.log({
+        leadId: saved.id,
+        type: LeadHistoryType.MUDANCA_STATUS,
+        description: `Status alterado de "${fromStatus}" para "${saved.status}".`,
+        fromStatus,
+        toStatus: saved.status,
+        userId: user?.id,
+      });
+    }
+    return saved;
   }
 
   async remove(id: string) {

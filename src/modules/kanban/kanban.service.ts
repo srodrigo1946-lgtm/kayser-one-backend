@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Lead, LeadStatus } from "../leads/lead.entity";
 import { User, UserRole } from "../users/user.entity";
+import { LeadsService } from "../leads/leads.service";
 
 export const KANBAN_COLUMNS = [
   { id: "novo_lead", title: "Novo Lead", emoji: "🆕", color: "#6366f1" },
@@ -23,7 +24,8 @@ export const KANBAN_COLUMNS = [
 export class KanbanService {
   constructor(
     @InjectRepository(Lead)
-    private readonly leadsRepo: Repository<Lead>
+    private readonly leadsRepo: Repository<Lead>,
+    private readonly leadsService: LeadsService
   ) {}
 
   async getBoard(user: User) {
@@ -41,10 +43,8 @@ export class KanbanService {
     }));
   }
 
-  async moveCard(leadId: string, toStatus: LeadStatus, toOrder: number) {
-    const lead = await this.leadsRepo.findOneOrFail({ where: { id: leadId } });
-    lead.status = toStatus;
-    lead.kanbanOrder = toOrder;
-    return this.leadsRepo.save(lead);
+  async moveCard(leadId: string, toStatus: LeadStatus, toOrder: number, user?: User) {
+    // Delega ao LeadsService para registrar o histórico da movimentação.
+    return this.leadsService.updateStatus(leadId, toStatus, toOrder, user);
   }
 }
