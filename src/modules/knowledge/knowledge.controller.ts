@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsBoolean, IsEnum, IsOptional, IsString } from "class-validator";
 import { KnowledgeService } from "./knowledge.service";
@@ -36,6 +48,16 @@ export class KnowledgeController {
   @ApiOperation({ summary: "Adicionar item à base de conhecimento" })
   create(@Body() dto: UpsertKnowledgeDto) {
     return this.knowledgeService.create(dto);
+  }
+
+  @Post("upload")
+  @ApiOperation({ summary: "Treinar a IA enviando um arquivo (PDF, DOCX, XLSX, CSV, TXT)" })
+  @UseInterceptors(FileInterceptor("file"))
+  upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { title?: string; type?: KnowledgeType }
+  ) {
+    return this.knowledgeService.extractAndStore(file, { title: body?.title, type: body?.type });
   }
 
   @Put(":id")
