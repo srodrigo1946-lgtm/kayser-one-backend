@@ -1,0 +1,50 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+} from "typeorm";
+import { Lead } from "../leads/lead.entity";
+import { Message } from "./message.entity";
+
+@Entity("conversations")
+export class Conversation {
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  @Column({ default: "whatsapp" })
+  channel: string;
+
+  // Número/identificador remoto no WhatsApp (ex: 5511999998888)
+  @Column({ nullable: true })
+  remoteJid: string;
+
+  @Column({ nullable: true })
+  leadId: string;
+
+  @ManyToOne(() => Lead, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "leadId" })
+  lead: Lead;
+
+  @Column({ type: "text", nullable: true })
+  lastMessage: string;
+
+  @Column({ nullable: true })
+  lastMessageAt: Date;
+
+  @Column({ type: "int", default: 0 })
+  unreadCount: number;
+
+  @OneToMany(() => Message, (m) => m.conversation)
+  messages: Message[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}

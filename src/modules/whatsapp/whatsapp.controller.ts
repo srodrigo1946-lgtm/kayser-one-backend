@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { WhatsappService } from "./whatsapp.service";
+import { WhatsappFlowService } from "./whatsapp-flow.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 
 @ApiTags("WhatsApp")
@@ -8,7 +9,10 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 @UseGuards(JwtAuthGuard)
 @Controller("whatsapp")
 export class WhatsappController {
-  constructor(private readonly whatsappService: WhatsappService) {}
+  constructor(
+    private readonly whatsappService: WhatsappService,
+    private readonly flowService: WhatsappFlowService
+  ) {}
 
   @Get("instances")
   @ApiOperation({ summary: "Listar sessões WhatsApp ativas" })
@@ -35,12 +39,12 @@ export class WhatsappController {
   }
 
   @Post("send")
-  @ApiOperation({ summary: "Enviar mensagem de texto" })
+  @ApiOperation({ summary: "Enviar mensagem de texto (registra na conversa)" })
   sendMessage(
     @Body() body: { to: string; text: string },
     @Request() req: any
   ) {
-    return this.whatsappService.sendText(`user_${req.user.id}`, body.to, body.text);
+    return this.flowService.sendManual(`user_${req.user.id}`, body.to, body.text);
   }
 
   @Delete("instance")

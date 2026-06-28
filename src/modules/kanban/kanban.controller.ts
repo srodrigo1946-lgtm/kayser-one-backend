@@ -21,8 +21,9 @@ export class KanbanController {
   @ApiOperation({ summary: "Mover card para outra coluna" })
   moveCard(
     @Param("leadId") leadId: string,
-    @Body() body: { status: LeadStatus; order: number }
+    @Body() body: { status: LeadStatus; order: number },
+    @Request() req: any
   ) {
-    return this.kanbanService.moveCard(leadId, body.status, body.order);
+    return this.kanbanService.moveCard(leadId, body.status, body.order, req.user);
   }
 }
