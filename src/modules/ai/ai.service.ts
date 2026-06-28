@@ -58,11 +58,11 @@ export class AiService {
     private readonly leadsRepo: Repository<Lead>
   ) {}
 
-  /** Monta o prompt de sistema a partir das configurações + base de conhecimento. */
-  private async buildSystemPrompt(): Promise<string> {
+  /** Monta o prompt de sistema a partir das configurações + conhecimento relevante (RAG). */
+  private async buildSystemPrompt(query = ""): Promise<string> {
     const settings = await this.settingsService.get();
     const base = settings.masterPrompt?.trim() || DEFAULT_MASTER_PROMPT;
-    const context = await this.knowledgeService.buildContext();
+    const context = await this.knowledgeService.retrieve(query);
     if (!context) return base;
     return `${base}\n\n=== BASE DE CONHECIMENTO (use apenas estas informações) ===\n${context}`;
   }
@@ -90,7 +90,9 @@ export class AiService {
 
   async chat(messages: ChatMessage[], apiKeyOverride?: string) {
     const { provider, model, apiKey } = await this.resolveConfig(apiKeyOverride);
-    const system = await this.buildSystemPrompt();
+    // Usa a última mensagem do usuário como consulta para o RAG.
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const system = await this.buildSystemPrompt(lastUser?.content || "");
 
     switch (provider) {
       case AiProvider.ANTHROPIC:
