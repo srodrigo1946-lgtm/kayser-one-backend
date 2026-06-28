@@ -15,6 +15,7 @@ import { ConversationsModule } from "./modules/conversations/conversations.modul
 import { AppointmentsModule } from "./modules/appointments/appointments.module";
 import { LeadHistoryModule } from "./modules/lead-history/lead-history.module";
 import { AutomationModule } from "./modules/automation/automation.module";
+import { GoalsModule } from "./modules/goals/goals.module";
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { AutomationModule } from "./modules/automation/automation.module";
     AppointmentsModule,
     LeadHistoryModule,
     AutomationModule,
+    GoalsModule,
   ],
 })
 export class AppModule {}
