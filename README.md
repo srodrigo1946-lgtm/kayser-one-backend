@@ -32,9 +32,16 @@ cp .env.example .env
 # Subir infraestrutura (PostgreSQL + Redis + MinIO)
 docker-compose up -d
 
+# Criar o usuário Diretor inicial (+ leads de exemplo)
+# Email definido em SEED_DIRETOR_EMAIL (.env) — senha padrão: 123456789
+npm run seed
+
 # Rodar em desenvolvimento
 npm run start:dev
 ```
+
+> **Primeiro acesso:** faça login com o e-mail do Diretor e a senha padrão `123456789`.
+> O sistema exigirá a troca de senha no primeiro login.
 
 ## API Docs
 

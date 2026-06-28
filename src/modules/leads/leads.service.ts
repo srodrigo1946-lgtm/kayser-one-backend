@@ -129,10 +129,11 @@ export class LeadsService {
       const exists = await this.leadsRepo.findOne({ where: { phone: dto.phone } });
       if (exists) { duplicates++; continue; }
 
-      leads.push(this.leadsRepo.create({
+      const entity = this.leadsRepo.create({
         ...dto,
         responsavelId: user.role === UserRole.CORRETOR ? user.id : undefined,
-      } as any));
+      } as Partial<Lead>);
+      leads.push(entity);
     }
 
     if (leads.length) await this.leadsRepo.save(leads);
