@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -23,12 +36,19 @@ export class UsersController {
   }
 
   @Put("me")
-  @ApiOperation({ summary: "Atualizar o próprio perfil (nome, telefone, foto)" })
+  @ApiOperation({ summary: "Atualizar o próprio perfil (nome, telefone, whatsapp)" })
   updateSelf(
-    @Body() dto: { name?: string; phone?: string; whatsapp?: string; avatar?: string },
+    @Body() dto: { name?: string; phone?: string; whatsapp?: string },
     @Request() req: any
   ) {
     return this.usersService.updateSelf(req.user.id, dto);
+  }
+
+  @Post("me/avatar")
+  @ApiOperation({ summary: "Enviar/atualizar a foto de perfil (arquivo de imagem)" })
+  @UseInterceptors(FileInterceptor("file"))
+  setAvatar(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
+    return this.usersService.setAvatar(req.user.id, file);
   }
 
   @Get(":id")
