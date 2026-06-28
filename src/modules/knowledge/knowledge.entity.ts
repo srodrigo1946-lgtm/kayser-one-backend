@@ -37,6 +37,10 @@ export class KnowledgeItem {
   @Column({ default: true })
   active: boolean;
 
+  // Chave do arquivo original no MinIO (quando enviado por upload).
+  @Column({ nullable: true })
+  fileKey: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
