@@ -19,29 +19,31 @@ Backend da plataforma Kayser One CRM, construído com NestJS + PostgreSQL + Redi
 - Docker e Docker Compose
 - npm ou yarn
 
-## Instalação
+## Subir tudo com um comando (recomendado)
+
+O `docker-compose` já inclui **PostgreSQL + Redis + MinIO + a própria API** (com
+seed automático do Diretor). Basta:
 
 ```bash
-# Instalar dependências
-npm install
-
-# Copiar variáveis de ambiente
-cp .env.example .env
-# Editar .env com suas configurações
-
-# Subir infraestrutura (PostgreSQL + Redis + MinIO)
-docker-compose up -d
-
-# Criar o usuário Diretor inicial (+ leads de exemplo)
-# Email definido em SEED_DIRETOR_EMAIL (.env) — senha padrão: 123456789
-npm run seed
-
-# Rodar em desenvolvimento
-npm run start:dev
+docker compose up --build -d
 ```
+
+Isso sobe a API em `http://localhost:3001`, cria o usuário Diretor
+(`srodrigo1946@gmail.com` / senha padrão `123456789`) e alguns leads de exemplo.
+O frontend é o segundo passo (ver repositório `kayser-one-frontend`).
 
 > **Primeiro acesso:** faça login com o e-mail do Diretor e a senha padrão `123456789`.
 > O sistema exigirá a troca de senha no primeiro login.
+
+## Desenvolvimento (sem Docker para a API)
+
+```bash
+npm install
+cp .env.example .env          # ajuste se necessário
+docker compose up -d postgres redis minio   # só a infraestrutura
+npm run seed                  # Diretor + leads de exemplo
+npm run start:dev
+```
 
 ## API Docs
 
