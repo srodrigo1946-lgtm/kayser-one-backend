@@ -1,10 +1,16 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import { json, urlencoded } from "express";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Webhooks da Evolution API mandam payloads grandes (base64 de mídia/QR),
+  // que estouram o limite padrão de 100kb do Express. Aumentamos o limite.
+  app.use(json({ limit: "25mb" }));
+  app.use(urlencoded({ extended: true, limit: "25mb" }));
 
   app.setGlobalPrefix("api/v1");
 
