@@ -44,6 +44,47 @@ services:
     volumes:
       - minio_data:/data
 
+  backend:
+    build: .
+    container_name: kayser_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      FRONTEND_URL: http://localhost:3000
+      # Banco / cache / storage usam os nomes dos serviços na rede do compose
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: postgres
+      DB_NAME: kayser_one
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: kayser-one-troque-este-segredo-em-producao
+      JWT_EXPIRES_IN: 7d
+      SEED_DIRETOR_EMAIL: srodrigo1946@gmail.com
+      SEED_DIRETOR_NAME: Rodrigo (Diretor)
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: kayser-one
+      # Preencha as chaves quando for usar IA/WhatsApp (ou via Configurações → IA):
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GOOGLE_AI_API_KEY: ""
+      EVOLUTION_API_URL: http://localhost:8080
+      EVOLUTION_API_KEY: ""
+    ports:
+      - "3001:3001"
+
 volumes:
   postgres_data:
   redis_data:
