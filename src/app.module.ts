@@ -23,17 +23,30 @@ import { GoalsModule } from "./modules/goals/goals.module";
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: "postgres",
-        host: config.get("DB_HOST", "localhost"),
-        port: config.get<number>("DB_PORT", 5432),
-        username: config.get("DB_USER", "postgres"),
-        password: config.get("DB_PASS", "postgres"),
-        database: config.get("DB_NAME", "kayser_one"),
-        entities: [__dirname + "/**/*.entity{.ts,.js}"],
-        synchronize: config.get("NODE_ENV") !== "production",
-        logging: config.get("NODE_ENV") === "development",
-      }),
+      useFactory: (config: ConfigService) => {
+        // Em produção (Railway/Render) usa DATABASE_URL + SSL; localmente usa as vars discretas.
+        const databaseUrl = config.get<string>("DATABASE_URL");
+        // Sem migrations no projeto: o schema é criado por synchronize.
+        // Pode ser desligado com DB_SYNC=false quando houver migrations.
+        const synchronize = config.get("DB_SYNC", "true") !== "false";
+        const common = {
+          type: "postgres" as const,
+          entities: [__dirname + "/**/*.entity{.ts,.js}"],
+          synchronize,
+          logging: config.get("NODE_ENV") === "development",
+        };
+        if (databaseUrl) {
+          return { ...common, url: databaseUrl, ssl: { rejectUnauthorized: false } };
+        }
+        return {
+          ...common,
+          host: config.get<string>("DB_HOST", "localhost"),
+          port: config.get<number>("DB_PORT", 5432),
+          username: config.get<string>("DB_USER", "postgres"),
+          password: config.get<string>("DB_PASS", "postgres"),
+          database: config.get<string>("DB_NAME", "kayser_one"),
+        };
+      },
     }),
     AuthModule,
     UsersModule,

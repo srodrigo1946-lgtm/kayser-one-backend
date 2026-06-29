@@ -16,16 +16,26 @@ dotenv.config();
  * É idempotente — rodar várias vezes não duplica registros.
  */
 async function seed() {
-  const dataSource = new DataSource({
-    type: "postgres",
-    host: process.env.DB_HOST || "localhost",
-    port: Number(process.env.DB_PORT || 5432),
-    username: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASS || "postgres",
-    database: process.env.DB_NAME || "kayser_one",
-    entities: [User, Lead],
-    synchronize: true,
-  });
+  const dataSource = new DataSource(
+    process.env.DATABASE_URL
+      ? {
+          type: "postgres",
+          url: process.env.DATABASE_URL,
+          ssl: { rejectUnauthorized: false },
+          entities: [User, Lead],
+          synchronize: true,
+        }
+      : {
+          type: "postgres",
+          host: process.env.DB_HOST || "localhost",
+          port: Number(process.env.DB_PORT || 5432),
+          username: process.env.DB_USER || "postgres",
+          password: process.env.DB_PASS || "postgres",
+          database: process.env.DB_NAME || "kayser_one",
+          entities: [User, Lead],
+          synchronize: true,
+        }
+  );
 
   await dataSource.initialize();
   console.log("🔌 Conectado ao banco.");
