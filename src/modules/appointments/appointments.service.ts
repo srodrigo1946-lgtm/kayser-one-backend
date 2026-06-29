@@ -44,4 +44,45 @@ export class AppointmentsService {
     await this.repo.remove(appointment);
     return { message: "Agendamento removido." };
   }
+
+  async findOne(id: string) {
+    const appointment = await this.repo.findOne({ where: { id }, relations: ["lead", "user"] });
+    if (!appointment) throw new NotFoundException("Agendamento não encontrado.");
+    return appointment;
+  }
+
+  /** Gera o conteúdo iCalendar (.ics) de um compromisso — importável em Google/Outlook/Apple. */
+  buildIcs(a: Appointment): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const toUtc = (d: Date) => {
+      const x = new Date(d);
+      return (
+        `${x.getUTCFullYear()}${pad(x.getUTCMonth() + 1)}${pad(x.getUTCDate())}` +
+        `T${pad(x.getUTCHours())}${pad(x.getUTCMinutes())}${pad(x.getUTCSeconds())}Z`
+      );
+    };
+    const esc = (s?: string) =>
+      (s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+
+    const start = new Date(a.scheduledAt);
+    const end = new Date(start.getTime() + (a.durationMin || 60) * 60000);
+
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Kayser One//CRM//PT-BR",
+      "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT",
+      `UID:${a.id}@kayserone`,
+      `DTSTAMP:${toUtc(new Date())}`,
+      `DTSTART:${toUtc(start)}`,
+      `DTEND:${toUtc(end)}`,
+      `SUMMARY:${esc(a.title)}`,
+      `DESCRIPTION:${esc(a.notes)}`,
+      `LOCATION:${esc(a.location)}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ];
+    return lines.join("\r\n");
+  }
 }

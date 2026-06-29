@@ -9,7 +9,9 @@ import {
   Query,
   UseGuards,
   Request,
+  Res,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsDateString, IsEnum, IsInt, IsOptional, IsString } from "class-validator";
 import { AppointmentsService } from "./appointments.service";
@@ -45,6 +47,16 @@ export class AppointmentsController {
   @ApiOperation({ summary: "Criar agendamento" })
   create(@Body() dto: CreateAppointmentDto, @Request() req: any) {
     return this.appointmentsService.create({ ...dto, scheduledAt: new Date(dto.scheduledAt) }, req.user);
+  }
+
+  @Get(":id/ics")
+  @ApiOperation({ summary: "Baixar o compromisso em formato .ics (Google/Outlook/Apple)" })
+  async ics(@Param("id") id: string, @Res() res: Response) {
+    const appointment = await this.appointmentsService.findOne(id);
+    const ics = this.appointmentsService.buildIcs(appointment);
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="compromisso-${id}.ics"`);
+    res.send(ics);
   }
 
   @Put(":id")

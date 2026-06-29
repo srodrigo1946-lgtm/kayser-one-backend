@@ -39,4 +39,24 @@ describe("AppointmentsService", () => {
     const arg = repo.find.mock.calls[0][0];
     expect(arg.where.userId).toBeUndefined();
   });
+
+  it("buildIcs gera um VCALENDAR válido com os dados do compromisso", () => {
+    const ics = service.buildIcs({
+      id: "a1",
+      title: "Visita; Ana, apto 101",
+      notes: "Levar contrato",
+      location: "Rua X, 100",
+      scheduledAt: new Date("2026-07-01T13:00:00Z"),
+      durationMin: 60,
+    } as any);
+
+    expect(ics).toContain("BEGIN:VCALENDAR");
+    expect(ics).toContain("BEGIN:VEVENT");
+    expect(ics).toContain("UID:a1@kayserone");
+    expect(ics).toContain("DTSTART:20260701T130000Z");
+    expect(ics).toContain("DTEND:20260701T140000Z");
+    // vírgula e ponto-e-vírgula escapados no SUMMARY
+    expect(ics).toContain("SUMMARY:Visita\\; Ana\\, apto 101");
+    expect(ics.trim().endsWith("END:VCALENDAR")).toBe(true);
+  });
 });
