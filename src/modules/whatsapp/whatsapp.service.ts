@@ -18,12 +18,24 @@ export class WhatsappService {
   }
 
   async createInstance(instanceName: string) {
-    const { data } = await axios.post(
-      `${this.apiUrl}/instance/create`,
-      { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" },
-      { headers: this.headers }
-    );
-    return data;
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/instance/create`,
+        { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" },
+        { headers: this.headers }
+      );
+      return data;
+    } catch (err: any) {
+      // A Evolution retorna 403/409 quando a instância já existe.
+      // Isso não é erro: o usuário só quer (re)conectar, então seguimos
+      // adiante e deixamos o fluxo buscar o QR pela instância existente.
+      const status = err?.response?.status;
+      if (status === 403 || status === 409) {
+        this.logger.log(`Instância ${instanceName} já existe; reutilizando.`);
+        return { instanceName, alreadyExists: true };
+      }
+      throw err;
+    }
   }
 
   async getQrCode(instanceName: string) {
