@@ -55,10 +55,13 @@ export class WhatsappService {
   }
 
   async sendText(instanceName: string, to: string, text: string) {
-    const number = to.replace(/\D/g, "");
+    // Evolution API v2 espera { number, text }. Se já vier um JID completo
+    // (grupo @g.us ou contato @s.whatsapp.net) usamos como está; senão
+    // mandamos só os dígitos e a Evolution resolve o destino.
+    const number = to.includes("@") ? to : to.replace(/\D/g, "");
     const { data } = await axios.post(
       `${this.apiUrl}/message/sendText/${instanceName}`,
-      { number: `${number}@s.whatsapp.net`, textMessage: { text } },
+      { number, text },
       { headers: this.headers }
     );
     this.logger.log(`Mensagem enviada para ${number} via ${instanceName}`);
