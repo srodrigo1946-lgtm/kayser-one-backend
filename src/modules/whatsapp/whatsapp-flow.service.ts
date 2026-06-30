@@ -24,7 +24,7 @@ export class WhatsappFlowService {
       const parsed = this.parseEvolutionMessage(payload);
       if (!parsed) return { ignored: true };
 
-      const { remoteJid, text, fromMe, instanceName } = parsed;
+      const { remoteJid, remoteJidFull, isGroup, text, fromMe, instanceName } = parsed;
       if (fromMe || !text) return { ignored: true };
 
       const conv = await this.conversations.findOrCreateByPhone(remoteJid);
@@ -32,6 +32,11 @@ export class WhatsappFlowService {
 
       const settings = await this.settings.get();
       if (!settings.aiAutoReply) return { persisted: true, autoReply: false };
+
+      // Mensagens de grupo só recebem resposta da IA se o toggle estiver ligado.
+      if (isGroup && !settings.aiReplyGroups) {
+        return { persisted: true, autoReply: false, group: true };
+      }
 
       // Gera resposta da IA com base no histórico
       const history = await this.conversations.getHistoryForAi(conv.id);
@@ -47,7 +52,7 @@ export class WhatsappFlowService {
         await this.conversations.addMessage(conv.id, reply, "out", true);
         if (instanceName) {
           try {
-            await this.whatsapp.sendText(instanceName, remoteJid, reply);
+            await this.whatsapp.sendText(instanceName, remoteJidFull, reply);
           } catch (err) {
             this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`);
           }
@@ -70,6 +75,8 @@ export class WhatsappFlowService {
   /** Extrai os campos relevantes do payload da Evolution API (evento messages.upsert). */
   private parseEvolutionMessage(payload: any): {
     remoteJid: string;
+    remoteJidFull: string;
+    isGroup: boolean;
     text: string;
     fromMe: boolean;
     instanceName?: string;
@@ -92,6 +99,8 @@ export class WhatsappFlowService {
 
     return {
       remoteJid: remoteJidRaw.split("@")[0],
+      remoteJidFull: remoteJidRaw,
+      isGroup: remoteJidRaw.includes("@g.us"),
       text,
       fromMe: !!key.fromMe,
       instanceName,

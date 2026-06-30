@@ -29,6 +29,9 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsBoolean()
   aiAutoReply?: boolean;
+
+  @IsOptional() @IsBoolean()
+  aiReplyGroups?: boolean;
 }
 
 @ApiTags("Configurações")

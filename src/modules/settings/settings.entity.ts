@@ -46,6 +46,11 @@ export class Settings {
   @Column({ default: true })
   aiAutoReply: boolean;
 
+  // Permite que a IA responda também a mensagens de GRUPOS do WhatsApp.
+  // Desligado por padrão para evitar respostas em massa em grupos.
+  @Column({ default: false })
+  aiReplyGroups: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 
