@@ -3,9 +3,26 @@ import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
-import { User } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { RegisterDto } from "./dto/register.dto";
+
+/** Mapa cargo → cargo do gestor imediatamente acima (para o autocadastro). */
+const PARENT_ROLE: Partial<Record<UserRole, UserRole>> = {
+  [UserRole.SUPERINTENDENTE]: UserRole.DIRETOR,
+  [UserRole.GERENTE_GERAL]: UserRole.SUPERINTENDENTE,
+  [UserRole.GERENTE]: UserRole.GERENTE_GERAL,
+  [UserRole.CORRETOR]: UserRole.GERENTE,
+};
+
+const ROLE_LABEL: Record<UserRole, string> = {
+  [UserRole.DIRETOR]: "Diretor",
+  [UserRole.SUPERINTENDENTE]: "Superintendente",
+  [UserRole.GERENTE_GERAL]: "Gerente Geral",
+  [UserRole.GERENTE]: "Gerente",
+  [UserRole.CORRETOR]: "Corretor",
+};
 
 @Injectable()
 export class AuthService {
@@ -14,6 +31,51 @@ export class AuthService {
     private readonly usersRepo: Repository<User>,
     private readonly jwtService: JwtService
   ) {}
+
+  /** Lista os possíveis gestores (cargo do nível acima) para um cargo em autocadastro. */
+  async listManagers(role: UserRole) {
+    const parent = PARENT_ROLE[role];
+    if (!parent) return [];
+    const users = await this.usersRepo.find({
+      where: { role: parent, active: true },
+      order: { name: "ASC" },
+    });
+    return users.map((u) => ({ id: u.id, name: u.name, role: u.role }));
+  }
+
+  /** Autocadastro de um novo usuário, vinculando ao gestor escolhido. */
+  async register(dto: RegisterDto) {
+    const parent = PARENT_ROLE[dto.role];
+    if (!parent) {
+      throw new BadRequestException("Cargo inválido para autocadastro (o Diretor já existe).");
+    }
+    const exists = await this.usersRepo.findOne({ where: { email: dto.email } });
+    if (exists) throw new BadRequestException("E-mail já cadastrado.");
+
+    const manager = await this.usersRepo.findOne({ where: { id: dto.managerId } });
+    if (!manager || manager.role !== parent) {
+      throw new BadRequestException(`Selecione um(a) ${ROLE_LABEL[parent]} válido(a) como gestor.`);
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const user = this.usersRepo.create({
+      name: dto.name,
+      email: dto.email,
+      passwordHash,
+      role: dto.role,
+      managerId: dto.managerId,
+      firstLogin: false,
+      active: true,
+    });
+    const saved = await this.usersRepo.save(user);
+
+    const payload = { sub: saved.id, email: saved.email, role: saved.role };
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: this.sanitize(saved),
+      firstLogin: false,
+    };
+  }
 
   async login(dto: LoginDto) {
     const user = await this.usersRepo.findOne({ where: { email: dto.email, active: true } });

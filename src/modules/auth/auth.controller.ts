@@ -1,9 +1,11 @@
-import { Controller, Post, Body, Get, UseGuards, Request, Put } from "@nestjs/common";
+import { Controller, Post, Body, Get, Query, UseGuards, Request, Put } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { UserRole } from "../users/user.entity";
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -14,6 +16,18 @@ export class AuthController {
   @ApiOperation({ summary: "Login com e-mail e senha" })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post("register")
+  @ApiOperation({ summary: "Autocadastro escolhendo cargo e gestor do nível acima" })
+  register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
+  }
+
+  @Get("managers")
+  @ApiOperation({ summary: "Lista os gestores (nível acima) para um cargo em autocadastro" })
+  managers(@Query("role") role: UserRole) {
+    return this.authService.listManagers(role);
   }
 
   @Get("me")
