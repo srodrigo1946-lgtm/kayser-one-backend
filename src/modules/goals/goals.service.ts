@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Between, Repository } from "typeorm";
+import { Between, In, Repository } from "typeorm";
 import { Goal } from "./goal.entity";
 import { Lead, LeadStatus } from "../leads/lead.entity";
-import { User, UserRole } from "../users/user.entity";
+import { User } from "../users/user.entity";
+import { UsersService } from "../users/users.service";
 
 export interface GoalProgress {
   goal: Goal;
@@ -19,7 +20,8 @@ export class GoalsService {
     @InjectRepository(Goal)
     private readonly goalsRepo: Repository<Goal>,
     @InjectRepository(Lead)
-    private readonly leadsRepo: Repository<Lead>
+    private readonly leadsRepo: Repository<Lead>,
+    private readonly users: UsersService
   ) {}
 
   private now() {
@@ -31,7 +33,9 @@ export class GoalsService {
     const m = month || this.now().month;
     const y = year || this.now().year;
     const where: any = { month: m, year: y };
-    if (user.role === UserRole.CORRETOR) where.userId = user.id;
+    // Escopo por equipe: Diretor (null) vê todas; demais veem só as metas da sua equipe.
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null) where.userId = In(scopeIds);
     return this.goalsRepo.find({ where, relations: ["user"], order: { targetSales: "DESC" } });
   }
 

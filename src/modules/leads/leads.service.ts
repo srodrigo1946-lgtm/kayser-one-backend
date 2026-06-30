@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Like, FindOptionsWhere } from "typeorm";
+import { Repository, Like, In, FindOptionsWhere } from "typeorm";
 import * as XLSX from "xlsx";
 import { Lead, LeadStatus } from "./lead.entity";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { User, UserRole } from "../users/user.entity";
+import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
 
@@ -14,7 +15,8 @@ export class LeadsService {
   constructor(
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
-    private readonly history: LeadHistoryService
+    private readonly history: LeadHistoryService,
+    private readonly users: UsersService
   ) {}
 
   findHistory(leadId: string) {
@@ -33,17 +35,22 @@ export class LeadsService {
 
     const where: FindOptionsWhere<Lead> = {};
 
-    // Hierarchy-based filtering
-    if (user.role === UserRole.CORRETOR) {
-      where.responsavelId = user.id;
-    } else if (user.role === UserRole.GERENTE || user.role === UserRole.GERENTE_GERAL) {
-      // Managers see their team's leads — simplified: filter by responsavelId if provided
-      if (responsavelId) where.responsavelId = responsavelId;
+    // Escopo por hierarquia: cada gestor vê apenas a sua equipe (descendentes);
+    // Diretor (scope null) vê tudo; Corretor vê apenas os próprios leads.
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null) {
+      // Se um responsável específico foi pedido e está dentro do escopo, filtra por ele;
+      // senão, restringe a toda a equipe do usuário.
+      if (responsavelId && scopeIds.includes(responsavelId)) {
+        where.responsavelId = responsavelId;
+      } else {
+        where.responsavelId = In(scopeIds);
+      }
+    } else if (responsavelId) {
+      where.responsavelId = responsavelId;
     }
-    // Diretor and Superintendente see all (no filter)
 
     if (status) where.status = status as LeadStatus;
-    if (responsavelId && user.role !== UserRole.CORRETOR) where.responsavelId = responsavelId;
 
     const [leads, total] = await this.leadsRepo.findAndCount({
       where: search

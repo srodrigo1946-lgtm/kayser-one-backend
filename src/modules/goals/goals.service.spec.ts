@@ -4,6 +4,7 @@ import { UserRole } from "../users/user.entity";
 describe("GoalsService", () => {
   let goalsRepo: any;
   let leadsRepo: any;
+  let users: any;
   let service: GoalsService;
 
   beforeEach(() => {
@@ -15,7 +16,8 @@ describe("GoalsService", () => {
       remove: jest.fn(),
     };
     leadsRepo = { count: jest.fn() };
-    service = new GoalsService(goalsRepo, leadsRepo);
+    users = { getScopeIds: jest.fn().mockResolvedValue(null) };
+    service = new GoalsService(goalsRepo, leadsRepo, users);
   });
 
   it("cria uma nova meta quando não existe", async () => {
@@ -34,9 +36,11 @@ describe("GoalsService", () => {
   });
 
   it("corretor só vê a própria meta", async () => {
+    users.getScopeIds.mockResolvedValue(["c1"]);
     await service.findAll({ id: "c1", role: UserRole.CORRETOR } as any, 6, 2026);
     const arg = goalsRepo.find.mock.calls[0][0];
-    expect(arg.where.userId).toBe("c1");
+    // userId vira um operador In(["c1"]) quando há escopo de equipe.
+    expect((arg.where.userId as any).value).toEqual(["c1"]);
   });
 
   it("calcula o progresso com vendas e visitas reais", async () => {

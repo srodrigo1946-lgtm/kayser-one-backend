@@ -5,6 +5,7 @@ import { UserRole } from "../users/user.entity";
 describe("LeadsService", () => {
   let leadsRepo: any;
   let history: any;
+  let users: any;
   let service: LeadsService;
 
   const diretor = { id: "u1", name: "Rodrigo", role: UserRole.DIRETOR } as any;
@@ -17,7 +18,8 @@ describe("LeadsService", () => {
       findAndCount: jest.fn().mockResolvedValue([[], 0]),
     };
     history = { log: jest.fn(), findByLead: jest.fn() };
-    service = new LeadsService(leadsRepo, history);
+    users = { getScopeIds: jest.fn().mockResolvedValue(null) };
+    service = new LeadsService(leadsRepo, history, users);
   });
 
   it("registra histórico de criação ao criar um lead", async () => {
@@ -52,8 +54,10 @@ describe("LeadsService", () => {
   });
 
   it("corretor só enxerga os próprios leads (filtro por hierarquia)", async () => {
+    users.getScopeIds.mockResolvedValue(["c1"]);
     await service.findAll({ user: { id: "c1", role: UserRole.CORRETOR } as any });
     const arg = leadsRepo.findAndCount.mock.calls[0][0];
-    expect(arg.where.responsavelId).toBe("c1");
+    // responsavelId vira um operador In(["c1"]) quando há escopo de equipe.
+    expect((arg.where.responsavelId as any).value).toEqual(["c1"]);
   });
 });

@@ -4,7 +4,8 @@ import { Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
 import { Lead } from "../leads/lead.entity";
-import { User, UserRole } from "../users/user.entity";
+import { User } from "../users/user.entity";
+import { UsersService } from "../users/users.service";
 
 @Injectable()
 export class ConversationsService {
@@ -14,18 +15,21 @@ export class ConversationsService {
     @InjectRepository(Message)
     private readonly msgRepo: Repository<Message>,
     @InjectRepository(Lead)
-    private readonly leadsRepo: Repository<Lead>
+    private readonly leadsRepo: Repository<Lead>,
+    private readonly users: UsersService
   ) {}
 
-  /** Lista conversas respeitando a hierarquia (corretor vê apenas as dos seus leads). */
+  /** Lista conversas respeitando a hierarquia (cada gestor vê apenas as da sua equipe). */
   async list(user: User) {
     const qb = this.convRepo
       .createQueryBuilder("c")
       .leftJoinAndSelect("c.lead", "lead")
       .orderBy("c.lastMessageAt", "DESC");
 
-    if (user.role === UserRole.CORRETOR) {
-      qb.where("lead.responsavelId = :uid", { uid: user.id });
+    // scope null = Diretor (vê tudo, inclusive conversas sem lead vinculado).
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null) {
+      qb.where("lead.responsavelId IN (:...ids)", { ids: scopeIds });
     }
     return qb.getMany();
   }

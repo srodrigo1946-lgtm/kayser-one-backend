@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
 import { User, UserRole } from "./user.entity";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { StorageService } from "../storage/storage.service";
+import { descendantIds } from "../../common/hierarchy";
 
 @Injectable()
 export class UsersService {
@@ -49,13 +50,38 @@ export class UsersService {
     return this.storage.getObject(user.avatar);
   }
 
+  /**
+   * Ids do usuário + todos os descendentes na árvore de gestão.
+   * Carrega a lista mínima (id/managerId) e calcula em memória.
+   */
+  async getDescendantIds(userId: string): Promise<string[]> {
+    const all = await this.usersRepo.find({ select: ["id", "managerId"] });
+    return descendantIds(all, userId);
+  }
+
+  /**
+   * Define o escopo de visibilidade de dados (responsavelId/userId) do usuário:
+   * - Diretor: null (sem restrição — vê a empresa toda)
+   * - Corretor: apenas ele mesmo
+   * - Demais gestores: ele + toda a sua equipe (descendentes)
+   */
+  async getScopeIds(user: User): Promise<string[] | null> {
+    if (user.role === UserRole.DIRETOR) return null;
+    if (user.role === UserRole.CORRETOR) return [user.id];
+    return this.getDescendantIds(user.id);
+  }
+
   async findAll(requestingUser: User) {
-    // Diretor sees everyone; others see their team
+    // Diretor vê todos; os demais veem toda a sua equipe (árvore de descendentes).
     if (requestingUser.role === UserRole.DIRETOR) {
       return this.usersRepo.find({ relations: ["manager"], order: { role: "ASC", name: "ASC" } });
     }
+    const ids = (await this.getDescendantIds(requestingUser.id)).filter(
+      (id) => id !== requestingUser.id
+    );
+    if (ids.length === 0) return [];
     return this.usersRepo.find({
-      where: { managerId: requestingUser.id },
+      where: { id: In(ids) },
       relations: ["manager"],
       order: { role: "ASC", name: "ASC" },
     });
