@@ -66,14 +66,13 @@ export class AuthService {
       managerId: dto.managerId,
       firstLogin: false,
       active: true,
+      approved: false, // pendente até o gestor aprovar
     });
-    const saved = await this.usersRepo.save(user);
+    await this.usersRepo.save(user);
 
-    const payload = { sub: saved.id, email: saved.email, role: saved.role };
     return {
-      accessToken: this.jwtService.sign(payload),
-      user: this.sanitize(saved),
-      firstLogin: false,
+      pending: true,
+      message: `Cadastro enviado! Aguarde a aprovação do seu ${ROLE_LABEL[parent]} (${manager.name}) para acessar.`,
     };
   }
 
@@ -83,6 +82,10 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException("Credenciais inválidas.");
+
+    if (!user.approved) {
+      throw new UnauthorizedException("Seu cadastro está aguardando aprovação do seu gestor.");
+    }
 
     const payload = { sub: user.id, email: user.email, role: user.role };
     return {

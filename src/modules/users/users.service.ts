@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
@@ -132,5 +132,50 @@ export class UsersService {
     user.active = false;
     await this.usersRepo.save(user);
     return { message: "Usuário desativado." };
+  }
+
+  /** Garante que o solicitante pode gerenciar o usuário-alvo (Diretor ou gestor dele). */
+  private async assertCanManage(target: User, requester: User) {
+    if (requester.role === UserRole.DIRETOR) return;
+    const ids = await this.getDescendantIds(requester.id);
+    if (target.id === requester.id || !ids.includes(target.id)) {
+      throw new ForbiddenException("Você não pode gerenciar este usuário.");
+    }
+  }
+
+  /** Autocadastros aguardando aprovação, dentro do escopo do solicitante. */
+  async findPending(requester: User) {
+    if (requester.role === UserRole.DIRETOR) {
+      return this.usersRepo.find({
+        where: { approved: false },
+        relations: ["manager"],
+        order: { createdAt: "ASC" },
+      });
+    }
+    const ids = (await this.getDescendantIds(requester.id)).filter((id) => id !== requester.id);
+    if (ids.length === 0) return [];
+    return this.usersRepo.find({
+      where: { id: In(ids), approved: false },
+      relations: ["manager"],
+      order: { createdAt: "ASC" },
+    });
+  }
+
+  async approve(id: string, requester: User) {
+    const target = await this.usersRepo.findOne({ where: { id } });
+    if (!target) throw new NotFoundException("Usuário não encontrado.");
+    await this.assertCanManage(target, requester);
+    target.approved = true;
+    const saved = await this.usersRepo.save(target);
+    const { passwordHash, ...rest } = saved as any;
+    return rest;
+  }
+
+  async reject(id: string, requester: User) {
+    const target = await this.usersRepo.findOne({ where: { id } });
+    if (!target) throw new NotFoundException("Usuário não encontrado.");
+    await this.assertCanManage(target, requester);
+    await this.usersRepo.remove(target);
+    return { message: "Cadastro recusado e removido." };
   }
 }

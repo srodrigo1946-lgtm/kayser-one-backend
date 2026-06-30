@@ -35,6 +35,27 @@ export class UsersController {
     return this.usersService.findAll(req.user);
   }
 
+  @Get("pending")
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: "Autocadastros pendentes de aprovação (no seu escopo)" })
+  pending(@Request() req: any) {
+    return this.usersService.findPending(req.user);
+  }
+
+  @Post(":id/approve")
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: "Aprovar um autocadastro pendente" })
+  approve(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.approve(id, req.user);
+  }
+
+  @Post(":id/reject")
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: "Recusar (remover) um autocadastro pendente" })
+  reject(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.reject(id, req.user);
+  }
+
   @Put("me")
   @ApiOperation({ summary: "Atualizar o próprio perfil (nome, telefone, whatsapp)" })
   updateSelf(

@@ -50,6 +50,11 @@ export class User {
   @Column({ default: true })
   firstLogin: boolean;
 
+  // Aprovação do gestor para autocadastros. Usuários criados pelo painel já nascem
+  // aprovados; quem se autocadastra fica pendente até o gestor aprovar.
+  @Column({ default: true })
+  approved: boolean;
+
   @Column({ nullable: true })
   managerId: string;
 
