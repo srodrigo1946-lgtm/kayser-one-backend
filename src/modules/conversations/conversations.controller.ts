@@ -27,4 +27,10 @@ export class ConversationsController {
   assign(@Param("id") id: string, @Body() body: { userId: string | null }, @Request() req: any) {
     return this.conversationsService.assign(id, body?.userId ?? null, req.user);
   }
+
+  @Patch(":id/etiquetas")
+  @ApiOperation({ summary: "Definir as etiquetas da conversa" })
+  etiquetas(@Param("id") id: string, @Body() body: { etiquetas: string[] }) {
+    return this.conversationsService.setEtiquetas(id, body?.etiquetas ?? []);
+  }
 }

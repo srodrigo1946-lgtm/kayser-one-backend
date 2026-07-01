@@ -55,6 +55,17 @@ export class ConversationsService {
     );
   }
 
+  /** Define as etiquetas da conversa (substitui a lista inteira). */
+  async setEtiquetas(conversationId: string, etiquetas: string[]) {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+    if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    conv.etiquetas = Array.isArray(etiquetas) ? etiquetas : [];
+    await this.convRepo.save(conv);
+    return this.stripAssigned(
+      await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] })
+    );
+  }
+
   /** Remove o passwordHash do atendente vinculado, se houver. */
   private stripAssigned(conv: Conversation | null) {
     if (conv?.assignedTo) delete (conv.assignedTo as any).passwordHash;

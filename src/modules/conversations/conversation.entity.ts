@@ -48,6 +48,11 @@ export class Conversation {
   @Column({ type: "int", default: 0 })
   unreadCount: number;
 
+  // Etiquetas da conversa (ex.: agendamento, visita_realizada, venda_ganha).
+  // simple-array guarda como texto separado por vírgula.
+  @Column({ type: "simple-array", nullable: true })
+  etiquetas: string[];
+
   @OneToMany(() => Message, (m) => m.conversation)
   messages: Message[];
 
