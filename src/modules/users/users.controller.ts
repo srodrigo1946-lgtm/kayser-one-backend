@@ -93,9 +93,9 @@ export class UsersController {
   }
 
   @Delete(":id")
-  @Roles(UserRole.DIRETOR)
-  @ApiOperation({ summary: "Desativar usuário" })
-  remove(@Param("id") id: string) {
-    return this.usersService.deactivate(id);
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: "Desativar usuário (cada gestor na própria equipe)" })
+  remove(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.deactivate(id, req.user);
   }
 }

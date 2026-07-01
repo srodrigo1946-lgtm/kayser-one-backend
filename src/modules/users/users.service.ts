@@ -127,8 +127,11 @@ export class UsersService {
     return rest;
   }
 
-  async deactivate(id: string) {
-    const user = await this.usersRepo.findOneOrFail({ where: { id } });
+  async deactivate(id: string, requester: User) {
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException("Usuário não encontrado.");
+    // Cada gestor só pode desativar alguém da própria equipe (Diretor pode todos).
+    await this.assertCanManage(user, requester);
     user.active = false;
     await this.usersRepo.save(user);
     return { message: "Usuário desativado." };
