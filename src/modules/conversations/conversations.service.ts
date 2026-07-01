@@ -3,9 +3,22 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
-import { Lead } from "../leads/lead.entity";
+import { Lead, LeadStatus } from "../leads/lead.entity";
 import { User } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
+import { LeadsService } from "../leads/leads.service";
+import { AppointmentsService } from "../appointments/appointments.service";
+import { AppointmentType } from "../appointments/appointment.entity";
+
+// Cada etiqueta do funil move o lead para a coluna correspondente do Kanban.
+const ETIQUETA_STATUS: Record<string, LeadStatus> = {
+  agendamento: LeadStatus.AGENDAMENTO,
+  visita_realizada: LeadStatus.VISITA_REALIZADA,
+  subida_pastas: LeadStatus.SUBIDA_PASTA,
+  aprovacao: LeadStatus.ASSINATURA,
+  reprovacao: LeadStatus.VENDA_PERDIDA,
+  venda_ganha: LeadStatus.VENDA_GANHA,
+};
 
 @Injectable()
 export class ConversationsService {
@@ -16,7 +29,9 @@ export class ConversationsService {
     private readonly msgRepo: Repository<Message>,
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
-    private readonly users: UsersService
+    private readonly users: UsersService,
+    private readonly leads: LeadsService,
+    private readonly appointments: AppointmentsService
   ) {}
 
   /** Lista conversas respeitando a hierarquia (cada gestor vê apenas as da sua equipe). */
@@ -55,12 +70,54 @@ export class ConversationsService {
     );
   }
 
-  /** Define as etiquetas da conversa (substitui a lista inteira). */
-  async setEtiquetas(conversationId: string, etiquetas: string[]) {
-    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+  /**
+   * Define as etiquetas da conversa e integra com Kanban/Agenda:
+   * cada etiqueta recém-adicionada move o lead para a coluna correspondente do
+   * Kanban; "agendamento" também cria um compromisso na Agenda.
+   */
+  async setEtiquetas(conversationId: string, etiquetas: string[], requester: User) {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead"] });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
-    conv.etiquetas = Array.isArray(etiquetas) ? etiquetas : [];
+
+    const antigas = conv.etiquetas ?? [];
+    const novas = Array.isArray(etiquetas) ? etiquetas : [];
+    const adicionadas = novas.filter((e) => !antigas.includes(e));
+
+    conv.etiquetas = novas;
     await this.convRepo.save(conv);
+
+    for (const et of adicionadas) {
+      // Move o lead no Kanban (se a conversa tem lead vinculado).
+      const status = ETIQUETA_STATUS[et];
+      if (status && conv.leadId) {
+        try {
+          await this.leads.updateStatus(conv.leadId, status, undefined, requester);
+        } catch {
+          /* não bloqueia a etiqueta se o kanban falhar */
+        }
+      }
+      // Agendamento cria um compromisso na Agenda.
+      if (et === "agendamento") {
+        const quando = new Date();
+        quando.setDate(quando.getDate() + 1);
+        quando.setHours(10, 0, 0, 0);
+        try {
+          await this.appointments.create(
+            {
+              title: `Agendamento — ${conv.lead?.name ?? conv.remoteJid ?? "Contato"}`,
+              type: AppointmentType.VISITA,
+              scheduledAt: quando,
+              leadId: conv.leadId,
+              userId: conv.assignedToId ?? conv.lead?.responsavelId ?? requester.id,
+            },
+            requester
+          );
+        } catch {
+          /* não bloqueia a etiqueta se a agenda falhar */
+        }
+      }
+    }
+
     return this.stripAssigned(
       await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] })
     );

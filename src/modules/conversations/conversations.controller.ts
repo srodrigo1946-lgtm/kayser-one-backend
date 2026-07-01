@@ -29,8 +29,8 @@ export class ConversationsController {
   }
 
   @Patch(":id/etiquetas")
-  @ApiOperation({ summary: "Definir as etiquetas da conversa" })
-  etiquetas(@Param("id") id: string, @Body() body: { etiquetas: string[] }) {
-    return this.conversationsService.setEtiquetas(id, body?.etiquetas ?? []);
+  @ApiOperation({ summary: "Definir as etiquetas da conversa (integra Kanban + Agenda)" })
+  etiquetas(@Param("id") id: string, @Body() body: { etiquetas: string[] }, @Request() req: any) {
+    return this.conversationsService.setEtiquetas(id, body?.etiquetas ?? [], req.user);
   }
 }
