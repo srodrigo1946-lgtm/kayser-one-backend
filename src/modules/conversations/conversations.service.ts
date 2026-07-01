@@ -15,8 +15,8 @@ const ETIQUETA_STATUS: Record<string, LeadStatus> = {
   agendamento: LeadStatus.AGENDAMENTO,
   visita_realizada: LeadStatus.VISITA_REALIZADA,
   subida_pastas: LeadStatus.SUBIDA_PASTA,
-  aprovacao: LeadStatus.ASSINATURA,
-  reprovacao: LeadStatus.VENDA_PERDIDA,
+  aprovacao: LeadStatus.APROVACAO,
+  reprovacao: LeadStatus.REPROVACAO,
   venda_ganha: LeadStatus.VENDA_GANHA,
 };
 

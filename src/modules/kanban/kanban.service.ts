@@ -15,8 +15,9 @@ export const KANBAN_COLUMNS = [
   { id: "visita_realizada", title: "Visita Realizada", emoji: "✅", color: "#84cc16" },
   { id: "simulacao", title: "Simulação", emoji: "💰", color: "#f97316" },
   { id: "subida_pasta", title: "Subida de Pasta", emoji: "📂", color: "#ec4899" },
-  { id: "assinatura", title: "Assinatura", emoji: "✍️", color: "#14b8a6" },
-  { id: "venda_ganha", title: "Venda Ganha", emoji: "🎉", color: "#22c55e" },
+  { id: "aprovacao", title: "Aprovação", emoji: "👍", color: "#22c55e" },
+  { id: "reprovacao", title: "Reprovação", emoji: "👎", color: "#f97316" },
+  { id: "venda_ganha", title: "Venda Ganha", emoji: "🎉", color: "#16a34a" },
   { id: "venda_perdida", title: "Venda Perdida", emoji: "❌", color: "#ef4444" },
 ];
 

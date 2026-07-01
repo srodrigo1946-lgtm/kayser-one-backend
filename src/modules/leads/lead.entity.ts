@@ -19,7 +19,8 @@ export enum LeadStatus {
   VISITA_REALIZADA = "visita_realizada",
   SIMULACAO = "simulacao",
   SUBIDA_PASTA = "subida_pasta",
-  ASSINATURA = "assinatura",
+  APROVACAO = "aprovacao",
+  REPROVACAO = "reprovacao",
   VENDA_GANHA = "venda_ganha",
   VENDA_PERDIDA = "venda_perdida",
 }
@@ -65,8 +66,10 @@ export class Lead {
   @Column({ type: "text", nullable: true })
   observacoes: string;
 
-  @Column({ type: "enum", enum: LeadStatus, default: LeadStatus.NOVO_LEAD })
-  status: LeadStatus;
+  // varchar (não enum do Postgres) para permitir editar/adicionar colunas do
+  // Kanban sem precisar migrar o tipo do banco.
+  @Column({ default: LeadStatus.NOVO_LEAD })
+  status: string;
 
   @Column({ type: "int", nullable: true })
   score: number;
