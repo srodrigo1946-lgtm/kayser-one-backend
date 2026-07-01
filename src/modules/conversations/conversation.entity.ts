@@ -9,6 +9,7 @@ import {
   OneToMany,
 } from "typeorm";
 import { Lead } from "../leads/lead.entity";
+import { User } from "../users/user.entity";
 import { Message } from "./message.entity";
 
 @Entity("conversations")
@@ -29,6 +30,14 @@ export class Conversation {
   @ManyToOne(() => Lead, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "leadId" })
   lead: Lead;
+
+  // Atendente responsável pela conversa (define a visibilidade por equipe).
+  @Column({ nullable: true })
+  assignedToId: string;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "assignedToId" })
+  assignedTo: User;
 
   @Column({ type: "text", nullable: true })
   lastMessage: string;

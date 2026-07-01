@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
@@ -24,19 +24,47 @@ export class ConversationsService {
     const qb = this.convRepo
       .createQueryBuilder("c")
       .leftJoinAndSelect("c.lead", "lead")
+      // Só os campos do atendente que interessam ao front (sem passwordHash).
+      .leftJoin("c.assignedTo", "atendente")
+      .addSelect(["atendente.id", "atendente.name", "atendente.role", "atendente.avatar"])
       .orderBy("c.lastMessageAt", "DESC");
 
-    // scope null = Diretor (vê tudo, inclusive conversas sem lead vinculado).
+    // scope null = Diretor (vê todas as conversas da empresa).
+    // Demais: conversas cujo atendente OU o responsável do lead estão na sua equipe.
     const scopeIds = await this.users.getScopeIds(user);
     if (scopeIds !== null) {
-      qb.where("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+      qb.where("(c.assignedToId IN (:...ids) OR lead.responsavelId IN (:...ids))", { ids: scopeIds });
     }
     return qb.getMany();
   }
 
-  async getMessages(conversationId: string) {
-    const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead"] });
+  /** Atribui (ou remove) o atendente responsável por uma conversa. */
+  async assign(conversationId: string, userId: string | null, requester: User) {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    if (userId) {
+      const scopeIds = await this.users.getScopeIds(requester);
+      if (scopeIds !== null && !scopeIds.includes(userId)) {
+        throw new ForbiddenException("Você só pode atribuir a conversa a alguém da sua equipe.");
+      }
+    }
+    conv.assignedToId = userId ?? null;
+    await this.convRepo.save(conv);
+    return this.stripAssigned(
+      await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] })
+    );
+  }
+
+  /** Remove o passwordHash do atendente vinculado, se houver. */
+  private stripAssigned(conv: Conversation | null) {
+    if (conv?.assignedTo) delete (conv.assignedTo as any).passwordHash;
+    return conv;
+  }
+
+  async getMessages(conversationId: string) {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] });
+    if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    this.stripAssigned(conv);
     const messages = await this.msgRepo.find({
       where: { conversationId },
       order: { createdAt: "ASC" },
@@ -62,7 +90,8 @@ export class ConversationsService {
       .orWhere("regexp_replace(coalesce(lead.whatsapp,''), '[^0-9]', '', 'g') LIKE :p", { p: `%${phone.slice(-8)}%` })
       .getOne();
 
-    conv = this.convRepo.create({ remoteJid: phone, leadId: lead?.id });
+    // Nasce atribuída ao responsável do lead (quando há), definindo a visibilidade por equipe.
+    conv = this.convRepo.create({ remoteJid: phone, leadId: lead?.id, assignedToId: lead?.responsavelId });
     return this.convRepo.save(conv);
   }
 
