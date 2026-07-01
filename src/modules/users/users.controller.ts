@@ -98,4 +98,11 @@ export class UsersController {
   remove(@Param("id") id: string, @Request() req: any) {
     return this.usersService.deactivate(id, req.user);
   }
+
+  @Post(":id/activate")
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: "Reativar usuário (cada gestor na própria equipe)" })
+  activate(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.activate(id, req.user);
+  }
 }

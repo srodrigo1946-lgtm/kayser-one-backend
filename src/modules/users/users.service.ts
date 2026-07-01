@@ -137,6 +137,15 @@ export class UsersService {
     return { message: "Usuário desativado." };
   }
 
+  async activate(id: string, requester: User) {
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException("Usuário não encontrado.");
+    await this.assertCanManage(user, requester);
+    user.active = true;
+    await this.usersRepo.save(user);
+    return { message: "Usuário ativado." };
+  }
+
   /** Garante que o solicitante pode gerenciar o usuário-alvo (Diretor ou gestor dele). */
   private async assertCanManage(target: User, requester: User) {
     if (requester.role === UserRole.DIRETOR) return;
