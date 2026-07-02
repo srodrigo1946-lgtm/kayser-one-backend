@@ -86,6 +86,28 @@ export class ConversationsService {
     conv.etiquetas = novas;
     await this.convRepo.save(conv);
 
+    // Se a etiqueta implica movimento no funil e ainda não há lead vinculado,
+    // cria o lead a partir do número (para o card aparecer/mover no Kanban).
+    const precisaLead = adicionadas.some((e) => ETIQUETA_STATUS[e] || e === "agendamento");
+    if (precisaLead && !conv.leadId) {
+      const numero = conv.remoteJid ?? "";
+      try {
+        const lead = await this.leads.create(
+          {
+            name: numero || "Contato WhatsApp",
+            phone: numero,
+            responsavelId: conv.assignedToId ?? undefined,
+          } as any,
+          requester
+        );
+        conv.leadId = lead.id;
+        conv.lead = lead;
+        await this.convRepo.save(conv);
+      } catch {
+        /* segue mesmo se não conseguir criar o lead */
+      }
+    }
+
     for (const et of adicionadas) {
       // Move o lead no Kanban (se a conversa tem lead vinculado).
       const status = ETIQUETA_STATUS[et];
