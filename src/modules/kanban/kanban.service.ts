@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Not } from "typeorm";
+import { Repository, Not, In } from "typeorm";
 import { Lead } from "../leads/lead.entity";
-import { User, UserRole } from "../users/user.entity";
+import { User } from "../users/user.entity";
 import { LeadsService } from "../leads/leads.service";
+import { UsersService } from "../users/users.service";
 import { KanbanColumnEntity } from "./kanban-column.entity";
 
 // Colunas padrão — usadas apenas para semear o banco na primeira vez.
@@ -30,7 +31,8 @@ export class KanbanService {
     private readonly leadsRepo: Repository<Lead>,
     @InjectRepository(KanbanColumnEntity)
     private readonly columnsRepo: Repository<KanbanColumnEntity>,
-    private readonly leadsService: LeadsService
+    private readonly leadsService: LeadsService,
+    private readonly users: UsersService
   ) {}
 
   /** Semeia as colunas padrão na primeira vez que o board é acessado. */
@@ -51,7 +53,9 @@ export class KanbanService {
 
   async getBoard(user: User) {
     const columns = await this.listColumns();
-    const where = user.role === UserRole.CORRETOR ? { responsavelId: user.id } : {};
+    // Escopo por equipe: Diretor (null) vê todos; demais veem só a sua equipe.
+    const scopeIds = await this.users.getScopeIds(user);
+    const where = scopeIds === null ? {} : { responsavelId: In(scopeIds) };
     const leads = await this.leadsRepo.find({
       where,
       relations: ["responsavel"],

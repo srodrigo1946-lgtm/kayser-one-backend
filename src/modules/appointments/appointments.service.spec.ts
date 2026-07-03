@@ -3,6 +3,7 @@ import { UserRole } from "../users/user.entity";
 
 describe("AppointmentsService", () => {
   let repo: any;
+  let users: any;
   let service: AppointmentsService;
 
   beforeEach(() => {
@@ -13,7 +14,8 @@ describe("AppointmentsService", () => {
       save: jest.fn(async (x) => ({ id: "a1", ...x })),
       remove: jest.fn(),
     };
-    service = new AppointmentsService(repo);
+    users = { getScopeIds: jest.fn().mockResolvedValue(null) };
+    service = new AppointmentsService(repo, users);
   });
 
   it("usa o criador como responsável quando userId não é informado", async () => {
@@ -28,13 +30,15 @@ describe("AppointmentsService", () => {
     expect(arg.userId).toBe("c2");
   });
 
-  it("corretor só lista os próprios agendamentos", async () => {
+  it("corretor só lista os próprios agendamentos (escopo por equipe)", async () => {
+    users.getScopeIds.mockResolvedValue(["c1"]);
     await service.findAll({ id: "c1", role: UserRole.CORRETOR } as any);
     const arg = repo.find.mock.calls[0][0];
-    expect(arg.where.userId).toBe("c1");
+    expect((arg.where.userId as any).value).toEqual(["c1"]);
   });
 
   it("diretor lista todos (sem filtro de usuário)", async () => {
+    users.getScopeIds.mockResolvedValue(null);
     await service.findAll({ id: "d1", role: UserRole.DIRETOR } as any);
     const arg = repo.find.mock.calls[0][0];
     expect(arg.where.userId).toBeUndefined();

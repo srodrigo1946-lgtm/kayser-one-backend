@@ -5,9 +5,10 @@ import { KanbanController } from "./kanban.controller";
 import { KanbanService } from "./kanban.service";
 import { KanbanColumnEntity } from "./kanban-column.entity";
 import { LeadsModule } from "../leads/leads.module";
+import { UsersModule } from "../users/users.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Lead, KanbanColumnEntity]), LeadsModule],
+  imports: [TypeOrmModule.forFeature([Lead, KanbanColumnEntity]), LeadsModule, UsersModule],
   controllers: [KanbanController],
   providers: [KanbanService],
 })

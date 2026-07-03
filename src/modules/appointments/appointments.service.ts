@@ -1,19 +1,23 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Between, Repository } from "typeorm";
+import { Between, In, Repository } from "typeorm";
 import { Appointment } from "./appointment.entity";
-import { User, UserRole } from "../users/user.entity";
+import { User } from "../users/user.entity";
+import { UsersService } from "../users/users.service";
 
 @Injectable()
 export class AppointmentsService {
   constructor(
     @InjectRepository(Appointment)
-    private readonly repo: Repository<Appointment>
+    private readonly repo: Repository<Appointment>,
+    private readonly users: UsersService
   ) {}
 
   async findAll(user: User, from?: string, to?: string) {
     const where: any = {};
-    if (user.role === UserRole.CORRETOR) where.userId = user.id;
+    // Escopo por equipe: Diretor (null) vê tudo; demais veem os compromissos do seu time.
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null) where.userId = In(scopeIds);
     if (from && to) where.scheduledAt = Between(new Date(from), new Date(to));
 
     return this.repo.find({
