@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Between, IsNull, LessThan, In } from "typeorm";
 import { Lead, LeadStatus } from "../leads/lead.entity";
-import { User } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
 import { subDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
 
@@ -47,15 +47,18 @@ export class DashboardService {
     const scopeIds = await this.users.getScopeIds(user);
     const qb = this.leadsRepo
       .createQueryBuilder("lead")
+      // innerJoin: exclui leads sem responsável ("Sem responsável") do ranking
+      .innerJoin("lead.responsavel", "user")
       .select("lead.responsavelId", "responsavelId")
       .addSelect("COUNT(*) FILTER (WHERE lead.status = :venda)", "vendas")
       .addSelect("COUNT(*)", "leads")
-      .leftJoin("lead.responsavel", "user")
       .addSelect("user.name", "nome")
+      // Diretor não compete no ranking (apenas o visualiza)
+      .where("user.role != :diretor", { diretor: UserRole.DIRETOR })
       .setParameter("venda", LeadStatus.VENDA_GANHA);
 
     if (scopeIds !== null) {
-      qb.where("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+      qb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
     }
 
     return qb
