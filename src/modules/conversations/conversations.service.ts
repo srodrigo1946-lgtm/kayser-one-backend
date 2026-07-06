@@ -86,9 +86,9 @@ export class ConversationsService {
     conv.etiquetas = novas;
     await this.convRepo.save(conv);
 
-    // Se a etiqueta implica movimento no funil e ainda não há lead vinculado,
-    // cria o lead a partir do número (para o card aparecer/mover no Kanban).
-    const precisaLead = adicionadas.some((e) => ETIQUETA_STATUS[e] || e === "agendamento");
+    // Toda etiqueta é uma coluna do Kanban → sempre implica movimento.
+    // Se ainda não há lead vinculado, cria a partir do número (para o card aparecer/mover).
+    const precisaLead = adicionadas.length > 0;
     if (precisaLead && !conv.leadId) {
       const numero = conv.remoteJid ?? "";
       try {
@@ -109,8 +109,9 @@ export class ConversationsService {
     }
 
     for (const et of adicionadas) {
-      // Move o lead no Kanban (se a conversa tem lead vinculado).
-      const status = ETIQUETA_STATUS[et];
+      // A etiqueta É a coluna do Kanban (key = status). Move o card direto para ela.
+      // ETIQUETA_STATUS mantém compatibilidade com chaves antigas.
+      const status = ETIQUETA_STATUS[et] ?? et;
       if (status && conv.leadId) {
         try {
           await this.leads.updateStatus(conv.leadId, status, undefined, requester);
