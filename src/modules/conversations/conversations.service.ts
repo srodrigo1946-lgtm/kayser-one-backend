@@ -186,6 +186,22 @@ export class ConversationsService {
     return this.convRepo.save(conv);
   }
 
+  /** Atualiza nome (pushName) e/ou foto de perfil do contato, se mudaram. */
+  async setContactInfo(conversationId: string, name?: string | null, avatar?: string | null) {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+    if (!conv) return;
+    let changed = false;
+    if (name && conv.contactName !== name) {
+      conv.contactName = name;
+      changed = true;
+    }
+    if (avatar && conv.contactAvatar !== avatar) {
+      conv.contactAvatar = avatar;
+      changed = true;
+    }
+    if (changed) await this.convRepo.save(conv);
+  }
+
   async addMessage(
     conversationId: string,
     content: string,

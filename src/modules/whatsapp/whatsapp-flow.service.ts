@@ -24,11 +24,25 @@ export class WhatsappFlowService {
       const parsed = this.parseEvolutionMessage(payload);
       if (!parsed) return { ignored: true };
 
-      const { remoteJid, remoteJidFull, isGroup, text, fromMe, instanceName } = parsed;
+      const { remoteJid, remoteJidFull, isGroup, text, fromMe, pushName, instanceName } = parsed;
       if (fromMe || !text) return { ignored: true };
 
       const conv = await this.conversations.findOrCreateByPhone(remoteJid);
       await this.conversations.addMessage(conv.id, text, "in");
+
+      // Nome + foto do contato/grupo (busca a foto só quando ainda não temos).
+      if (!isGroup) {
+        // Individual: pushName é o nome do contato.
+        let avatar = conv.contactAvatar;
+        if (!avatar && instanceName) {
+          avatar = await this.whatsapp.fetchProfilePicture(instanceName, remoteJid);
+        }
+        await this.conversations.setContactInfo(conv.id, pushName, avatar);
+      } else if (instanceName && (!conv.contactName || !conv.contactAvatar)) {
+        // Grupo: usa o nome (subject) e a foto do grupo.
+        const info = await this.whatsapp.fetchGroupInfo(instanceName, remoteJidFull);
+        await this.conversations.setContactInfo(conv.id, info.name, info.avatar);
+      }
 
       const settings = await this.settings.get();
       if (!settings.aiAutoReply) return { persisted: true, autoReply: false };
@@ -79,6 +93,7 @@ export class WhatsappFlowService {
     isGroup: boolean;
     text: string;
     fromMe: boolean;
+    pushName: string;
     instanceName?: string;
   } | null {
     const data = payload?.data ?? payload;
@@ -103,6 +118,7 @@ export class WhatsappFlowService {
       isGroup: remoteJidRaw.includes("@g.us"),
       text,
       fromMe: !!key.fromMe,
+      pushName: msg.pushName || "",
       instanceName,
     };
   }

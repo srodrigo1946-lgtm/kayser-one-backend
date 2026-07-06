@@ -24,6 +24,13 @@ export class Conversation {
   @Column({ nullable: true })
   remoteJid: string;
 
+  // Nome de exibição do contato no WhatsApp (pushName) e foto de perfil (URL).
+  @Column({ type: "text", nullable: true })
+  contactName: string;
+
+  @Column({ type: "text", nullable: true })
+  contactAvatar: string;
+
   @Column({ nullable: true })
   leadId: string;
 

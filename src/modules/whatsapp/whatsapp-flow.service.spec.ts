@@ -15,7 +15,15 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
       instance: "user_1",
       data: { key: { remoteJid: "5511999998888@s.whatsapp.net", fromMe: false }, message: { conversation: "Olá!" } },
     });
-    expect(r).toEqual({ remoteJid: "5511999998888", text: "Olá!", fromMe: false, instanceName: "user_1" });
+    expect(r).toEqual({
+      remoteJid: "5511999998888",
+      remoteJidFull: "5511999998888@s.whatsapp.net",
+      isGroup: false,
+      text: "Olá!",
+      fromMe: false,
+      pushName: "",
+      instanceName: "user_1",
+    });
   });
 
   it("suporta extendedTextMessage", () => {

@@ -68,6 +68,39 @@ export class WhatsappService {
     return data;
   }
 
+  /** Busca a URL da foto de perfil de um contato. Retorna null se não houver/for privada. */
+  async fetchProfilePicture(instanceName: string, number: string): Promise<string | null> {
+    try {
+      const num = number.includes("@") ? number : number.replace(/\D/g, "");
+      const { data } = await axios.post(
+        `${this.apiUrl}/chat/fetchProfilePictureUrl/${instanceName}`,
+        { number: num },
+        { headers: this.headers }
+      );
+      return data?.profilePictureUrl || data?.profilePicUrl || null;
+    } catch {
+      // Foto privada, contato inexistente ou instância desconectada — segue sem foto.
+      return null;
+    }
+  }
+
+  /** Busca nome (subject) e foto de um grupo pelo JID (@g.us). */
+  async fetchGroupInfo(
+    instanceName: string,
+    groupJid: string
+  ): Promise<{ name: string | null; avatar: string | null }> {
+    try {
+      const { data } = await axios.get(
+        `${this.apiUrl}/group/findGroupInfos/${instanceName}`,
+        { headers: this.headers, params: { groupJid } }
+      );
+      const info = Array.isArray(data) ? data[0] : data;
+      return { name: info?.subject || null, avatar: info?.pictureUrl || null };
+    } catch {
+      return { name: null, avatar: null };
+    }
+  }
+
   async deleteInstance(instanceName: string) {
     const { data } = await axios.delete(
       `${this.apiUrl}/instance/delete/${instanceName}`,
