@@ -45,6 +45,13 @@ export class DashboardService {
 
   async getRanking(user: User) {
     const scopeIds = await this.users.getScopeIds(user);
+    // Papéis que competem no ranking (Diretor apenas visualiza, não entra)
+    const roles = [
+      UserRole.SUPERINTENDENTE,
+      UserRole.GERENTE_GERAL,
+      UserRole.GERENTE,
+      UserRole.CORRETOR,
+    ];
     const qb = this.leadsRepo
       .createQueryBuilder("lead")
       // innerJoin: exclui leads sem responsável ("Sem responsável") do ranking
@@ -53,8 +60,8 @@ export class DashboardService {
       .addSelect("COUNT(*) FILTER (WHERE lead.status = :venda)", "vendas")
       .addSelect("COUNT(*)", "leads")
       .addSelect("user.name", "nome")
-      // Diretor não compete no ranking (apenas o visualiza)
-      .where("user.role != :diretor", { diretor: UserRole.DIRETOR })
+      .addSelect("user.role", "role")
+      .where("user.role IN (:...roles)", { roles })
       .setParameter("venda", LeadStatus.VENDA_GANHA);
 
     if (scopeIds !== null) {
@@ -64,6 +71,7 @@ export class DashboardService {
     return qb
       .groupBy("lead.responsavelId")
       .addGroupBy("user.name")
+      .addGroupBy("user.role")
       .orderBy("vendas", "DESC")
       .limit(10)
       .getRawMany();
