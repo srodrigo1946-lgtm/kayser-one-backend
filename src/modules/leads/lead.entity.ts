@@ -45,6 +45,10 @@ export class Lead {
   @Column({ nullable: true })
   empreendimento: string;
 
+  // Vínculo com o imóvel cadastrado (empreendimento continua guardando o nome p/ exibição).
+  @Column({ nullable: true })
+  propertyId: string;
+
   @Column({ nullable: true })
   origem: string;
 

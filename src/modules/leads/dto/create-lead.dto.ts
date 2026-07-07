@@ -30,6 +30,11 @@ export class CreateLeadDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  propertyId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   origem?: string;
 
   @ApiPropertyOptional()
