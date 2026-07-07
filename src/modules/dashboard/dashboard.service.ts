@@ -3,14 +3,17 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Between, IsNull, LessThan, In } from "typeorm";
 import { Lead, LeadStatus } from "../leads/lead.entity";
 import { User, UserRole } from "../users/user.entity";
+import { Goal } from "../goals/goal.entity";
 import { UsersService } from "../users/users.service";
-import { subDays, startOfDay, startOfWeek, startOfMonth } from "date-fns";
+import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
 @Injectable()
 export class DashboardService {
   constructor(
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
+    @InjectRepository(Goal)
+    private readonly goalsRepo: Repository<Goal>,
     private readonly users: UsersService
   ) {}
 
@@ -52,29 +55,51 @@ export class DashboardService {
       UserRole.GERENTE,
       UserRole.CORRETOR,
     ];
+    const now = new Date();
+    const start = startOfMonth(now);
+    const end = endOfMonth(now);
+
     const qb = this.leadsRepo
       .createQueryBuilder("lead")
       // innerJoin: exclui leads sem responsável ("Sem responsável") do ranking
       .innerJoin("lead.responsavel", "user")
-      .select("lead.responsavelId", "responsavelId")
-      .addSelect("COUNT(*) FILTER (WHERE lead.status = :venda)", "vendas")
-      .addSelect("COUNT(*)", "leads")
+      .select("user.id", "responsavelId")
       .addSelect("user.name", "nome")
       .addSelect("user.role", "role")
+      // manda só um booleano (tem foto?) para não trafegar data URIs grandes
+      .addSelect("(user.avatar IS NOT NULL)", "hasAvatar")
+      // Números do MÊS VIGENTE (barra de progresso respeita o mês)
+      .addSelect(
+        "COUNT(*) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end)",
+        "vendas"
+      )
+      .addSelect("COUNT(*) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
       .where("user.role IN (:...roles)", { roles })
-      .setParameter("venda", LeadStatus.VENDA_GANHA);
+      .setParameters({ venda: LeadStatus.VENDA_GANHA, start, end });
 
     if (scopeIds !== null) {
-      qb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+      qb.andWhere("user.id IN (:...ids)", { ids: scopeIds });
     }
 
-    return qb
-      .groupBy("lead.responsavelId")
-      .addGroupBy("user.name")
-      .addGroupBy("user.role")
+    const rows = await qb
+      .groupBy("user.id")
       .orderBy("vendas", "DESC")
-      .limit(10)
+      .addOrderBy("leads", "DESC")
+      .limit(20)
       .getRawMany();
+
+    // Meta de vendas do mês vigente por usuário (para a barra de progresso).
+    const metas = await this.goalsRepo.find({
+      where: { month: now.getMonth() + 1, year: now.getFullYear() },
+    });
+    const metaByUser = new Map(metas.map((g) => [g.userId, g.targetSales]));
+
+    return rows.map((r) => ({
+      ...r,
+      vendas: Number(r.vendas) || 0,
+      leads: Number(r.leads) || 0,
+      meta: metaByUser.get(r.responsavelId) ?? 0,
+    }));
   }
 
   async getMonthlyData(user: User) {
