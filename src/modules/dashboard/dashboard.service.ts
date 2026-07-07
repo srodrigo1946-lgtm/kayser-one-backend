@@ -14,6 +14,8 @@ export class DashboardService {
     private readonly leadsRepo: Repository<Lead>,
     @InjectRepository(Goal)
     private readonly goalsRepo: Repository<Goal>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly users: UsersService
   ) {}
 
@@ -59,10 +61,11 @@ export class DashboardService {
     const start = startOfMonth(now);
     const end = endOfMonth(now);
 
-    const qb = this.leadsRepo
-      .createQueryBuilder("lead")
-      // innerJoin: exclui leads sem responsável ("Sem responsável") do ranking
-      .innerJoin("lead.responsavel", "user")
+    // Parte dos USUÁRIOS desses cargos (todos aparecem, mesmo sem vendas no mês)
+    // e conta os leads/vendas do mês por leftJoin.
+    const qb = this.userRepo
+      .createQueryBuilder("user")
+      .leftJoin(Lead, "lead", "lead.responsavelId = user.id")
       .select("user.id", "responsavelId")
       .addSelect("user.name", "nome")
       .addSelect("user.role", "role")
@@ -70,11 +73,13 @@ export class DashboardService {
       .addSelect("(user.avatar IS NOT NULL)", "hasAvatar")
       // Números do MÊS VIGENTE (barra de progresso respeita o mês)
       .addSelect(
-        "COUNT(*) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end)",
+        "COUNT(lead.id) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end)",
         "vendas"
       )
-      .addSelect("COUNT(*) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
+      .addSelect("COUNT(lead.id) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
       .where("user.role IN (:...roles)", { roles })
+      .andWhere("user.active = true")
+      .andWhere("user.approved = true")
       .setParameters({ venda: LeadStatus.VENDA_GANHA, start, end });
 
     if (scopeIds !== null) {
@@ -85,7 +90,8 @@ export class DashboardService {
       .groupBy("user.id")
       .orderBy("vendas", "DESC")
       .addOrderBy("leads", "DESC")
-      .limit(20)
+      .addOrderBy("user.name", "ASC")
+      .limit(50)
       .getRawMany();
 
     // Meta de vendas do mês vigente por usuário (para a barra de progresso).
