@@ -24,7 +24,7 @@ export class WhatsappFlowService {
       const parsed = this.parseEvolutionMessage(payload);
       if (!parsed) return { ignored: true };
 
-      const { remoteJid, remoteJidFull, isGroup, text, fromMe, pushName, instanceName } = parsed;
+      const { remoteJid, remoteJidFull, isGroup, text, mediaType, fromMe, pushName, instanceName } = parsed;
       if (fromMe || !text) return { ignored: true };
 
       const conv = await this.conversations.findOrCreateByPhone(remoteJid);
@@ -43,6 +43,9 @@ export class WhatsappFlowService {
         const info = await this.whatsapp.fetchGroupInfo(instanceName, remoteJidFull);
         await this.conversations.setContactInfo(conv.id, info.name, info.avatar);
       }
+
+      // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
+      if (mediaType) return { persisted: true, autoReply: false, media: mediaType };
 
       const settings = await this.settings.get();
       if (!settings.aiAutoReply) return { persisted: true, autoReply: false };
@@ -92,6 +95,7 @@ export class WhatsappFlowService {
     remoteJidFull: string;
     isGroup: boolean;
     text: string;
+    mediaType: string | null;
     fromMe: boolean;
     pushName: string;
     instanceName?: string;
@@ -106,17 +110,41 @@ export class WhatsappFlowService {
     if (!remoteJidRaw) return null;
 
     const message = msg.message ?? {};
-    const text =
-      message.conversation ||
-      message.extendedTextMessage?.text ||
-      message.imageMessage?.caption ||
-      "";
+    let text = message.conversation || message.extendedTextMessage?.text || "";
+    let mediaType: string | null = null;
+
+    // Mídia: quando não há texto, mostra um marcador para o atendente saber o que chegou.
+    if (!text) {
+      if (message.imageMessage) {
+        mediaType = "image";
+        text = message.imageMessage.caption || "📷 Imagem";
+      } else if (message.audioMessage) {
+        mediaType = "audio";
+        text = message.audioMessage.ptt ? "🎤 Áudio (mensagem de voz)" : "🎵 Áudio";
+      } else if (message.videoMessage) {
+        mediaType = "video";
+        text = message.videoMessage.caption || "🎥 Vídeo";
+      } else if (message.documentMessage) {
+        mediaType = "document";
+        text = `📎 ${message.documentMessage.fileName || "Documento"}`;
+      } else if (message.stickerMessage) {
+        mediaType = "sticker";
+        text = "🩹 Figurinha";
+      } else if (message.locationMessage) {
+        mediaType = "location";
+        text = "📍 Localização";
+      } else if (message.contactMessage || message.contactsArrayMessage) {
+        mediaType = "contact";
+        text = "👤 Contato compartilhado";
+      }
+    }
 
     return {
       remoteJid: remoteJidRaw.split("@")[0],
       remoteJidFull: remoteJidRaw,
       isGroup: remoteJidRaw.includes("@g.us"),
       text,
+      mediaType,
       fromMe: !!key.fromMe,
       pushName: msg.pushName || "",
       instanceName,

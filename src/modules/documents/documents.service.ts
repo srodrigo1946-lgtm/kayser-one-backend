@@ -26,7 +26,6 @@ function buildChecklist(req: DocumentRequest): ChecklistItem[] {
   if (completa && req.declaraIR) {
     items.push({ key: "ir", label: "Declaração completa de Imposto de Renda" });
   }
-  items.push({ key: "certidao_estado_civil", label: "Certidão de estado civil" });
   if (req.estadoCivil === "casado") {
     items.push({ key: "certidao_casamento", label: "Certidão de casamento" });
   } else {

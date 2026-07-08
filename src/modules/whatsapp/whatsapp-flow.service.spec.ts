@@ -20,6 +20,7 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
       remoteJidFull: "5511999998888@s.whatsapp.net",
       isGroup: false,
       text: "Olá!",
+      mediaType: null,
       fromMe: false,
       pushName: "",
       instanceName: "user_1",
