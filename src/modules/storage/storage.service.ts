@@ -17,10 +17,31 @@ export class StorageService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
 
   async onModuleInit() {
+    // Preferência: Cloudflare R2 (S3-compatível) quando configurado.
+    const r2Key = this.config.get<string>("R2_ACCESS_KEY_ID");
+    const r2Secret = this.config.get<string>("R2_SECRET_ACCESS_KEY");
+    if (r2Key && r2Secret) {
+      const endpoint = (this.config.get<string>("R2_ENDPOINT", "") || "")
+        .replace(/^https?:\/\//, "")
+        .replace(/\/$/, "");
+      this.bucket = this.config.get<string>("R2_BUCKET", "kayser-docs");
+      this.client = new MinioClient({
+        endPoint: endpoint,
+        port: 443,
+        useSSL: true,
+        accessKey: r2Key,
+        secretKey: r2Secret,
+        region: "auto",
+      });
+      this.enabled = true; // o bucket é criado manualmente no painel do R2
+      this.logger.log(`Cloudflare R2 conectado (bucket: ${this.bucket}).`);
+      return;
+    }
+
     const accessKey = this.config.get<string>("MINIO_ACCESS_KEY");
     const secretKey = this.config.get<string>("MINIO_SECRET_KEY");
     if (!accessKey || !secretKey) {
-      this.logger.log("MinIO não configurado — armazenamento de arquivos desativado.");
+      this.logger.log("Storage (R2/MinIO) não configurado — armazenamento de arquivos desativado.");
       return;
     }
     this.bucket = this.config.get<string>("MINIO_BUCKET", "kayser-one");

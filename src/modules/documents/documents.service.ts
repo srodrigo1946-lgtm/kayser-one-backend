@@ -1,0 +1,161 @@
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { randomBytes } from "crypto";
+import { DocumentRequest } from "./document-request.entity";
+import { Document } from "./document.entity";
+import { StorageService } from "../storage/storage.service";
+
+export interface ChecklistItem {
+  key: string;
+  label: string;
+}
+
+/** Monta o checklist conforme fase (simplificada/completa), perfil (clt/autônomo) e estado civil. */
+function buildChecklist(req: DocumentRequest): ChecklistItem[] {
+  const completa = req.fase === "completa";
+  const items: ChecklistItem[] = [
+    { key: "rg_cnh", label: "RG ou CNH" },
+    { key: "comprovante_residencia", label: "Comprovante de residência" },
+  ];
+  if (req.perfil === "autonomo") {
+    items.push({ key: "extrato", label: completa ? "12 extratos bancários" : "6 extratos bancários" });
+  } else {
+    items.push({ key: "contracheque", label: completa ? "3 últimos contracheques" : "1 contracheque" });
+  }
+  if (completa && req.declaraIR) {
+    items.push({ key: "ir", label: "Declaração completa de Imposto de Renda" });
+  }
+  items.push({ key: "certidao_estado_civil", label: "Certidão de estado civil" });
+  if (req.estadoCivil === "casado") {
+    items.push({ key: "certidao_casamento", label: "Certidão de casamento" });
+  } else {
+    items.push({ key: "certidao_nascimento", label: "Certidão de nascimento" });
+  }
+  return items;
+}
+
+function slug(s: string) {
+  return (
+    (s || "")
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "documento"
+  );
+}
+
+@Injectable()
+export class DocumentsService {
+  constructor(
+    @InjectRepository(DocumentRequest)
+    private readonly reqRepo: Repository<DocumentRequest>,
+    @InjectRepository(Document)
+    private readonly docRepo: Repository<Document>,
+    private readonly storage: StorageService
+  ) {}
+
+  async createRequest(data: Partial<DocumentRequest>, userId?: string) {
+    const token = randomBytes(16).toString("hex");
+    const req = this.reqRepo.create({ ...data, token, createdById: userId });
+    return this.reqRepo.save(req);
+  }
+
+  /** Visão pública (cliente) do link: checklist + o que já chegou. */
+  async getByToken(token: string) {
+    const req = await this.reqRepo.findOne({ where: { token }, relations: ["documents"] });
+    if (!req) throw new NotFoundException("Link inválido ou expirado.");
+    const checklist = buildChecklist(req).map((it) => {
+      const files = (req.documents || []).filter((d) => d.tipo === it.key);
+      return { ...it, recebido: files.length > 0, count: files.length };
+    });
+    return {
+      clientName: req.clientName,
+      fase: req.fase,
+      checklist,
+      concluido: checklist.every((c) => c.recebido),
+    };
+  }
+
+  async upload(token: string, tipo: string, file: Express.Multer.File) {
+    if (!file) throw new NotFoundException("Arquivo não enviado.");
+    const req = await this.reqRepo.findOne({ where: { token } });
+    if (!req) throw new NotFoundException("Link inválido.");
+
+    const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `${slug(req.clientName)}_${(req.clientPhone || "").replace(/\D/g, "")}_${date}_${tipo}.${ext}`;
+
+    let fileKey: string;
+    if (this.storage.isEnabled) {
+      const key = `docs/${req.id}/${Date.now()}-${filename}`;
+      const stored = await this.storage.upload(key, file.buffer, file.mimetype);
+      fileKey = stored || `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+    } else {
+      fileKey = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+    }
+
+    const doc = this.docRepo.create({ requestId: req.id, tipo, filename, fileKey, contentType: file.mimetype });
+    await this.docRepo.save(doc);
+    return { ok: true, filename };
+  }
+
+  /** Lista os arquivos de uma solicitação (para o gestor baixar). */
+  async listFiles(requestId: string) {
+    const req = await this.reqRepo.findOne({ where: { id: requestId }, relations: ["documents"] });
+    if (!req) throw new NotFoundException("Solicitação não encontrada.");
+    return {
+      request: {
+        id: req.id,
+        clientName: req.clientName,
+        clientPhone: req.clientPhone,
+        fase: req.fase,
+        token: req.token,
+      },
+      documents: (req.documents || []).map((d) => ({
+        id: d.id,
+        tipo: d.tipo,
+        filename: d.filename,
+        uploadedAt: d.uploadedAt,
+      })),
+    };
+  }
+
+  async getFile(docId: string) {
+    const doc = await this.docRepo.findOne({ where: { id: docId } });
+    if (!doc) throw new NotFoundException("Documento não encontrado.");
+    if (doc.fileKey.startsWith("data:")) {
+      const m = doc.fileKey.match(/^data:(.+?);base64,(.*)$/s);
+      return {
+        buffer: Buffer.from(m ? m[2] : "", "base64"),
+        contentType: doc.contentType || (m ? m[1] : "application/octet-stream"),
+        filename: doc.filename,
+      };
+    }
+    const obj = await this.storage.getObject(doc.fileKey);
+    if (!obj) throw new NotFoundException("Arquivo indisponível.");
+    return { buffer: obj.buffer, contentType: obj.contentType, filename: doc.filename };
+  }
+
+  /** Resumo das solicitações de uma conversa (progresso recebidos/total). */
+  async findByConversation(conversationId: string) {
+    const reqs = await this.reqRepo.find({
+      where: { conversationId },
+      relations: ["documents"],
+      order: { createdAt: "DESC" },
+    });
+    return reqs.map((req) => {
+      const checklist = buildChecklist(req);
+      const recebidos = checklist.filter((it) => (req.documents || []).some((d) => d.tipo === it.key)).length;
+      return {
+        id: req.id,
+        token: req.token,
+        fase: req.fase,
+        total: checklist.length,
+        recebidos,
+        concluido: recebidos === checklist.length,
+        createdAt: req.createdAt,
+      };
+    });
+  }
+}
