@@ -32,6 +32,17 @@ export class Message {
   @Column({ default: false })
   isAI: boolean;
 
+  // Mídia (imagem/áudio/vídeo/documento) recebida do WhatsApp.
+  @Column({ type: "varchar", nullable: true })
+  mediaType: string;
+
+  @Column({ type: "varchar", nullable: true })
+  mediaMime: string;
+
+  // Chave no R2 (S3) ou data URI (fallback) do arquivo de mídia.
+  @Column({ type: "text", nullable: true })
+  mediaKey: string;
+
   @CreateDateColumn()
   createdAt: Date;
 }

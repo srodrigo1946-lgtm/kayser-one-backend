@@ -1,5 +1,6 @@
-import { Controller, Get, Patch, Body, Param, UseGuards, Request } from "@nestjs/common";
+import { Controller, Get, Patch, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Response } from "express";
 import { ConversationsService } from "./conversations.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 
@@ -32,5 +33,21 @@ export class ConversationsController {
   @ApiOperation({ summary: "Definir as etiquetas da conversa (integra Kanban + Agenda)" })
   etiquetas(@Param("id") id: string, @Body() body: { etiquetas: string[] }, @Request() req: any) {
     return this.conversationsService.setEtiquetas(id, body?.etiquetas ?? [], req.user);
+  }
+}
+
+/** Serve a mídia das mensagens (público por obscuridade do UUID — para <img>/<audio>). */
+@ApiTags("Conversas")
+@Controller("conversations")
+export class ConversationsMediaController {
+  constructor(private readonly conversationsService: ConversationsService) {}
+
+  @Get("media/:messageId")
+  @ApiOperation({ summary: "Baixar/exibir a mídia de uma mensagem" })
+  async media(@Param("messageId") messageId: string, @Res() res: Response) {
+    const f = await this.conversationsService.getMessageMedia(messageId);
+    res.setHeader("Content-Type", f.contentType);
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    res.send(f.buffer);
   }
 }

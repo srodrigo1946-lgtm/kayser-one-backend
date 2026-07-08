@@ -9,6 +9,7 @@ import { UsersService } from "../users/users.service";
 import { LeadsService } from "../leads/leads.service";
 import { AppointmentsService } from "../appointments/appointments.service";
 import { AppointmentType } from "../appointments/appointment.entity";
+import { StorageService } from "../storage/storage.service";
 
 // Cada etiqueta do funil move o lead para a coluna correspondente do Kanban.
 const ETIQUETA_STATUS: Record<string, LeadStatus> = {
@@ -31,7 +32,8 @@ export class ConversationsService {
     private readonly leadsRepo: Repository<Lead>,
     private readonly users: UsersService,
     private readonly leads: LeadsService,
-    private readonly appointments: AppointmentsService
+    private readonly appointments: AppointmentsService,
+    private readonly storage: StorageService
   ) {}
 
   /** Lista conversas respeitando a hierarquia (cada gestor vê apenas as da sua equipe). */
@@ -206,9 +208,31 @@ export class ConversationsService {
     conversationId: string,
     content: string,
     direction: MessageDirection,
-    isAI = false
+    isAI = false,
+    media?: { mediaType?: string; mediaMime?: string; base64?: string }
   ): Promise<Message> {
-    const msg = this.msgRepo.create({ conversationId, content, direction, isAI });
+    // Guarda a mídia (imagem/áudio/etc.): R2 quando configurado, senão data URI no banco.
+    let mediaKey: string | undefined;
+    if (media?.base64) {
+      const mime = media.mediaMime || "application/octet-stream";
+      if (this.storage.isEnabled) {
+        const ext = (mime.split("/")[1] || "bin").split(";")[0];
+        const key = `whatsapp/${conversationId}/${Date.now()}.${ext}`;
+        const stored = await this.storage.upload(key, Buffer.from(media.base64, "base64"), mime);
+        mediaKey = stored || `data:${mime};base64,${media.base64}`;
+      } else {
+        mediaKey = `data:${mime};base64,${media.base64}`;
+      }
+    }
+    const msg = this.msgRepo.create({
+      conversationId,
+      content,
+      direction,
+      isAI,
+      mediaType: media?.mediaType,
+      mediaMime: media?.mediaMime,
+      mediaKey,
+    });
     const saved = await this.msgRepo.save(msg);
 
     const conv = await this.convRepo.findOne({ where: { id: conversationId } });
@@ -224,6 +248,22 @@ export class ConversationsService {
       }
     }
     return saved;
+  }
+
+  /** Retorna o arquivo de mídia de uma mensagem (para exibir imagem/áudio no chat). */
+  async getMessageMedia(messageId: string) {
+    const msg = await this.msgRepo.findOne({ where: { id: messageId } });
+    if (!msg || !msg.mediaKey) throw new NotFoundException("Mídia não encontrada.");
+    if (msg.mediaKey.startsWith("data:")) {
+      const m = msg.mediaKey.match(/^data:(.+?);base64,(.*)$/s);
+      return {
+        buffer: Buffer.from(m ? m[2] : "", "base64"),
+        contentType: msg.mediaMime || (m ? m[1] : "application/octet-stream"),
+      };
+    }
+    const obj = await this.storage.getObject(msg.mediaKey);
+    if (!obj) throw new NotFoundException("Mídia indisponível.");
+    return { buffer: obj.buffer, contentType: msg.mediaMime || obj.contentType };
   }
 
   /** Histórico recente formatado para enviar à IA. */

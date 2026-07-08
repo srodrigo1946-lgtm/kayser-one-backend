@@ -4,10 +4,11 @@ import { Conversation } from "./conversation.entity";
 import { Message } from "./message.entity";
 import { Lead } from "../leads/lead.entity";
 import { ConversationsService } from "./conversations.service";
-import { ConversationsController } from "./conversations.controller";
+import { ConversationsController, ConversationsMediaController } from "./conversations.controller";
 import { UsersModule } from "../users/users.module";
 import { LeadsModule } from "../leads/leads.module";
 import { AppointmentsModule } from "../appointments/appointments.module";
+import { StorageModule } from "../storage/storage.module";
 
 @Module({
   imports: [
@@ -15,9 +16,10 @@ import { AppointmentsModule } from "../appointments/appointments.module";
     UsersModule,
     LeadsModule,
     AppointmentsModule,
+    StorageModule,
   ],
   providers: [ConversationsService],
-  controllers: [ConversationsController],
+  controllers: [ConversationsController, ConversationsMediaController],
   exports: [ConversationsService],
 })
 export class ConversationsModule {}

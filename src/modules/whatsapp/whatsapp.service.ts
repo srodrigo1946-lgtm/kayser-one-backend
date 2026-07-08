@@ -84,6 +84,27 @@ export class WhatsappService {
     }
   }
 
+  /** Baixa a mídia de uma mensagem (base64) via Evolution. Retorna null se falhar. */
+  async getMediaBase64(
+    instanceName: string,
+    message: any
+  ): Promise<{ base64: string; mimetype: string } | null> {
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/chat/getBase64FromMediaMessage/${instanceName}`,
+        { message },
+        { headers: this.headers }
+      );
+      const base64 = data?.base64 || data?.media?.base64;
+      const mimetype = data?.mimetype || data?.media?.mimetype || "application/octet-stream";
+      if (!base64) return null;
+      return { base64, mimetype };
+    } catch (err) {
+      this.logger.warn(`Falha ao baixar mídia: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   /** Busca nome (subject) e foto de um grupo pelo JID (@g.us). */
   async fetchGroupInfo(
     instanceName: string,

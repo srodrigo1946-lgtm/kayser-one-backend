@@ -28,7 +28,15 @@ export class WhatsappFlowService {
       if (fromMe || !text) return { ignored: true };
 
       const conv = await this.conversations.findOrCreateByPhone(remoteJid);
-      await this.conversations.addMessage(conv.id, text, "in");
+
+      // Baixa a mídia (imagem/áudio/vídeo/documento) para exibir no chat.
+      let media: { mediaType: string; mediaMime: string; base64: string } | undefined;
+      if (mediaType && mediaType !== "location" && mediaType !== "contact" && instanceName) {
+        const rawMsg = Array.isArray(payload?.data) ? payload.data[0] : payload?.data ?? payload;
+        const dl = await this.whatsapp.getMediaBase64(instanceName, rawMsg);
+        if (dl) media = { mediaType, mediaMime: dl.mimetype, base64: dl.base64 };
+      }
+      await this.conversations.addMessage(conv.id, text, "in", false, media);
 
       // Nome + foto do contato/grupo (busca a foto só quando ainda não temos).
       if (!isGroup) {
