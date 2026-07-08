@@ -40,9 +40,9 @@ export class LeadsController {
   }
 
   @Get(":id")
-  @ApiOperation({ summary: "Buscar lead por ID" })
-  findOne(@Param("id") id: string) {
-    return this.leadsService.findOne(id);
+  @ApiOperation({ summary: "Buscar lead por ID (escopo por equipe)" })
+  findOne(@Param("id") id: string, @Request() req: any) {
+    return this.leadsService.findOne(id, req.user);
   }
 
   @Get(":id/history")
@@ -58,9 +58,9 @@ export class LeadsController {
   }
 
   @Put(":id")
-  @ApiOperation({ summary: "Atualizar lead" })
-  update(@Param("id") id: string, @Body() dto: UpdateLeadDto) {
-    return this.leadsService.update(id, dto);
+  @ApiOperation({ summary: "Atualizar lead (escopo por equipe)" })
+  update(@Param("id") id: string, @Body() dto: UpdateLeadDto, @Request() req: any) {
+    return this.leadsService.update(id, dto, req.user);
   }
 
   @Put(":id/status")
@@ -74,9 +74,9 @@ export class LeadsController {
   }
 
   @Delete(":id")
-  @ApiOperation({ summary: "Remover lead" })
-  remove(@Param("id") id: string) {
-    return this.leadsService.remove(id);
+  @ApiOperation({ summary: "Remover lead (escopo por equipe)" })
+  remove(@Param("id") id: string, @Request() req: any) {
+    return this.leadsService.remove(id, req.user);
   }
 
   @Post("import/excel")

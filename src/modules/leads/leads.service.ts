@@ -74,10 +74,21 @@ export class LeadsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: User) {
     const lead = await this.leadsRepo.findOne({ where: { id }, relations: ["responsavel"] });
     if (!lead) throw new NotFoundException("Lead não encontrado.");
+    await this.assertScope(lead, user);
     return lead;
+  }
+
+  /** Garante que o usuário só acessa leads da sua equipe (Diretor acessa tudo). */
+  private async assertScope(lead: Lead, user?: User) {
+    if (!user) return; // chamada interna sem contexto de usuário
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds === null) return; // Diretor vê tudo
+    if (!lead.responsavelId || !scopeIds.includes(lead.responsavelId)) {
+      throw new ForbiddenException("Você não tem acesso a este lead.");
+    }
   }
 
   async create(dto: CreateLeadDto, user: User) {
@@ -95,14 +106,21 @@ export class LeadsService {
     return saved;
   }
 
-  async update(id: string, dto: UpdateLeadDto) {
-    const lead = await this.findOne(id);
+  async update(id: string, dto: UpdateLeadDto, user?: User) {
+    const lead = await this.findOne(id, user);
+    // Reatribuição só dentro da equipe do usuário.
+    if (dto.responsavelId && user) {
+      const scopeIds = await this.users.getScopeIds(user);
+      if (scopeIds !== null && !scopeIds.includes(dto.responsavelId)) {
+        throw new ForbiddenException("Você só pode atribuir o lead a alguém da sua equipe.");
+      }
+    }
     Object.assign(lead, dto);
     return this.leadsRepo.save(lead);
   }
 
   async updateStatus(id: string, status: string, order?: number, user?: User) {
-    const lead = await this.findOne(id);
+    const lead = await this.findOne(id, user);
     const fromStatus = lead.status;
     lead.status = status as LeadStatus;
     if (order !== undefined) lead.kanbanOrder = order;
@@ -120,8 +138,8 @@ export class LeadsService {
     return saved;
   }
 
-  async remove(id: string) {
-    const lead = await this.findOne(id);
+  async remove(id: string, user?: User) {
+    const lead = await this.findOne(id, user);
     await this.leadsRepo.remove(lead);
     return { message: "Lead removido." };
   }
