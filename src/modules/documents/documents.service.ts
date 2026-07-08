@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { randomBytes } from "crypto";
+import { randomInt } from "crypto";
 import { DocumentRequest } from "./document-request.entity";
 import { Document } from "./document.entity";
 import { StorageService } from "../storage/storage.service";
@@ -35,6 +35,14 @@ function buildChecklist(req: DocumentRequest): ChecklistItem[] {
   return items;
 }
 
+function shortToken(len = 8) {
+  // Alfabeto sem caracteres ambíguos (0/O/1/l/i).
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  let t = "";
+  for (let i = 0; i < len; i++) t += alphabet[randomInt(alphabet.length)];
+  return t;
+}
+
 function slug(s: string) {
   return (
     (s || "")
@@ -56,7 +64,13 @@ export class DocumentsService {
   ) {}
 
   async createRequest(data: Partial<DocumentRequest>, userId?: string) {
-    const token = randomBytes(16).toString("hex");
+    // Token curto e amigável (sem caracteres ambíguos), único.
+    let token = shortToken();
+    for (let i = 0; i < 5; i++) {
+      const exists = await this.reqRepo.findOne({ where: { token } });
+      if (!exists) break;
+      token = shortToken();
+    }
     const req = this.reqRepo.create({ ...data, token, createdById: userId });
     return this.reqRepo.save(req);
   }
