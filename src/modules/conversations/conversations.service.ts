@@ -158,9 +158,14 @@ export class ConversationsService {
     const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
     this.stripAssigned(conv);
-    const messages = await this.msgRepo.find({
+    const rows = await this.msgRepo.find({
       where: { conversationId },
       order: { createdAt: "ASC" },
+    });
+    // Não envia o mediaKey (pode ser um data URI enorme); expõe só se há mídia.
+    const messages = rows.map((m) => {
+      const { mediaKey, ...rest } = m;
+      return { ...rest, hasMedia: !!mediaKey };
     });
     // Marca como lida
     if (conv.unreadCount > 0) {
