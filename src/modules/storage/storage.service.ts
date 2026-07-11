@@ -110,6 +110,22 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Lista as chaves dos objetos sob um prefixo. Vazio se desativado/erro. */
+  async list(prefix: string): Promise<string[]> {
+    if (!this.client) return [];
+    try {
+      const keys: string[] = [];
+      const stream = this.client.listObjectsV2(this.bucket, prefix, true);
+      for await (const obj of stream as AsyncIterable<{ name?: string }>) {
+        if (obj?.name) keys.push(obj.name);
+      }
+      return keys;
+    } catch (err) {
+      this.logger.warn(`Falha ao listar objetos: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
   /** Remove um objeto do bucket. Não lança se falhar (apenas registra). */
   async remove(key: string): Promise<boolean> {
     if (!this.client) return false;

@@ -55,6 +55,7 @@ export class BackupService {
       const stored = await this.storage.upload(key, buffer, "application/octet-stream");
       if (!stored) return { ok: false, reason: "Falha ao enviar o backup para o R2." };
       this.logger.log(`Backup salvo no R2: ${key} (${buffer.length} bytes)`);
+      await this.pruneOldBackups().catch(() => {});
       return { ok: true, key, size: buffer.length };
     } catch (err) {
       const reason = ((err as any)?.stderr || (err as Error)?.message || String(err)).toString().slice(0, 500);
@@ -63,5 +64,13 @@ export class BackupService {
     } finally {
       await unlink(tmp).catch(() => {});
     }
+  }
+
+  /** Mantém apenas os N backups mais recentes no R2 (nomes com timestamp ordenam sozinhos). */
+  private async pruneOldBackups(keep = 14) {
+    const keys = (await this.storage.list("backups/")).filter((k) => k.endsWith(".dump")).sort();
+    const toDelete = keys.slice(0, Math.max(0, keys.length - keep));
+    for (const k of toDelete) await this.storage.remove(k);
+    if (toDelete.length) this.logger.log(`Backups antigos removidos: ${toDelete.length}`);
   }
 }
