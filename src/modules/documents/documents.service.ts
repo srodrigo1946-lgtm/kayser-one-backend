@@ -59,6 +59,21 @@ function folderName(req: DocumentRequest): string {
   return [name, phone].filter(Boolean).join("_") || req.token || req.id;
 }
 
+/** Rótulo legível do tipo de documento, usado no nome do arquivo (fácil de identificar). */
+const TIPO_LABELS: Record<string, string> = {
+  rg_cnh: "RG-ou-CNH",
+  comprovante_residencia: "Comprovante-de-residencia",
+  contracheque: "Contracheque",
+  extrato: "Extrato-bancario",
+  ir: "Imposto-de-renda",
+  certidao_nascimento: "Certidao-de-nascimento",
+  certidao_casamento: "Certidao-de-casamento",
+};
+
+function tipoLabel(tipo: string): string {
+  return TIPO_LABELS[tipo] || slug(tipo);
+}
+
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -104,7 +119,7 @@ export class DocumentsService {
 
     const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `${slug(req.clientName)}_${(req.clientPhone || "").replace(/\D/g, "")}_${date}_${tipo}.${ext}`;
+    const filename = `${slug(req.clientName)}_${(req.clientPhone || "").replace(/\D/g, "")}_${date}_${tipoLabel(tipo)}.${ext}`;
 
     let fileKey: string;
     if (this.storage.isEnabled) {
