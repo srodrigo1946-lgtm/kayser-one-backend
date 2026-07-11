@@ -76,9 +76,11 @@ export class DocumentsController {
     res.send(f.buffer);
   }
 
-  // ---------------- Organização do R2 (temporariamente pública p/ rodar) ----------------
+  // ---------------- Organização do R2 (autenticada) ----------------
 
   @Post("documents/migrate-r2")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Organizar documentos no R2 em pastas amigáveis (idempotente)" })
   migrateR2() {
     return this.service.organizeR2();
