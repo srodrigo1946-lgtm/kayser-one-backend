@@ -175,11 +175,22 @@ export class ConversationsService {
     return { conversation: conv, messages };
   }
 
-  /** Encontra (ou cria) a conversa pelo número remoto, vinculando a um lead quando possível. */
-  async findOrCreateByPhone(remoteJid: string): Promise<Conversation> {
+  /**
+   * Encontra (ou cria) a conversa pelo número remoto, vinculando a um lead quando possível.
+   * `receivingUserId` é o dono da instância que recebeu (cada cargo tem o seu WhatsApp):
+   * quando não há responsável de lead, a conversa nasce atribuída a ele.
+   */
+  async findOrCreateByPhone(remoteJid: string, receivingUserId?: string): Promise<Conversation> {
     const phone = remoteJid.replace(/\D/g, "");
     let conv = await this.convRepo.findOne({ where: { remoteJid: phone }, relations: ["lead"] });
-    if (conv) return conv;
+    if (conv) {
+      // Se ainda não tem dono e sabemos quem recebeu, assume o dono do número.
+      if (!conv.assignedToId && receivingUserId) {
+        conv.assignedToId = receivingUserId;
+        await this.convRepo.save(conv);
+      }
+      return conv;
+    }
 
     // Tenta vincular a um lead existente pelo telefone/whatsapp
     const lead = await this.leadsRepo
@@ -188,8 +199,13 @@ export class ConversationsService {
       .orWhere("regexp_replace(coalesce(lead.whatsapp,''), '[^0-9]', '', 'g') LIKE :p", { p: `%${phone.slice(-8)}%` })
       .getOne();
 
-    // Nasce atribuída ao responsável do lead (quando há), definindo a visibilidade por equipe.
-    conv = this.convRepo.create({ remoteJid: phone, leadId: lead?.id, assignedToId: lead?.responsavelId });
+    // Nasce atribuída ao responsável do lead; sem lead, ao dono do número que recebeu.
+    // Isso define a visibilidade por equipe (cada cargo vê as conversas do seu WhatsApp).
+    conv = this.convRepo.create({
+      remoteJid: phone,
+      leadId: lead?.id,
+      assignedToId: lead?.responsavelId ?? receivingUserId,
+    });
     return this.convRepo.save(conv);
   }
 

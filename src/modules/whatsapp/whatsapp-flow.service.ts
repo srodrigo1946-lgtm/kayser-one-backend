@@ -27,7 +27,11 @@ export class WhatsappFlowService {
       const { remoteJid, remoteJidFull, isGroup, text, mediaType, fromMe, pushName, instanceName } = parsed;
       if (fromMe || !text) return { ignored: true };
 
-      const conv = await this.conversations.findOrCreateByPhone(remoteJid);
+      // A instância se chama "user_<id>": é o dono do número que recebeu a mensagem.
+      const receivingUserId = instanceName?.startsWith("user_")
+        ? instanceName.slice("user_".length)
+        : undefined;
+      const conv = await this.conversations.findOrCreateByPhone(remoteJid, receivingUserId);
 
       // Baixa a mídia (imagem/áudio/vídeo/documento) para exibir no chat.
       let media: { mediaType: string; mediaMime: string; base64: string } | undefined;
