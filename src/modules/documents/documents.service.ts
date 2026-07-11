@@ -150,6 +150,39 @@ export class DocumentsService {
     return { buffer: obj.buffer, contentType: obj.contentType, filename: doc.filename };
   }
 
+  /**
+   * Migra para o R2 os documentos que foram salvos como data URI no banco
+   * (uploads feitos antes do R2 estar configurado). Idempotente: só mexe nos
+   * que ainda estão como "data:" e não apaga nada.
+   */
+  async migrateDataUrisToR2() {
+    if (!this.storage.isEnabled) {
+      return { ok: false, reason: "R2 não está configurado.", migrated: 0, failed: 0 };
+    }
+    const docs = await this.docRepo.find();
+    let migrated = 0;
+    let failed = 0;
+    for (const doc of docs) {
+      if (!doc.fileKey?.startsWith("data:")) continue;
+      const m = doc.fileKey.match(/^data:(.+?);base64,(.*)$/s);
+      if (!m) {
+        failed++;
+        continue;
+      }
+      const buffer = Buffer.from(m[2], "base64");
+      const key = `docs/${doc.requestId}/${Date.now()}-${doc.filename}`;
+      const stored = await this.storage.upload(key, buffer, doc.contentType || m[1]);
+      if (stored) {
+        doc.fileKey = stored;
+        await this.docRepo.save(doc);
+        migrated++;
+      } else {
+        failed++;
+      }
+    }
+    return { ok: true, migrated, failed };
+  }
+
   /** Resumo das solicitações de uma conversa (progresso recebidos/total). */
   async findByConversation(conversationId: string) {
     const reqs = await this.reqRepo.find({

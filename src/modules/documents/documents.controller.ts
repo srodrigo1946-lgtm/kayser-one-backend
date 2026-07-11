@@ -76,6 +76,14 @@ export class DocumentsController {
     res.send(f.buffer);
   }
 
+  // ---------------- Migração única (temporária) ----------------
+
+  @Post("documents/migrate-r2")
+  @ApiOperation({ summary: "Migrar documentos antigos do banco para o R2 (uso único)" })
+  migrateR2() {
+    return this.service.migrateDataUrisToR2();
+  }
+
   // ---------------- Público (cliente, sem login) ----------------
 
   @Get("docs/:token")
