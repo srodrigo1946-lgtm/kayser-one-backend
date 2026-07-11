@@ -44,7 +44,7 @@ export class WhatsappController {
     @Body() body: { to: string; text: string },
     @Request() req: any
   ) {
-    return this.flowService.sendManual(`user_${req.user.id}`, body.to, body.text);
+    return this.flowService.sendManual(req.user.id, body.to, body.text);
   }
 
   @Delete("instance")

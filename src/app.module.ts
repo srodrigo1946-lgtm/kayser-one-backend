@@ -19,6 +19,7 @@ import { GoalsModule } from "./modules/goals/goals.module";
 import { PropertiesModule } from "./modules/properties/properties.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { BackupModule } from "./modules/backup/backup.module";
+import { LeadQueueModule } from "./modules/lead-queue/lead-queue.module";
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { BackupModule } from "./modules/backup/backup.module";
     PropertiesModule,
     DocumentsModule,
     BackupModule,
+    LeadQueueModule,
   ],
 })
 export class AppModule {}

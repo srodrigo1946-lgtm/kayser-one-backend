@@ -3,6 +3,7 @@ import { ConversationsService } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
 import { WhatsappService } from "./whatsapp.service";
+import { LeadQueueService } from "../lead-queue/lead-queue.service";
 
 @Injectable()
 export class WhatsappFlowService {
@@ -12,7 +13,8 @@ export class WhatsappFlowService {
     private readonly conversations: ConversationsService,
     private readonly settings: SettingsService,
     private readonly ai: AiService,
-    private readonly whatsapp: WhatsappService
+    private readonly whatsapp: WhatsappService,
+    private readonly leadQueue: LeadQueueService
   ) {}
 
   /**
@@ -24,7 +26,7 @@ export class WhatsappFlowService {
       const parsed = this.parseEvolutionMessage(payload);
       if (!parsed) return { ignored: true };
 
-      const { remoteJid, remoteJidFull, isGroup, text, mediaType, fromMe, pushName, instanceName } = parsed;
+      const { remoteJid, remoteJidFull, isGroup, text, mediaType, fromMe, pushName, instanceName, ad } = parsed;
       if (fromMe || !text) return { ignored: true };
 
       // A instância se chama "user_<id>": é o dono do número que recebeu a mensagem.
@@ -54,6 +56,17 @@ export class WhatsappFlowService {
         // Grupo: usa o nome (subject) e a foto do grupo.
         const info = await this.whatsapp.fetchGroupInfo(instanceName, remoteJidFull);
         await this.conversations.setContactInfo(conv.id, info.name, info.avatar);
+      }
+
+      // Anúncio "Clique para WhatsApp": marca origem/campanha e, se a fila do Diretor
+      // estiver ligada, distribui automaticamente em rodízio entre os cargos.
+      if (ad) {
+        await this.conversations.setAdOrigin(conv.id, ad.platform, ad.campaign, conv.leadId);
+        conv.fromAd = true;
+        const queue = await this.leadQueue.getSettings();
+        if (queue.enabled) {
+          await this.leadQueue.enqueueAdLead({ conversationId: conv.id, leadId: conv.leadId });
+        }
       }
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
@@ -94,11 +107,19 @@ export class WhatsappFlowService {
     }
   }
 
-  /** Envio manual (corretor) que também registra na conversa. */
-  async sendManual(instanceName: string, remoteJid: string, text: string) {
-    const conv = await this.conversations.findOrCreateByPhone(remoteJid);
+  /**
+   * Envio manual (cargo) que também registra na conversa. Responde SEMPRE pelo número
+   * dono da conversa (`instanceOwnerId`) — importante quando é um lead da fila no número
+   * central. Se for lead de anúncio, a resposta do cargo atribuído marca como atendido.
+   */
+  async sendManual(senderUserId: string, remoteJid: string, text: string) {
+    const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
+    const instanceOwner = conv.instanceOwnerId || senderUserId;
     await this.conversations.addMessage(conv.id, text, "out", false);
-    return this.whatsapp.sendText(instanceName, remoteJid, text);
+    if (conv.fromAd) {
+      await this.leadQueue.markAttended(conv.id, senderUserId).catch(() => {});
+    }
+    return this.whatsapp.sendText(`user_${instanceOwner}`, remoteJid, text);
   }
 
   /** Extrai os campos relevantes do payload da Evolution API (evento messages.upsert). */
@@ -111,6 +132,7 @@ export class WhatsappFlowService {
     fromMe: boolean;
     pushName: string;
     instanceName?: string;
+    ad?: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string };
   } | null {
     const data = payload?.data ?? payload;
     const instanceName = payload?.instance || payload?.instanceName;
@@ -124,6 +146,20 @@ export class WhatsappFlowService {
     const message = msg.message ?? {};
     let text = message.conversation || message.extendedTextMessage?.text || "";
     let mediaType: string | null = null;
+
+    // Anúncio "Clique para WhatsApp": o Meta manda o referral no contextInfo.externalAdReply.
+    // O contextInfo pode vir dentro do extendedTextMessage, na própria message, ou no msg.
+    const ctx =
+      message.extendedTextMessage?.contextInfo ||
+      (message as any).contextInfo ||
+      (msg as any).contextInfo;
+    const ext = ctx?.externalAdReply;
+    let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string } | undefined;
+    if (ext) {
+      const app = String(ext.sourceApp || ext.sourceType || "").toLowerCase();
+      const platform = app.includes("insta") ? "instagram" : app.includes("tiktok") ? "tiktok" : "facebook";
+      ad = { platform, campaign: ext.title || ext.sourceId || undefined };
+    }
 
     // Mídia: quando não há texto, mostra um marcador para o atendente saber o que chegou.
     if (!text) {
@@ -160,6 +196,7 @@ export class WhatsappFlowService {
       fromMe: !!key.fromMe,
       pushName: msg.pushName || "",
       instanceName,
+      ad,
     };
   }
 }

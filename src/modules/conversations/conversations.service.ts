@@ -194,11 +194,18 @@ export class ConversationsService {
     const phone = remoteJid.replace(/\D/g, "");
     let conv = await this.convRepo.findOne({ where: { remoteJid: phone }, relations: ["lead"] });
     if (conv) {
+      let changed = false;
       // Se ainda não tem dono e sabemos quem recebeu, assume o dono do número.
       if (!conv.assignedToId && receivingUserId) {
         conv.assignedToId = receivingUserId;
-        await this.convRepo.save(conv);
+        changed = true;
       }
+      // Registra qual número/instância recebe esta conversa (para responder pelo certo).
+      if (!conv.instanceOwnerId && receivingUserId) {
+        conv.instanceOwnerId = receivingUserId;
+        changed = true;
+      }
+      if (changed) await this.convRepo.save(conv);
       return conv;
     }
 
@@ -215,8 +222,15 @@ export class ConversationsService {
       remoteJid: phone,
       leadId: lead?.id,
       assignedToId: lead?.responsavelId ?? receivingUserId,
+      instanceOwnerId: receivingUserId,
     });
     return this.convRepo.save(conv);
+  }
+
+  /** Marca a conversa/lead como originada de anúncio (origem + campanha). */
+  async setAdOrigin(conversationId: string, platform: string, campaign?: string, leadId?: string) {
+    await this.convRepo.update(conversationId, { fromAd: true });
+    if (leadId) await this.leadsRepo.update(leadId, { origem: platform, campanha: campaign ?? null });
   }
 
   /** Atualiza nome (pushName) e/ou foto de perfil do contato, se mudaram. */

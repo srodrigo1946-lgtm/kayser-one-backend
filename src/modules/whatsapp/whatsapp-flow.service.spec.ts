@@ -5,7 +5,7 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
 
   beforeEach(() => {
     // Dependências não são usadas no parsing — mocks vazios bastam.
-    service = new WhatsappFlowService({} as any, {} as any, {} as any, {} as any);
+    service = new WhatsappFlowService({} as any, {} as any, {} as any, {} as any, {} as any);
   });
 
   const parse = (payload: any) => (service as any).parseEvolutionMessage(payload);
@@ -50,5 +50,21 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
       data: [{ key: { remoteJid: "5511@s.whatsapp.net", fromMe: false }, message: { conversation: "array" } }],
     });
     expect(r.text).toBe("array");
+  });
+
+  it("extrai origem/campanha do anúncio (referral do Meta)", () => {
+    const r = parse({
+      instance: "user_diretor",
+      data: {
+        key: { remoteJid: "5521999999999@s.whatsapp.net", fromMe: false },
+        pushName: "Cliente",
+        message: {
+          conversation: "Oi, vim do anúncio",
+          contextInfo: { externalAdReply: { sourceType: "ad", sourceApp: "instagram", title: "Campanha Verão" } },
+        },
+      },
+    });
+    expect(r.ad?.platform).toBe("instagram");
+    expect(r.ad?.campaign).toBe("Campanha Verão");
   });
 });

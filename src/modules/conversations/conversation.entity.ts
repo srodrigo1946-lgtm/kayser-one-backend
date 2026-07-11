@@ -60,6 +60,15 @@ export class Conversation {
   @Column({ type: "simple-array", nullable: true })
   etiquetas: string[];
 
+  // Conversa nascida de um anúncio "Clique para WhatsApp" (Facebook/Instagram/TikTok).
+  @Column({ default: false })
+  fromAd: boolean;
+
+  // Dono do NÚMERO/instância que recebe esta conversa (user_<id>). O cargo responde
+  // sempre por este número — importante quando a conversa da fila cai no número central.
+  @Column({ nullable: true })
+  instanceOwnerId: string;
+
   @OneToMany(() => Message, (m) => m.conversation)
   messages: Message[];
 
