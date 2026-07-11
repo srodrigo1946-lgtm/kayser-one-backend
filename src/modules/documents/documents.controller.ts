@@ -76,10 +76,12 @@ export class DocumentsController {
     res.send(f.buffer);
   }
 
-  // ---------------- Migração única (temporária) ----------------
+  // ---------------- Migração para o R2 (autenticada) ----------------
 
   @Post("documents/migrate-r2")
-  @ApiOperation({ summary: "Migrar documentos antigos do banco para o R2 (uso único)" })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "Migrar documentos antigos do banco para o R2 (idempotente)" })
   migrateR2() {
     return this.service.migrateDataUrisToR2();
   }
