@@ -19,8 +19,8 @@ export class ConversationsController {
 
   @Get(":id/messages")
   @ApiOperation({ summary: "Mensagens de uma conversa" })
-  messages(@Param("id") id: string) {
-    return this.conversationsService.getMessages(id);
+  messages(@Param("id") id: string, @Request() req: any) {
+    return this.conversationsService.getMessages(id, req.user);
   }
 
   @Patch(":id/assign")
