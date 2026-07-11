@@ -56,6 +56,10 @@ export class BackupService {
       if (!stored) return { ok: false, reason: "Falha ao enviar o backup para o R2." };
       this.logger.log(`Backup salvo no R2: ${key} (${buffer.length} bytes)`);
       return { ok: true, key, size: buffer.length };
+    } catch (err) {
+      const reason = ((err as any)?.stderr || (err as Error)?.message || String(err)).toString().slice(0, 500);
+      this.logger.error(`Backup falhou: ${reason}`);
+      return { ok: false, reason };
     } finally {
       await unlink(tmp).catch(() => {});
     }
