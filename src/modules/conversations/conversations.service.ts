@@ -46,15 +46,10 @@ export class ConversationsService {
       .addSelect(["atendente.id", "atendente.name", "atendente.role", "atendente.avatar"])
       .orderBy("c.lastMessageAt", "DESC");
 
-    // WhatsApp é privado de cada cargo. Por isso o Diretor NÃO enxerga as
-    // conversas dos cargos — vê apenas as suas próprias (o resto do sistema
-    // ele continua vendo tudo). Demais cargos: as conversas da sua equipe.
-    const scopeIds = await this.users.getScopeIds(user);
-    if (scopeIds === null) {
-      qb.where("(c.assignedToId = :uid OR lead.responsavelId = :uid)", { uid: user.id });
-    } else {
-      qb.where("(c.assignedToId IN (:...ids) OR lead.responsavelId IN (:...ids))", { ids: scopeIds });
-    }
+    // WhatsApp é 100% individual: cada usuário — inclusive Diretor, superintendente
+    // e gerentes — vê SOMENTE as suas próprias conversas. Não há hierarquia aqui
+    // (o resto do sistema, sim; só as conversas de WhatsApp que são privadas).
+    qb.where("(c.assignedToId = :uid OR lead.responsavelId = :uid)", { uid: user.id });
     return qb.getMany();
   }
 
@@ -158,22 +153,20 @@ export class ConversationsService {
   }
 
   /**
-   * Garante que o usuário pode acessar a conversa. WhatsApp é privado de cada
-   * cargo: o Diretor só acessa as próprias; os demais, as da sua equipe.
+   * Garante que o usuário pode acessar a conversa. WhatsApp é individual:
+   * só o próprio dono (ou responsável do lead) acessa — nem gerente, nem Diretor.
    */
-  private async assertCanAccess(conv: Conversation, user: User) {
-    const scopeIds = await this.users.getScopeIds(user);
-    const allowed = scopeIds === null ? [user.id] : scopeIds; // Diretor: só as suas
+  private assertCanAccess(conv: Conversation, user: User) {
     const ownerId = conv.assignedToId ?? undefined;
     const leadRespId = (conv.lead as Lead | undefined)?.responsavelId ?? undefined;
-    const ok = (ownerId && allowed.includes(ownerId)) || (leadRespId && allowed.includes(leadRespId));
+    const ok = ownerId === user.id || leadRespId === user.id;
     if (!ok) throw new ForbiddenException("Você não tem acesso a esta conversa.");
   }
 
   async getMessages(conversationId: string, user: User) {
     const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
-    await this.assertCanAccess(conv, user);
+    this.assertCanAccess(conv, user);
     this.stripAssigned(conv);
     const rows = await this.msgRepo.find({
       where: { conversationId },
