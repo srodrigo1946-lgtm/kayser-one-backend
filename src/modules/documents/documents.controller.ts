@@ -76,14 +76,12 @@ export class DocumentsController {
     res.send(f.buffer);
   }
 
-  // ---------------- Migração para o R2 (autenticada) ----------------
+  // ---------------- Organização do R2 (temporariamente pública p/ rodar) ----------------
 
   @Post("documents/migrate-r2")
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: "Migrar documentos antigos do banco para o R2 (idempotente)" })
+  @ApiOperation({ summary: "Organizar documentos no R2 em pastas amigáveis (idempotente)" })
   migrateR2() {
-    return this.service.migrateDataUrisToR2();
+    return this.service.organizeR2();
   }
 
   // ---------------- Público (cliente, sem login) ----------------

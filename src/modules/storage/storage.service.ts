@@ -109,4 +109,16 @@ export class StorageService implements OnModuleInit {
       return null;
     }
   }
+
+  /** Remove um objeto do bucket. Não lança se falhar (apenas registra). */
+  async remove(key: string): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      await this.client.removeObject(this.bucket, key);
+      return true;
+    } catch (err) {
+      this.logger.warn(`Falha ao remover objeto: ${(err as Error).message}`);
+      return false;
+    }
+  }
 }

@@ -52,6 +52,13 @@ function slug(s: string) {
   );
 }
 
+/** Nome de pasta amigável no R2: NomeDoCliente_Telefone (fácil de achar). */
+function folderName(req: DocumentRequest): string {
+  const name = slug(req.clientName);
+  const phone = (req.clientPhone || "").replace(/\D/g, "");
+  return [name, phone].filter(Boolean).join("_") || req.token || req.id;
+}
+
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -101,7 +108,7 @@ export class DocumentsService {
 
     let fileKey: string;
     if (this.storage.isEnabled) {
-      const key = `docs/${req.id}/${Date.now()}-${filename}`;
+      const key = `docs/${folderName(req)}/${Date.now()}-${filename}`;
       const stored = await this.storage.upload(key, file.buffer, file.mimetype);
       fileKey = stored || `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     } else {
@@ -151,36 +158,69 @@ export class DocumentsService {
   }
 
   /**
-   * Migra para o R2 os documentos que foram salvos como data URI no banco
-   * (uploads feitos antes do R2 estar configurado). Idempotente: só mexe nos
-   * que ainda estão como "data:" e não apaga nada.
+   * Organiza os documentos no R2 em pastas amigáveis (NomeCliente_Telefone):
+   * - os que ainda estão como data URI no banco → sobem pro R2;
+   * - os que já estão no R2 mas em pasta antiga (ID) → são copiados pra pasta
+   *   amigável e a cópia antiga é apagada.
+   * Idempotente: quem já está na pasta certa é ignorado; nada é perdido.
    */
-  async migrateDataUrisToR2() {
+  async organizeR2() {
     if (!this.storage.isEnabled) {
-      return { ok: false, reason: "R2 não está configurado.", migrated: 0, failed: 0 };
+      return { ok: false, reason: "R2 não está configurado.", migrated: 0, moved: 0, failed: 0 };
     }
     const docs = await this.docRepo.find();
+    const reqs = await this.reqRepo.find();
+    const reqMap = new Map(reqs.map((r) => [r.id, r]));
     let migrated = 0;
+    let moved = 0;
     let failed = 0;
+
     for (const doc of docs) {
-      if (!doc.fileKey?.startsWith("data:")) continue;
-      const m = doc.fileKey.match(/^data:(.+?);base64,(.*)$/s);
-      if (!m) {
-        failed++;
+      const req = reqMap.get(doc.requestId);
+      if (!req || !doc.fileKey) continue;
+      const desiredPrefix = `docs/${folderName(req)}/`;
+
+      // 1) Ainda no banco (data URI) → sobe pro R2 na pasta amigável.
+      if (doc.fileKey.startsWith("data:")) {
+        const m = doc.fileKey.match(/^data:(.+?);base64,(.*)$/s);
+        if (!m) {
+          failed++;
+          continue;
+        }
+        const buffer = Buffer.from(m[2], "base64");
+        const key = `${desiredPrefix}${Date.now()}-${doc.filename}`;
+        const stored = await this.storage.upload(key, buffer, doc.contentType || m[1]);
+        if (stored) {
+          doc.fileKey = stored;
+          await this.docRepo.save(doc);
+          migrated++;
+        } else {
+          failed++;
+        }
         continue;
       }
-      const buffer = Buffer.from(m[2], "base64");
-      const key = `docs/${doc.requestId}/${Date.now()}-${doc.filename}`;
-      const stored = await this.storage.upload(key, buffer, doc.contentType || m[1]);
-      if (stored) {
+
+      // 2) Já no R2 mas em pasta antiga → copia pra amigável e apaga a antiga.
+      if (!doc.fileKey.startsWith(desiredPrefix)) {
+        const obj = await this.storage.getObject(doc.fileKey);
+        if (!obj) {
+          failed++;
+          continue;
+        }
+        const newKey = `${desiredPrefix}${Date.now()}-${doc.filename}`;
+        const stored = await this.storage.upload(newKey, obj.buffer, obj.contentType);
+        if (!stored) {
+          failed++;
+          continue;
+        }
+        const oldKey = doc.fileKey;
         doc.fileKey = stored;
         await this.docRepo.save(doc);
-        migrated++;
-      } else {
-        failed++;
+        await this.storage.remove(oldKey);
+        moved++;
       }
     }
-    return { ok: true, migrated, failed };
+    return { ok: true, migrated, moved, failed };
   }
 
   /** Resumo das solicitações de uma conversa (progresso recebidos/total). */
