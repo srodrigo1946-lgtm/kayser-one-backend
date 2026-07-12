@@ -303,9 +303,17 @@ export class ConversationsService {
   }
 
   /** Retorna o arquivo de mídia de uma mensagem (para exibir imagem/áudio no chat). */
-  async getMessageMedia(messageId: string) {
+  async getMessageMedia(messageId: string, user: User) {
     const msg = await this.msgRepo.findOne({ where: { id: messageId } });
     if (!msg || !msg.mediaKey) throw new NotFoundException("Mídia não encontrada.");
+    // Escopo por equipe: só quem atende a conversa vê a mídia dela (protege PII do cliente).
+    const scope = await this.users.getScopeIds(user);
+    if (scope !== null) {
+      const conv = await this.convRepo.findOne({ where: { id: msg.conversationId }, select: ["id", "assignedToId"] });
+      if (!conv || !(conv.assignedToId && scope.includes(conv.assignedToId))) {
+        throw new ForbiddenException("Você não tem acesso a esta mídia.");
+      }
+    }
     if (msg.mediaKey.startsWith("data:")) {
       const m = msg.mediaKey.match(/^data:(.+?);base64,(.*)$/s);
       return {

@@ -7,6 +7,7 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { User } from "../users/user.entity";
+import { resolveJwtSecret } from "./jwt-secret";
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { User } from "../users/user.entity";
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get("JWT_SECRET", "kayser-one-secret"),
+        secret: resolveJwtSecret(config),
         signOptions: { expiresIn: config.get("JWT_EXPIRES_IN", "7d") },
       }),
     }),

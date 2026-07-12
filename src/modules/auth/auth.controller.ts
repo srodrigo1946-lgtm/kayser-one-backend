@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Get, Query, UseGuards, Request, Put } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
@@ -12,12 +13,15 @@ import { UserRole } from "../users/user.entity";
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // Rate-limit rígido no login e no autocadastro: 10 tentativas por minuto por IP.
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post("login")
   @ApiOperation({ summary: "Login com e-mail e senha" })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post("register")
   @ApiOperation({ summary: "Autocadastro escolhendo cargo e gestor do nível acima" })
   register(@Body() dto: RegisterDto) {

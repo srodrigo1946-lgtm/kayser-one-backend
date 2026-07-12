@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { randomInt } from "crypto";
 import { DocumentRequest } from "./document-request.entity";
 import { Document } from "./document.entity";
 import { StorageService } from "../storage/storage.service";
+import { UsersService } from "../users/users.service";
+import { User } from "../users/user.entity";
+import { Lead } from "../leads/lead.entity";
+import { Conversation } from "../conversations/conversation.entity";
 
 export interface ChecklistItem {
   key: string;
@@ -81,8 +85,34 @@ export class DocumentsService {
     private readonly reqRepo: Repository<DocumentRequest>,
     @InjectRepository(Document)
     private readonly docRepo: Repository<Document>,
+    @InjectRepository(Lead)
+    private readonly leadsRepo: Repository<Lead>,
+    @InjectRepository(Conversation)
+    private readonly convRepo: Repository<Conversation>,
+    private readonly users: UsersService,
     private readonly storage: StorageService
   ) {}
+
+  /**
+   * Garante que o usuário tem acesso aos documentos desta solicitação (escopo por equipe):
+   * Diretor vê tudo; os demais só se o CRIADOR do link, o dono do LEAD ou o atendente da
+   * CONVERSA estiver dentro do seu escopo (ele + subordinados). Protege PII de clientes.
+   */
+  private async assertRequestAccess(req: DocumentRequest, user: User) {
+    const scope = await this.users.getScopeIds(user);
+    if (scope === null) return; // Diretor
+    const owners: (string | null | undefined)[] = [req.createdById];
+    if (req.leadId) {
+      const lead = await this.leadsRepo.findOne({ where: { id: req.leadId }, select: ["id", "responsavelId"] });
+      owners.push(lead?.responsavelId);
+    }
+    if (req.conversationId) {
+      const conv = await this.convRepo.findOne({ where: { id: req.conversationId }, select: ["id", "assignedToId"] });
+      owners.push(conv?.assignedToId);
+    }
+    if (owners.some((o) => o && scope.includes(o))) return;
+    throw new ForbiddenException("Você não tem acesso a estes documentos.");
+  }
 
   async createRequest(data: Partial<DocumentRequest>, userId?: string) {
     // Token curto e amigável (sem caracteres ambíguos), único.
@@ -136,9 +166,10 @@ export class DocumentsService {
   }
 
   /** Lista os arquivos de uma solicitação (para o gestor baixar). */
-  async listFiles(requestId: string) {
+  async listFiles(requestId: string, user: User) {
     const req = await this.reqRepo.findOne({ where: { id: requestId }, relations: ["documents"] });
     if (!req) throw new NotFoundException("Solicitação não encontrada.");
+    await this.assertRequestAccess(req, user);
     return {
       request: {
         id: req.id,
@@ -156,9 +187,12 @@ export class DocumentsService {
     };
   }
 
-  async getFile(docId: string) {
+  async getFile(docId: string, user: User) {
     const doc = await this.docRepo.findOne({ where: { id: docId } });
     if (!doc) throw new NotFoundException("Documento não encontrado.");
+    const req = await this.reqRepo.findOne({ where: { id: doc.requestId } });
+    if (!req) throw new NotFoundException("Solicitação não encontrada.");
+    await this.assertRequestAccess(req, user);
     if (doc.fileKey.startsWith("data:")) {
       const m = doc.fileKey.match(/^data:(.+?);base64,(.*)$/s);
       return {
@@ -239,7 +273,15 @@ export class DocumentsService {
   }
 
   /** Resumo das solicitações de uma conversa (progresso recebidos/total). */
-  async findByConversation(conversationId: string) {
+  async findByConversation(conversationId: string, user: User) {
+    // Escopo por equipe: só vê os documentos de conversas que ele pode atender.
+    const scope = await this.users.getScopeIds(user);
+    if (scope !== null) {
+      const conv = await this.convRepo.findOne({ where: { id: conversationId }, select: ["id", "assignedToId"] });
+      if (!conv || !(conv.assignedToId && scope.includes(conv.assignedToId))) {
+        throw new ForbiddenException("Você não tem acesso a esta conversa.");
+      }
+    }
     const reqs = await this.reqRepo.find({
       where: { conversationId },
       relations: ["documents"],

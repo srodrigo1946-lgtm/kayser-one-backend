@@ -1,14 +1,18 @@
-import { Controller, Post, Body, HttpCode } from "@nestjs/common";
+import { Controller, Post, Body, HttpCode, UseGuards } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { SkipThrottle } from "@nestjs/throttler";
 import { WhatsappFlowService } from "./whatsapp-flow.service";
+import { WebhookAuthGuard } from "./webhook-auth.guard";
 
 /**
  * Endpoint público que recebe os eventos da Evolution API.
- * Configure o webhook da Evolution para: {BACKEND_URL}/api/v1/whatsapp/webhook
- * (sem autenticação JWT, pois é chamado por um serviço externo).
+ * Configure o webhook da Evolution para: {BACKEND_URL}/api/v1/whatsapp/webhook?token=<WHATSAPP_WEBHOOK_TOKEN>
+ * (sem JWT, pois é um serviço externo; protegido por token compartilhado via WebhookAuthGuard).
  */
 @ApiTags("WhatsApp")
 @Controller("whatsapp/webhook")
+@UseGuards(WebhookAuthGuard)
+@SkipThrottle()
 export class WhatsappWebhookController {
   constructor(private readonly flowService: WhatsappFlowService) {}
 

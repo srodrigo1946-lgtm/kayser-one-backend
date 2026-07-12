@@ -5,6 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { User } from "../../users/user.entity";
+import { resolveJwtSecret } from "../jwt-secret";
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -14,8 +15,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly usersRepo: Repository<User>
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      secretOrKey: config.get("JWT_SECRET", "kayser-one-secret"),
+      // Aceita o token no header Authorization OU na query `?token=` — este último
+      // é necessário para carregar mídia protegida dentro de <img>/<audio>.
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (req) => (typeof req?.query?.token === "string" ? req.query.token : null),
+      ]),
+      secretOrKey: resolveJwtSecret(config),
     });
   }
 

@@ -53,24 +53,24 @@ export class DocumentsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Solicitações/progresso de documentos de uma conversa" })
-  findByConversation(@Param("id") id: string) {
-    return this.service.findByConversation(id);
+  findByConversation(@Param("id") id: string, @Request() req: any) {
+    return this.service.findByConversation(id, req.user);
   }
 
   @Get("documents/request/:id/files")
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Arquivos recebidos de uma solicitação" })
-  listFiles(@Param("id") id: string) {
-    return this.service.listFiles(id);
+  listFiles(@Param("id") id: string, @Request() req: any) {
+    return this.service.listFiles(id, req.user);
   }
 
   @Get("documents/file/:docId")
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Baixar um documento" })
-  async download(@Param("docId") docId: string, @Res() res: Response) {
-    const f = await this.service.getFile(docId);
+  async download(@Param("docId") docId: string, @Res() res: Response, @Request() req: any) {
+    const f = await this.service.getFile(docId, req.user);
     res.setHeader("Content-Type", f.contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${f.filename}"`);
     res.send(f.buffer);

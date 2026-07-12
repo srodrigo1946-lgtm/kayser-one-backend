@@ -1,7 +1,9 @@
 import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ScheduleModule } from "@nestjs/schedule";
+import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
 import { LeadsModule } from "./modules/leads/leads.module";
@@ -26,6 +28,9 @@ import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
+    // Rate-limit global: 120 requisições por minuto por IP (freia força bruta/abuso).
+    // O webhook do WhatsApp usa @SkipThrottle (serviço externo, pode ter rajadas).
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
@@ -72,6 +77,9 @@ import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
     BackupModule,
     LeadQueueModule,
   ],
-  providers: [SchemaBootstrapService],
+  providers: [
+    SchemaBootstrapService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

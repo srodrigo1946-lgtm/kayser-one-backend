@@ -36,16 +36,21 @@ export class ConversationsController {
   }
 }
 
-/** Serve a mídia das mensagens (público por obscuridade do UUID — para <img>/<audio>). */
+/**
+ * Serve a mídia das mensagens. Requer JWT (via header OU `?token=` para funcionar
+ * dentro de <img>/<audio>) e valida o escopo por equipe no service.
+ */
 @ApiTags("Conversas")
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller("conversations")
 export class ConversationsMediaController {
   constructor(private readonly conversationsService: ConversationsService) {}
 
   @Get("media/:messageId")
   @ApiOperation({ summary: "Baixar/exibir a mídia de uma mensagem" })
-  async media(@Param("messageId") messageId: string, @Res() res: Response) {
-    const f = await this.conversationsService.getMessageMedia(messageId);
+  async media(@Param("messageId") messageId: string, @Res() res: Response, @Request() req: any) {
+    const f = await this.conversationsService.getMessageMedia(messageId, req.user);
     res.setHeader("Content-Type", f.contentType);
     res.setHeader("Cache-Control", "private, max-age=86400");
     res.send(f.buffer);
