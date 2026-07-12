@@ -5,6 +5,7 @@ import axios from "axios";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Lead } from "../leads/lead.entity";
+import { User } from "../users/user.entity";
 import { SettingsService } from "../settings/settings.service";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { AiProvider } from "../settings/settings.entity";
@@ -12,6 +13,13 @@ import { AiProvider } from "../settings/settings.entity";
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+/** Override de IA por usuário (cargo). Quando tem apiKey, sobrepõe a config da empresa. */
+export interface UserAiConfig {
+  provider?: string | null;
+  model?: string | null;
+  apiKey?: string | null;
 }
 
 const DEFAULT_MASTER_PROMPT = `Você é a Kayser One AI.
@@ -55,8 +63,23 @@ export class AiService {
     private readonly settingsService: SettingsService,
     private readonly knowledgeService: KnowledgeService,
     @InjectRepository(Lead)
-    private readonly leadsRepo: Repository<Lead>
+    private readonly leadsRepo: Repository<Lead>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>
   ) {}
+
+  /** Config de IA de um usuário (para override), ou undefined se ele não tem chave própria. */
+  async getUserAiConfig(userId?: string): Promise<UserAiConfig | undefined> {
+    if (!userId) return undefined;
+    const u = await this.usersRepo.findOne({ where: { id: userId } });
+    return this.userAiFrom(u);
+  }
+
+  /** Mapeia um usuário (ou o req.user) para override de IA; undefined se não tem chave própria. */
+  userAiFrom(u?: { aiProvider?: string; aiModel?: string; aiApiKey?: string } | null): UserAiConfig | undefined {
+    if (!u?.aiApiKey) return undefined;
+    return { provider: u.aiProvider, model: u.aiModel, apiKey: u.aiApiKey };
+  }
 
   /** Monta o prompt de sistema a partir das configurações + conhecimento relevante (RAG). */
   private async buildSystemPrompt(query = ""): Promise<string> {
@@ -67,29 +90,39 @@ export class AiService {
     return `${base}\n\n=== BASE DE CONHECIMENTO (use apenas estas informações) ===\n${context}`;
   }
 
-  /** Resolve provedor, chave e modelo: usa override, depois settings, depois env. */
-  private async resolveConfig(apiKeyOverride?: string) {
+  /**
+   * Resolve provedor, chave e modelo, nesta ordem:
+   * 1) chave própria do usuário (cargo) → 2) chave da empresa (Settings) → 3) env.
+   */
+  private async resolveConfig(userAi?: UserAiConfig) {
     const settings = await this.settingsService.get();
-    const provider = settings.aiProvider || AiProvider.ANTHROPIC;
-    const model = settings.aiModel || DEFAULT_MODELS[provider];
-
     const envKeyName: Record<AiProvider, string> = {
       [AiProvider.ANTHROPIC]: "ANTHROPIC_API_KEY",
       [AiProvider.OPENAI]: "OPENAI_API_KEY",
       [AiProvider.GEMINI]: "GOOGLE_AI_API_KEY",
     };
-    const apiKey = apiKeyOverride || settings.aiApiKey || this.config.get(envKeyName[provider]);
 
+    // 1) Chave própria do usuário tem prioridade (pode usar outro provedor).
+    if (userAi?.apiKey) {
+      const provider = (userAi.provider as AiProvider) || settings.aiProvider || AiProvider.ANTHROPIC;
+      const model = userAi.model || DEFAULT_MODELS[provider];
+      return { provider, model, apiKey: userAi.apiKey };
+    }
+
+    // 2) Chave da empresa (Settings) → 3) env.
+    const provider = settings.aiProvider || AiProvider.ANTHROPIC;
+    const model = settings.aiModel || DEFAULT_MODELS[provider];
+    const apiKey = settings.aiApiKey || this.config.get(envKeyName[provider]);
     if (!apiKey) {
       throw new BadRequestException(
-        `API Key da IA (${provider}) não configurada. Configure em Configurações.`
+        `API Key da IA (${provider}) não configurada. Configure a sua na página IA Agente, ou peça ao Diretor a chave da empresa.`
       );
     }
     return { provider, model, apiKey };
   }
 
-  async chat(messages: ChatMessage[], apiKeyOverride?: string) {
-    const { provider, model, apiKey } = await this.resolveConfig(apiKeyOverride);
+  async chat(messages: ChatMessage[], userAi?: UserAiConfig) {
+    const { provider, model, apiKey } = await this.resolveConfig(userAi);
     // Usa a última mensagem do usuário como consulta para o RAG.
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const system = await this.buildSystemPrompt(lastUser?.content || "");
@@ -136,14 +169,14 @@ export class AiService {
   }
 
   /** Gera apenas o texto de resposta (usado pelo fluxo automático de WhatsApp). */
-  async generateReply(messages: ChatMessage[]): Promise<string> {
-    const { content } = await this.chat(messages);
+  async generateReply(messages: ChatMessage[], userAi?: UserAiConfig): Promise<string> {
+    const { content } = await this.chat(messages, userAi);
     return content;
   }
 
-  async qualifyLead(leadId: string, conversation: string, apiKeyOverride?: string) {
+  async qualifyLead(leadId: string, conversation: string, userAi?: UserAiConfig) {
     const lead = await this.leadsRepo.findOneOrFail({ where: { id: leadId } });
-    const { provider, model, apiKey } = await this.resolveConfig(apiKeyOverride);
+    const { provider, model, apiKey } = await this.resolveConfig(userAi);
 
     const system = `Analise a conversa abaixo e retorne um JSON com:
 - score: número de 0 a 100 (interesse do cliente)

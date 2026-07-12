@@ -34,7 +34,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Dados do usuário autenticado" })
   me(@Request() req: any) {
-    return req.user;
+    // Nunca expõe passwordHash / aiApiKey ao front.
+    return this.authService.sanitize(req.user);
   }
 
   @Put("change-password")

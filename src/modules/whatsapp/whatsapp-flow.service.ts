@@ -80,11 +80,13 @@ export class WhatsappFlowService {
         return { persisted: true, autoReply: false, group: true };
       }
 
-      // Gera resposta da IA com base no histórico
+      // Gera resposta da IA com base no histórico, usando a IA do cargo que atende
+      // a conversa (ou a chave da empresa, se ele não tiver a própria).
       const history = await this.conversations.getHistoryForAi(conv.id);
+      const userAi = await this.ai.getUserAiConfig(conv.assignedToId ?? undefined);
       let reply: string;
       try {
-        reply = await this.ai.generateReply(history);
+        reply = await this.ai.generateReply(history, userAi);
       } catch (err) {
         this.logger.warn(`IA não respondeu (chave/config?): ${(err as Error).message}`);
         return { persisted: true, autoReply: false };

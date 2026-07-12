@@ -22,15 +22,19 @@ describe("AuthService", () => {
       email: "rodrigo@kayserone.com.br",
       role: "diretor",
       passwordHash,
+      aiApiKey: "sk-secreta",
       firstLogin: true,
       active: true,
+      approved: true,
     });
 
     const res = await service.login({ email: "rodrigo@kayserone.com.br", password: "123456789" } as any);
 
     expect(res.accessToken).toBe("token-123");
     expect(res.firstLogin).toBe(true);
+    // Nunca expõe credenciais sensíveis ao front.
     expect((res.user as any).passwordHash).toBeUndefined();
+    expect((res.user as any).aiApiKey).toBeUndefined();
   });
 
   it("rejeita senha incorreta", async () => {

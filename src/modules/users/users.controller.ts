@@ -72,6 +72,21 @@ export class UsersController {
     return this.usersService.setAvatar(req.user.id, file);
   }
 
+  @Get("me/ai")
+  @ApiOperation({ summary: "Config de IA do próprio usuário (sem expor a chave)" })
+  getMyAi(@Request() req: any) {
+    return this.usersService.getMyAi(req.user.id);
+  }
+
+  @Put("me/ai")
+  @ApiOperation({ summary: "Salvar a IA do próprio usuário (provedor/modelo/chave)" })
+  updateMyAi(
+    @Body() dto: { aiProvider?: string; aiModel?: string; aiApiKey?: string },
+    @Request() req: any
+  ) {
+    return this.usersService.updateMyAi(req.user.id, dto);
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Buscar usuário por ID" })
   findOne(@Param("id") id: string) {

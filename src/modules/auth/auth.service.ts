@@ -111,8 +111,8 @@ export class AuthService {
     return { accessToken: this.jwtService.sign(payload) };
   }
 
-  private sanitize(user: User) {
-    const { passwordHash, ...rest } = user as any;
+  sanitize(user: User) {
+    const { passwordHash, aiApiKey, ...rest } = user as any;
     return rest;
   }
 }

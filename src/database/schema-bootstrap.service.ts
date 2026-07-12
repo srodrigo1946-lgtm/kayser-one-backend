@@ -20,6 +20,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     try {
       await this.ensureLeadSource();
       await this.ensureSettingsColumns();
+      await this.ensureUserAiColumns();
     } catch (err) {
       this.logger.warn(`SchemaBootstrap falhou (seguindo mesmo assim): ${(err as Error).message}`);
     }
@@ -54,5 +55,12 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgNoite" text`);
+  }
+
+  /** IA por usuário: provedor/modelo/chave próprios (chave é opcional). */
+  private async ensureUserAiColumns() {
+    await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiProvider" varchar`);
+    await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiModel" varchar`);
+    await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiApiKey" text`);
   }
 }

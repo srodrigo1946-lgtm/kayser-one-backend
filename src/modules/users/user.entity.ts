@@ -47,6 +47,18 @@ export class User {
   @Column({ default: true })
   active: boolean;
 
+  // IA própria do usuário (cada cargo pode usar seu provedor/chave). Quando não
+  // configurada, o sistema cai na chave da empresa (Settings) e depois no env.
+  // aiApiKey NUNCA é retornada ao front — só o booleano hasAiKey (ver sanitizador).
+  @Column({ nullable: true })
+  aiProvider: string;
+
+  @Column({ nullable: true })
+  aiModel: string;
+
+  @Column({ type: "text", nullable: true })
+  aiApiKey: string;
+
   @Column({ default: true })
   firstLogin: boolean;
 

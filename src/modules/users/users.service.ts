@@ -16,6 +16,40 @@ export class UsersService {
     private readonly storage: StorageService
   ) {}
 
+  // Campos sensíveis que NUNCA podem sair para o front.
+  private static readonly SENSITIVE = ["passwordHash", "aiApiKey"];
+
+  /** Remove campos sensíveis do usuário e das relações aninhadas (manager/subordinates). */
+  private clean(u: any): any {
+    if (!u || typeof u !== "object") return u;
+    const copy: any = { ...u };
+    for (const f of UsersService.SENSITIVE) delete copy[f];
+    if (copy.manager) copy.manager = this.clean(copy.manager);
+    if (Array.isArray(copy.subordinates)) copy.subordinates = copy.subordinates.map((s) => this.clean(s));
+    return copy;
+  }
+
+  private cleanMany(list: any[]): any[] {
+    return list.map((u) => this.clean(u));
+  }
+
+  /** Config de IA do próprio usuário (sem expor a chave). */
+  async getMyAi(userId: string) {
+    const u = await this.usersRepo.findOneOrFail({ where: { id: userId } });
+    return { aiProvider: u.aiProvider ?? null, aiModel: u.aiModel ?? null, hasAiKey: !!u.aiApiKey };
+  }
+
+  /** Salva a IA do próprio usuário. Chave vazia mantém a atual; "__clear__" remove. */
+  async updateMyAi(userId: string, dto: { aiProvider?: string; aiModel?: string; aiApiKey?: string }) {
+    const u = await this.usersRepo.findOneOrFail({ where: { id: userId } });
+    if (dto.aiProvider !== undefined) u.aiProvider = dto.aiProvider || null;
+    if (dto.aiModel !== undefined) u.aiModel = dto.aiModel || null;
+    if (dto.aiApiKey === "__clear__") u.aiApiKey = null;
+    else if (dto.aiApiKey) u.aiApiKey = dto.aiApiKey;
+    await this.usersRepo.save(u);
+    return this.getMyAi(userId);
+  }
+
   /** Define a foto de perfil a partir de um arquivo enviado (MinIO; fallback data URI). */
   async setAvatar(userId: string, file: Express.Multer.File) {
     if (!file) throw new BadRequestException("Nenhum arquivo enviado.");
@@ -33,8 +67,7 @@ export class UsersService {
       user.avatar = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     }
     const saved = await this.usersRepo.save(user);
-    const { passwordHash, ...rest } = saved as any;
-    return rest;
+    return this.clean(saved);
   }
 
   /** Retorna os bytes da foto de perfil (de data URI ou do MinIO), ou null. */
@@ -74,24 +107,27 @@ export class UsersService {
   async findAll(requestingUser: User) {
     // Diretor vê todos; os demais veem toda a sua equipe (árvore de descendentes).
     if (requestingUser.role === UserRole.DIRETOR) {
-      return this.usersRepo.find({ relations: ["manager"], order: { role: "ASC", name: "ASC" } });
+      return this.cleanMany(
+        await this.usersRepo.find({ relations: ["manager"], order: { role: "ASC", name: "ASC" } })
+      );
     }
     const ids = (await this.getDescendantIds(requestingUser.id)).filter(
       (id) => id !== requestingUser.id
     );
     if (ids.length === 0) return [];
-    return this.usersRepo.find({
-      where: { id: In(ids) },
-      relations: ["manager"],
-      order: { role: "ASC", name: "ASC" },
-    });
+    return this.cleanMany(
+      await this.usersRepo.find({
+        where: { id: In(ids) },
+        relations: ["manager"],
+        order: { role: "ASC", name: "ASC" },
+      })
+    );
   }
 
   async findOne(id: string) {
     const user = await this.usersRepo.findOne({ where: { id }, relations: ["manager", "subordinates"] });
     if (!user) throw new NotFoundException("Usuário não encontrado.");
-    const { passwordHash, ...rest } = user as any;
-    return rest;
+    return this.clean(user);
   }
 
   async create(dto: CreateUserDto, creator: User) {
@@ -101,8 +137,7 @@ export class UsersService {
     const passwordHash = await bcrypt.hash("123456789", 12);
     const user = this.usersRepo.create({ ...dto, passwordHash, firstLogin: true });
     const saved = await this.usersRepo.save(user);
-    const { passwordHash: _, ...rest } = saved as any;
-    return rest;
+    return this.clean(saved);
   }
 
   /** Atualização do próprio perfil — apenas campos pessoais (não troca papel/e-mail/foto). */
@@ -115,16 +150,14 @@ export class UsersService {
     if (dto.phone !== undefined) user.phone = dto.phone;
     if (dto.whatsapp !== undefined) user.whatsapp = dto.whatsapp;
     const saved = await this.usersRepo.save(user);
-    const { passwordHash, ...rest } = saved as any;
-    return rest;
+    return this.clean(saved);
   }
 
   async update(id: string, dto: UpdateUserDto) {
     const user = await this.usersRepo.findOneOrFail({ where: { id } });
     Object.assign(user, dto);
     const saved = await this.usersRepo.save(user);
-    const { passwordHash, ...rest } = saved as any;
-    return rest;
+    return this.clean(saved);
   }
 
   async deactivate(id: string, requester: User) {
@@ -158,19 +191,23 @@ export class UsersService {
   /** Autocadastros aguardando aprovação, dentro do escopo do solicitante. */
   async findPending(requester: User) {
     if (requester.role === UserRole.DIRETOR) {
-      return this.usersRepo.find({
-        where: { approved: false },
-        relations: ["manager"],
-        order: { createdAt: "ASC" },
-      });
+      return this.cleanMany(
+        await this.usersRepo.find({
+          where: { approved: false },
+          relations: ["manager"],
+          order: { createdAt: "ASC" },
+        })
+      );
     }
     const ids = (await this.getDescendantIds(requester.id)).filter((id) => id !== requester.id);
     if (ids.length === 0) return [];
-    return this.usersRepo.find({
-      where: { id: In(ids), approved: false },
-      relations: ["manager"],
-      order: { createdAt: "ASC" },
-    });
+    return this.cleanMany(
+      await this.usersRepo.find({
+        where: { id: In(ids), approved: false },
+        relations: ["manager"],
+        order: { createdAt: "ASC" },
+      })
+    );
   }
 
   async approve(id: string, requester: User) {
@@ -179,8 +216,7 @@ export class UsersService {
     await this.assertCanManage(target, requester);
     target.approved = true;
     const saved = await this.usersRepo.save(target);
-    const { passwordHash, ...rest } = saved as any;
-    return rest;
+    return this.clean(saved);
   }
 
   async reject(id: string, requester: User) {
