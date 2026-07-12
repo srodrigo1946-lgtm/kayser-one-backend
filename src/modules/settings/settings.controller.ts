@@ -1,6 +1,6 @@
 import { Controller, Get, Put, Body, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { SettingsService } from "./settings.service";
 import { AiProvider } from "./settings.entity";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -26,6 +26,18 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsInt() @Min(1)
   followupDays?: number;
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  followupSources?: string[];
+
+  @IsOptional() @IsString()
+  followupMsgManha?: string;
+
+  @IsOptional() @IsString()
+  followupMsgTarde?: string;
+
+  @IsOptional() @IsString()
+  followupMsgNoite?: string;
 
   @IsOptional() @IsBoolean()
   aiAutoReply?: boolean;

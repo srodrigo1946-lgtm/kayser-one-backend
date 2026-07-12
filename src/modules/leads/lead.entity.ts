@@ -9,6 +9,13 @@ import {
 } from "typeorm";
 import { User } from "../users/user.entity";
 
+// Origem de criação do lead — usada para escopar automações (ex.: follow-up).
+export enum LeadSource {
+  ANUNCIO = "anuncio", // veio de anúncio "Clique para WhatsApp" (Face/Insta/TikTok)
+  MANUAL = "manual", // cadastrado por um cargo no formulário de Leads
+  WHATSAPP = "whatsapp", // chegou sozinho no WhatsApp (sem anúncio)
+}
+
 export enum LeadStatus {
   NOVO_LEAD = "novo_lead",
   PRIMEIRO_CONTATO = "primeiro_contato",
@@ -51,6 +58,11 @@ export class Lead {
 
   @Column({ nullable: true })
   origem: string;
+
+  // Como o lead entrou no sistema (escopa o follow-up automático).
+  // varchar (não enum do Postgres) para facilitar novos valores sem migrar tipo.
+  @Column({ default: LeadSource.MANUAL })
+  source: string;
 
   @Column({ nullable: true })
   campanha: string;

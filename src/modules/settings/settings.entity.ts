@@ -42,6 +42,22 @@ export class Settings {
   @Column({ type: "int", default: 3 })
   followupDays: number;
 
+  // Origens de lead que recebem o follow-up (simple-array: texto separado por vírgula).
+  // Padrão: anúncio + cadastro manual (exclui WhatsApp orgânico).
+  @Column({ type: "simple-array", default: "anuncio,manual" })
+  followupSources: string[];
+
+  // Textos da saudação por horário (usam {nome} = primeiro nome do lead).
+  // Vazio → o AutomationService aplica o texto padrão.
+  @Column({ type: "text", nullable: true })
+  followupMsgManha: string;
+
+  @Column({ type: "text", nullable: true })
+  followupMsgTarde: string;
+
+  @Column({ type: "text", nullable: true })
+  followupMsgNoite: string;
+
   // Resposta automática da IA a novas mensagens de WhatsApp.
   @Column({ default: true })
   aiAutoReply: boolean;

@@ -20,6 +20,7 @@ import { PropertiesModule } from "./modules/properties/properties.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { BackupModule } from "./modules/backup/backup.module";
 import { LeadQueueModule } from "./modules/lead-queue/lead-queue.module";
+import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
 
 @Module({
   imports: [
@@ -71,5 +72,6 @@ import { LeadQueueModule } from "./modules/lead-queue/lead-queue.module";
     BackupModule,
     LeadQueueModule,
   ],
+  providers: [SchemaBootstrapService],
 })
 export class AppModule {}

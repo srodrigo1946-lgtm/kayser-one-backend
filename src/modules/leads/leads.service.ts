@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/commo
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Like, In, FindOptionsWhere } from "typeorm";
 import * as XLSX from "xlsx";
-import { Lead, LeadStatus } from "./lead.entity";
+import { Lead, LeadStatus, LeadSource } from "./lead.entity";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { User, UserRole } from "../users/user.entity";
@@ -91,9 +91,10 @@ export class LeadsService {
     }
   }
 
-  async create(dto: CreateLeadDto, user: User) {
+  async create(dto: CreateLeadDto, user: User, source: LeadSource = LeadSource.MANUAL) {
     const lead = this.leadsRepo.create({
       ...dto,
+      source,
       responsavelId: dto.responsavelId || (user.role === UserRole.CORRETOR ? user.id : undefined),
     });
     const saved = await this.leadsRepo.save(lead);

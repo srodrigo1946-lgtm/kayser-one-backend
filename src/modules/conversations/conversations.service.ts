@@ -3,7 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
-import { Lead, LeadStatus } from "../leads/lead.entity";
+import { Lead, LeadStatus, LeadSource } from "../leads/lead.entity";
 import { User } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
 import { LeadsService } from "../leads/leads.service";
@@ -98,7 +98,9 @@ export class ConversationsService {
             phone: numero,
             responsavelId: conv.assignedToId ?? undefined,
           } as any,
-          requester
+          requester,
+          // Conversa de anúncio → lead de anúncio; senão, chegou sozinho no WhatsApp.
+          conv.fromAd ? LeadSource.ANUNCIO : LeadSource.WHATSAPP
         );
         conv.leadId = lead.id;
         conv.lead = lead;
@@ -230,7 +232,12 @@ export class ConversationsService {
   /** Marca a conversa/lead como originada de anúncio (origem + campanha). */
   async setAdOrigin(conversationId: string, platform: string, campaign?: string, leadId?: string) {
     await this.convRepo.update(conversationId, { fromAd: true });
-    if (leadId) await this.leadsRepo.update(leadId, { origem: platform, campanha: campaign ?? null });
+    if (leadId)
+      await this.leadsRepo.update(leadId, {
+        origem: platform,
+        campanha: campaign ?? null,
+        source: LeadSource.ANUNCIO,
+      });
   }
 
   /** Atualiza nome (pushName) e/ou foto de perfil do contato, se mudaram. */

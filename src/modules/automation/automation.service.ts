@@ -4,6 +4,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { LessThan, Not, In, Repository } from "typeorm";
 import { subDays } from "date-fns";
 import { Lead, LeadStatus } from "../leads/lead.entity";
+import { Settings } from "../settings/settings.entity";
 import { SettingsService } from "../settings/settings.service";
 import { WhatsappFlowService } from "../whatsapp/whatsapp-flow.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
@@ -21,11 +22,30 @@ export class AutomationService {
     private readonly history: LeadHistoryService
   ) {}
 
-  private greeting(): string {
+  // Textos padrão da saudação por horário (usados quando o Diretor não personalizou).
+  private static readonly DEFAULTS = {
+    manha:
+      "Oi {nome}, bom dia! 😊 Passando pra saber se você ainda tem interesse no imóvel. Posso tirar dúvidas ou já agendar uma visita?",
+    tarde:
+      "Oi {nome}, boa tarde! 😊 Passando pra saber se você ainda tem interesse no imóvel. Posso tirar dúvidas ou já agendar uma visita?",
+    noite:
+      "Oie {nome}, boa noite! 😊 Passando pra saber se você ainda tem interesse no imóvel. Posso tirar dúvidas ou já agendar uma visita?",
+  };
+
+  /** Monta a mensagem do follow-up: template do horário atual, com {nome} = primeiro nome. */
+  buildMessage(settings: Settings, name?: string): string {
     const h = new Date().getHours();
-    if (h < 12) return "Bom dia";
-    if (h < 18) return "Boa tarde";
-    return "Boa noite";
+    const period = h < 12 ? "manha" : h < 18 ? "tarde" : "noite";
+    const custom =
+      period === "manha"
+        ? settings.followupMsgManha
+        : period === "tarde"
+          ? settings.followupMsgTarde
+          : settings.followupMsgNoite;
+    const template = custom?.trim() || AutomationService.DEFAULTS[period];
+    const firstName = name?.trim().split(" ")[0] || "";
+    // Troca {nome} e limpa vírgula solta caso o lead não tenha nome ("Oi , bom dia" → "Oi, bom dia").
+    return template.replace(/\{nome\}/g, firstName).replace(/\s+,/g, ",");
   }
 
   /** Roda todo dia às 9h. Pode ser disparado manualmente via runFollowup(). */
@@ -41,18 +61,21 @@ export class AutomationService {
     }
 
     const cutoff = subDays(new Date(), settings.followupDays);
+    // Origens que recebem o follow-up (padrão: anúncio + cadastro manual).
+    const sources =
+      settings.followupSources?.length ? settings.followupSources : ["anuncio", "manual"];
     const leads = await this.leadsRepo.find({
       where: {
         lastContactAt: LessThan(cutoff),
         status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
+        source: In(sources),
       },
       take: 100,
     });
 
     let sent = 0;
     for (const lead of leads) {
-      const firstName = lead.name?.split(" ")[0] || "tudo bem";
-      const message = `Olá, ${firstName}! ${this.greeting()}! 😊 Passando para saber se ainda tem interesse em conquistar seu imóvel. Estou à disposição para esclarecer qualquer dúvida ou ajudar a agendar uma visita.`;
+      const message = this.buildMessage(settings, lead.name);
 
       try {
         if (lead.phone && lead.responsavelId) {
