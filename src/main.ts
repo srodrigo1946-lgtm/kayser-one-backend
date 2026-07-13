@@ -35,8 +35,22 @@ async function bootstrap() {
     })
   );
 
+  // CORS: aceita MÚLTIPLOS endereços (o app é acessado pelo domínio próprio E pelo
+  // *.vercel.app). Origens extras podem ser adicionadas via env CORS_ORIGINS (CSV).
+  const allowedOrigins = [
+    ...(process.env.CORS_ORIGINS || "").split(",").map((s) => s.trim()),
+    process.env.FRONTEND_URL,
+    "https://kayserone.com.br",
+    "https://www.kayserone.com.br",
+    "https://kayser-one-frontend.vercel.app",
+    "http://localhost:3000",
+  ].filter(Boolean);
   app.enableCors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      // Requests sem Origin (curl, apps mobile, webhooks) e origens permitidas passam.
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      cb(new Error(`Origem não permitida pelo CORS: ${origin}`));
+    },
     credentials: true,
   });
 
