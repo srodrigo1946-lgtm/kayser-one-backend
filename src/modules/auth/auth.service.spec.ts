@@ -77,4 +77,31 @@ describe("AuthService", () => {
     expect(user.firstLogin).toBe(false);
     expect(user.passwordHash).not.toBe(passwordHash);
   });
+
+  it("recupera a senha do Diretor com e-mail + código corretos", async () => {
+    const recoveryCodeHash = await bcrypt.hash("meucodigo", 4);
+    const user: any = { id: "d1", email: "diretor@x.com", role: "diretor", recoveryCodeHash };
+    repo.findOne.mockResolvedValue(user);
+    repo.save.mockImplementation(async (u: any) => u);
+
+    const res = await service.recover({ email: "diretor@x.com", recoveryCode: "meucodigo", newPassword: "novaSenha123" });
+    expect(res.message).toMatch(/redefinida/i);
+    expect(user.firstLogin).toBe(false);
+    expect(user.passwordHash).toBeTruthy();
+  });
+
+  it("recover: erro genérico com código errado", async () => {
+    const recoveryCodeHash = await bcrypt.hash("certo", 4);
+    repo.findOne.mockResolvedValue({ id: "d1", role: "diretor", recoveryCodeHash });
+    await expect(
+      service.recover({ email: "d@x", recoveryCode: "errado", newPassword: "novaSenha123" })
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("recover: erro genérico se não for Diretor", async () => {
+    repo.findOne.mockResolvedValue({ id: "c1", role: "corretor", recoveryCodeHash: "x" });
+    await expect(
+      service.recover({ email: "c@x", recoveryCode: "qualquer", newPassword: "novaSenha123" })
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
 });

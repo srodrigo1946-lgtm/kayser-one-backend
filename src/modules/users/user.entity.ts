@@ -62,6 +62,11 @@ export class User {
   @Column({ default: true })
   firstLogin: boolean;
 
+  // Código de recuperação do Diretor (bcrypt). NUNCA retornado ao front (só hasRecoveryCode).
+  // Permite ao Diretor (topo da hierarquia) recuperar a senha sem depender de e-mail/gestor.
+  @Column({ type: "text", nullable: true })
+  recoveryCodeHash: string;
+
   // Aprovação do gestor para autocadastros. Usuários criados pelo painel já nascem
   // aprovados; quem se autocadastra fica pendente até o gestor aprovar.
   @Column({ default: true })

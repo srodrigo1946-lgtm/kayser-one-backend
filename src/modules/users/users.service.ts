@@ -17,7 +17,7 @@ export class UsersService {
   ) {}
 
   // Campos sensíveis que NUNCA podem sair para o front.
-  private static readonly SENSITIVE = ["passwordHash", "aiApiKey"];
+  private static readonly SENSITIVE = ["passwordHash", "aiApiKey", "recoveryCodeHash"];
 
   /** Remove campos sensíveis do usuário e das relações aninhadas (manager/subordinates). */
   private clean(u: any): any {

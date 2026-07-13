@@ -111,8 +111,36 @@ export class AuthService {
     return { accessToken: this.jwtService.sign(payload) };
   }
 
+  /** Diretor define/atualiza seu código de recuperação (guardado com hash). */
+  async setRecoveryCode(userId: string, code: string) {
+    const user = await this.usersRepo.findOneOrFail({ where: { id: userId } });
+    if (user.role !== UserRole.DIRETOR) {
+      throw new BadRequestException("Apenas o Diretor usa código de recuperação.");
+    }
+    user.recoveryCodeHash = await bcrypt.hash(code, 12);
+    await this.usersRepo.save(user);
+    return { message: "Código de recuperação salvo." };
+  }
+
+  /**
+   * Recuperação self-service do Diretor: e-mail + código de recuperação → define nova senha.
+   * Erros genéricos (não revela se o e-mail existe / é Diretor / tem código).
+   */
+  async recover(dto: { email: string; recoveryCode: string; newPassword: string }) {
+    const genericError = new UnauthorizedException("E-mail ou código de recuperação inválido.");
+    const user = await this.usersRepo.findOne({ where: { email: dto.email } });
+    if (!user || user.role !== UserRole.DIRETOR || !user.recoveryCodeHash) throw genericError;
+    const ok = await bcrypt.compare(dto.recoveryCode, user.recoveryCodeHash);
+    if (!ok) throw genericError;
+
+    user.passwordHash = await bcrypt.hash(dto.newPassword, 12);
+    user.firstLogin = false;
+    await this.usersRepo.save(user);
+    return { message: "Senha redefinida com sucesso. Faça login com a nova senha." };
+  }
+
   sanitize(user: User) {
-    const { passwordHash, aiApiKey, ...rest } = user as any;
+    const { passwordHash, aiApiKey, recoveryCodeHash, ...rest } = user as any;
     return rest;
   }
 }

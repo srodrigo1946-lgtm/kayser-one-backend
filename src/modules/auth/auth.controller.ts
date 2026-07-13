@@ -1,12 +1,29 @@
 import { Controller, Post, Body, Get, Query, UseGuards, Request, Put } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
+import { IsEmail, IsString, MinLength } from "class-validator";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { UserRole } from "../users/user.entity";
+
+class RecoveryCodeDto {
+  @IsString() @MinLength(6)
+  recoveryCode: string;
+}
+
+class RecoverDto {
+  @IsEmail()
+  email: string;
+
+  @IsString() @MinLength(6)
+  recoveryCode: string;
+
+  @IsString() @MinLength(6)
+  newPassword: string;
+}
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -38,8 +55,23 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Dados do usuário autenticado" })
   me(@Request() req: any) {
-    // Nunca expõe passwordHash / aiApiKey ao front.
-    return this.authService.sanitize(req.user);
+    // Nunca expõe passwordHash / aiApiKey / recoveryCodeHash ao front — só o booleano.
+    return { ...this.authService.sanitize(req.user), hasRecoveryCode: !!req.user.recoveryCodeHash };
+  }
+
+  @Put("recovery-code")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "Diretor define/atualiza o código de recuperação" })
+  setRecoveryCode(@Body() dto: RecoveryCodeDto, @Request() req: any) {
+    return this.authService.setRecoveryCode(req.user.id, dto.recoveryCode);
+  }
+
+  // Recuperação self-service do Diretor: rate-limit rígido (5/min por IP).
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Post("recover")
+  @ApiOperation({ summary: "Diretor recupera a senha com e-mail + código de recuperação" })
+  recover(@Body() dto: RecoverDto) {
+    return this.authService.recover(dto);
   }
 
   @Put("change-password")
