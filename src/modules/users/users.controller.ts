@@ -120,4 +120,11 @@ export class UsersController {
   activate(@Param("id") id: string, @Request() req: any) {
     return this.usersService.activate(id, req.user);
   }
+
+  @Post(":id/reset-password")
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: "Redefinir a senha de um usuário da equipe (volta à padrão + troca forçada)" })
+  resetPassword(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.resetPassword(id, req.user);
+  }
 }

@@ -179,6 +179,19 @@ export class UsersService {
     return { message: "Usuário ativado." };
   }
 
+  /** Redefine a senha de alguém da equipe para a padrão, forçando troca no próximo acesso. */
+  async resetPassword(id: string, requester: User) {
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException("Usuário não encontrado.");
+    await this.assertCanManage(user, requester);
+    user.passwordHash = await bcrypt.hash("123456789", 12);
+    user.firstLogin = true;
+    await this.usersRepo.save(user);
+    return {
+      message: "Senha redefinida para a padrão (123456789). O usuário deverá criar uma nova no próximo acesso.",
+    };
+  }
+
   /** Garante que o solicitante pode gerenciar o usuário-alvo (Diretor ou gestor dele). */
   private async assertCanManage(target: User, requester: User) {
     if (requester.role === UserRole.DIRETOR) return;
