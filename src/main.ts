@@ -11,7 +11,14 @@ async function bootstrap() {
 
   // Cabeçalhos de segurança (HSTS, no-sniff, sem frame, etc.). É uma API JSON,
   // então desligamos a CSP (que atrapalharia o Swagger em dev e não protege JSON).
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // CORP em "cross-origin": o backend serve avatares/mídia por <img> a partir do
+  // frontend (outro domínio); o padrão "same-origin" do Helmet bloquearia isso.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+  );
 
   // Webhooks da Evolution API mandam payloads grandes (base64 de mídia/QR),
   // que estouram o limite padrão de 100kb do Express. Aumentamos o limite.
