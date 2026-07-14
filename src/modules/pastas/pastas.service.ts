@@ -34,8 +34,12 @@ export class PastasService {
   async create(dto: CreatePastaDto, user: User) {
     const lead = await this.leadsRepo.findOne({ where: { id: dto.leadId } });
     if (!lead) throw new NotFoundException("Cliente não encontrado.");
+    // Próximo número da análise (global). max+1 => recomeça em 1 se as pastas forem apagadas.
+    const row = await this.repo.query(`SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM analysis_folders`);
+    const numero = Number(row?.[0]?.n) || 1;
     const pasta = this.repo.create({
       ...dto,
+      numero,
       clientName: lead.name,
       clientCpf: lead.cpf ?? undefined,
       empreendimento: dto.empreendimento ?? lead.empreendimento ?? undefined,

@@ -118,6 +118,17 @@ export class SchemaBootstrapService implements OnModuleInit {
     );
     // Coluna adicionada depois (Fase 3b): token do ambiente de documentos.
     await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS "docToken" varchar`);
+    // Número sequencial da análise ("Análise 01"). Backfill por ordem de criação nas linhas sem número.
+    await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS numero int`);
+    await this.dataSource.query(`
+      UPDATE analysis_folders af
+      SET numero = sub.rn + COALESCE((SELECT MAX(numero) FROM analysis_folders WHERE numero IS NOT NULL), 0)
+      FROM (
+        SELECT id, row_number() OVER (ORDER BY "createdAt") AS rn
+        FROM analysis_folders WHERE numero IS NULL
+      ) sub
+      WHERE af.id = sub.id
+    `);
   }
 
   /** Tabela de empresas parceiras (entidade nova). */

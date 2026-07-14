@@ -12,6 +12,11 @@ export class Pasta {
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
+  // Número sequencial da análise (ex.: "Análise 01"). Atribuído na criação
+  // como max(numero)+1 — some quando as pastas de teste são apagadas (recomeça em 1).
+  @Column({ type: "int", nullable: true })
+  numero: number;
+
   // Cliente (Lead). clientName/clientCpf denormalizados p/ exibir na lista sem join.
   @Column({ type: "uuid" })
   leadId: string;
