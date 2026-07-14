@@ -5,9 +5,10 @@ import { Lead } from "../leads/lead.entity";
 import { PastasService } from "./pastas.service";
 import { PastasController } from "./pastas.controller";
 import { UsersModule } from "../users/users.module";
+import { DocumentsModule } from "../documents/documents.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Pasta, Lead]), UsersModule],
+  imports: [TypeOrmModule.forFeature([Pasta, Lead]), UsersModule, DocumentsModule],
   controllers: [PastasController],
   providers: [PastasService],
 })

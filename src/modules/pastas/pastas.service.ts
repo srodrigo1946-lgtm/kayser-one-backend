@@ -5,6 +5,7 @@ import { Pasta } from "./pasta.entity";
 import { Lead } from "../leads/lead.entity";
 import { User } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
+import { DocumentsService } from "../documents/documents.service";
 import { CreatePastaDto } from "./dto/create-pasta.dto";
 import { UpdatePastaDto } from "./dto/update-pasta.dto";
 
@@ -15,7 +16,8 @@ export class PastasService {
     private readonly repo: Repository<Pasta>,
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
-    private readonly users: UsersService
+    private readonly users: UsersService,
+    private readonly documents: DocumentsService
   ) {}
 
   /** Lista as pastas por hierarquia (Diretor tudo; gestor equipe; corretor as suas). */
@@ -37,7 +39,46 @@ export class PastasService {
       createdById: user.id,
       status: "montando",
     });
+    const saved = await this.repo.save(pasta);
+    // Cria o ambiente de documentos (reusa DocumentRequest). Tolerante a falha:
+    // se der erro, a pasta continua criada e os docs podem ser gerados depois.
+    try {
+      await this.ensureDocsForPasta(saved, lead, user);
+    } catch {
+      /* segue sem quebrar a criação da pasta */
+    }
+    return saved;
+  }
+
+  /** Cria (se ainda não houver) o DocumentRequest ligado à pasta e grava o token. */
+  private async ensureDocsForPasta(pasta: Pasta, lead: Lead, user: User) {
+    if (pasta.docToken) return pasta;
+    const req = await this.documents.createRequest(
+      {
+        clientName: lead.name,
+        clientPhone: lead.phone,
+        leadId: lead.id,
+        fase: pasta.fase || "simplificada",
+        // o módulo de docs usa clt|autonomo; empresário ≈ autônomo p/ o checklist.
+        perfil: pasta.perfil === "empresario" ? "autonomo" : "clt",
+        estadoCivil: lead.estadoCivil || "solteiro",
+        declaraIR: false,
+      },
+      user.id
+    );
+    pasta.documentRequestId = req.id;
+    pasta.docToken = req.token;
     return this.repo.save(pasta);
+  }
+
+  /** Garante o ambiente de documentos de uma pasta existente e devolve o token. */
+  async ensureDocuments(id: string, user: User) {
+    const pasta = await this.getScopedOrFail(id, user);
+    if (pasta.docToken) return { token: pasta.docToken };
+    const lead = await this.leadsRepo.findOne({ where: { id: pasta.leadId } });
+    if (!lead) throw new NotFoundException("Cliente da pasta não encontrado.");
+    const updated = await this.ensureDocsForPasta(pasta, lead, user);
+    return { token: updated.docToken };
   }
 
   private async getScopedOrFail(id: string, user: User) {

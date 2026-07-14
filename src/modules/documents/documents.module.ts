@@ -17,5 +17,6 @@ import { Conversation } from "../conversations/conversation.entity";
   ],
   providers: [DocumentsService],
   controllers: [DocumentsController],
+  exports: [DocumentsService],
 })
 export class DocumentsModule {}

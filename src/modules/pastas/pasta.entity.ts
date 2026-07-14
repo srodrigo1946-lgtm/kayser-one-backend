@@ -51,6 +51,9 @@ export class Pasta {
   // Liga aos documentos (Fase 3b) e à empresa parceira / parecer (Fases 1 e 4).
   @Column({ type: "uuid", nullable: true })
   documentRequestId: string;
+  // Token do ambiente de upload de documentos (reusa /docs/:token).
+  @Column({ nullable: true })
+  docToken: string;
   @Column({ type: "uuid", nullable: true })
   empresaId: string;
   @Column({ type: "text", nullable: true })

@@ -39,4 +39,10 @@ export class PastasController {
   updateStatus(@Request() req: any, @Param("id") id: string, @Body("status") status: string) {
     return this.service.updateStatus(id, status, req.user);
   }
+
+  @Post(":id/documents")
+  @ApiOperation({ summary: "Garante o ambiente de documentos e devolve o token" })
+  documents(@Request() req: any, @Param("id") id: string) {
+    return this.service.ensureDocuments(id, req.user);
+  }
 }

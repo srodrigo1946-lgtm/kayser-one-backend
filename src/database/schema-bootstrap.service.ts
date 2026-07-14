@@ -100,6 +100,7 @@ export class SchemaBootstrapService implements OnModuleInit {
         fase varchar DEFAULT 'simplificada',
         perfil varchar DEFAULT 'clt',
         "documentRequestId" uuid,
+        "docToken" varchar,
         "empresaId" uuid,
         parecer text,
         status varchar DEFAULT 'montando',
@@ -113,6 +114,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(
       `ALTER TABLE analysis_folders ALTER COLUMN id SET DEFAULT gen_random_uuid()`
     );
+    // Coluna adicionada depois (Fase 3b): token do ambiente de documentos.
+    await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS "docToken" varchar`);
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */
