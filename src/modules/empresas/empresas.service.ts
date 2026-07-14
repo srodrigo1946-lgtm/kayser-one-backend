@@ -53,25 +53,29 @@ export class EmpresasService {
     return { ...saved, credenciais };
   }
 
-  /** Cria o usuário de login da empresa (se ainda não existir com esse e-mail). */
+  /**
+   * Garante o usuário de login da empresa. Se já existir conta com esse e-mail,
+   * VINCULA à empresa e reseta a senha provisória (idempotente e à prova de
+   * colisão). Cargo CORRETOR + empresaId (o marcador de "é empresa").
+   */
   private async ensureEmpresaLogin(emp: Empresa) {
-    const existing = await this.usersRepo.findOne({ where: { email: emp.email } });
-    if (existing) return undefined; // já há conta com esse e-mail — não recria/reexibe
     const passwordHash = await bcrypt.hash("123456789", 12);
-    await this.usersRepo.save(
-      this.usersRepo.create({
-        name: emp.nome || emp.email,
-        email: emp.email,
-        passwordHash,
-        // Cargo válido do enum; o que marca "é empresa parceira" é o empresaId
-        // (evita depender de ALTER TYPE no enum do Postgres).
-        role: UserRole.CORRETOR,
-        empresaId: emp.id,
-        firstLogin: true,
-        approved: true,
-        active: true,
-      })
-    );
+    const existing = await this.usersRepo.findOne({ where: { email: emp.email } });
+    const base = {
+      name: emp.nome || emp.email,
+      email: emp.email,
+      passwordHash,
+      role: UserRole.CORRETOR,
+      empresaId: emp.id,
+      firstLogin: true,
+      approved: true,
+      active: true,
+    };
+    if (existing) {
+      await this.usersRepo.save({ ...existing, ...base });
+    } else {
+      await this.usersRepo.save(this.usersRepo.create(base));
+    }
     return { email: emp.email, senhaProvisoria: "123456789" };
   }
 }
