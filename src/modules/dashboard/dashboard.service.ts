@@ -134,6 +134,33 @@ export class DashboardService {
   }
 
   /**
+   * VGV do período (mês específico ou ano todo): soma de valorVenda das vendas
+   * ganhas, e a contagem de vendas. Escopado por equipe.
+   */
+  async getPeriodVgv(user: User, year: number, month?: number) {
+    const scopeIds = await this.users.getScopeIds(user);
+    const targetYear = year || new Date().getFullYear();
+    const start = month ? new Date(targetYear, month - 1, 1) : new Date(targetYear, 0, 1);
+    const end = month
+      ? new Date(targetYear, month, 0, 23, 59, 59, 999)
+      : new Date(targetYear, 11, 31, 23, 59, 59, 999);
+
+    const qb = this.leadsRepo
+      .createQueryBuilder("lead")
+      .select("COALESCE(SUM(lead.valorVenda), 0)", "total")
+      .addSelect("COUNT(lead.id)", "vendas")
+      .where("lead.status = :venda", { venda: LeadStatus.VENDA_GANHA })
+      .andWhere("lead.updatedAt BETWEEN :start AND :end", { start, end });
+
+    if (scopeIds !== null) {
+      qb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+    }
+
+    const row = await qb.getRawOne();
+    return { total: Number(row?.total) || 0, vendas: Number(row?.vendas) || 0 };
+  }
+
+  /**
    * Campeão do período (mês específico ou o ano todo): corretor com maior VGV
    * (soma de valorVenda das vendas ganhas). Empate desempata por nº de vendas.
    * Escopado por equipe. Retorna null se ninguém tiver venda no período.
