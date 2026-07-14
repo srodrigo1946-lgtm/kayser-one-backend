@@ -62,6 +62,11 @@ export class CreateLeadDto {
   @IsNumber()
   entrada?: number;
 
+  @ApiPropertyOptional({ description: "Valor da venda fechada (base do VGV)." })
+  @IsOptional()
+  @IsNumber()
+  valorVenda?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

@@ -108,14 +108,14 @@ export class DashboardService {
     }));
   }
 
-  async getMonthlyData(user: User) {
+  async getMonthlyData(user: User, year?: number) {
     const base = await this.scopeWhere(user);
+    const targetYear = year || new Date().getFullYear();
     const months = [];
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date();
-      date.setMonth(date.getMonth() - i);
-      const start = startOfMonth(date);
-      const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    // Jan–Dez do ano escolhido (12 meses).
+    for (let m = 0; m < 12; m++) {
+      const start = new Date(targetYear, m, 1);
+      const end = new Date(targetYear, m + 1, 0, 23, 59, 59, 999);
 
       const [leads, vendas, visitas] = await Promise.all([
         this.leadsRepo.count({ where: { ...base, createdAt: Between(start, end) } }),
@@ -124,13 +124,56 @@ export class DashboardService {
       ]);
 
       months.push({
-        month: date.toLocaleDateString("pt-BR", { month: "short" }),
+        month: start.toLocaleDateString("pt-BR", { month: "short" }),
         leads,
         vendas,
         visitas,
       });
     }
     return months;
+  }
+
+  /**
+   * Campeão do período (mês específico ou o ano todo): corretor com maior VGV
+   * (soma de valorVenda das vendas ganhas). Empate desempata por nº de vendas.
+   * Escopado por equipe. Retorna null se ninguém tiver venda no período.
+   */
+  async getChampion(user: User, year: number, month?: number) {
+    const scopeIds = await this.users.getScopeIds(user);
+    const targetYear = year || new Date().getFullYear();
+    const start = month ? new Date(targetYear, month - 1, 1) : new Date(targetYear, 0, 1);
+    const end = month
+      ? new Date(targetYear, month, 0, 23, 59, 59, 999)
+      : new Date(targetYear, 11, 31, 23, 59, 59, 999);
+
+    const qb = this.userRepo
+      .createQueryBuilder("user")
+      .innerJoin(Lead, "lead", "lead.responsavelId = user.id")
+      .select("user.id", "responsavelId")
+      .addSelect("user.name", "nome")
+      .addSelect("(user.avatar IS NOT NULL)", "hasAvatar")
+      .addSelect("COALESCE(SUM(lead.valorVenda), 0)", "vgv")
+      .addSelect("COUNT(lead.id)", "vendas")
+      .where("lead.status = :venda", { venda: LeadStatus.VENDA_GANHA })
+      .andWhere("lead.updatedAt BETWEEN :start AND :end", { start, end })
+      .groupBy("user.id")
+      .orderBy("vgv", "DESC")
+      .addOrderBy("vendas", "DESC")
+      .limit(1);
+
+    if (scopeIds !== null) {
+      qb.andWhere("user.id IN (:...ids)", { ids: scopeIds });
+    }
+
+    const row = await qb.getRawOne();
+    if (!row) return null;
+    return {
+      responsavelId: row.responsavelId,
+      nome: row.nome,
+      hasAvatar: row.hasAvatar === true || row.hasAvatar === "t" || row.hasAvatar === "true",
+      vgv: Number(row.vgv) || 0,
+      vendas: Number(row.vendas) || 0,
+    };
   }
 
   async getAlerts(user: User) {

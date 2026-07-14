@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Request } from "@nestjs/common";
+import { Controller, Get, Query, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { DashboardService } from "./dashboard.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -23,9 +23,23 @@ export class DashboardController {
   }
 
   @Get("chart/monthly")
-  @ApiOperation({ summary: "Dados mensais para gráfico" })
-  monthlyChart(@Request() req: any) {
-    return this.dashboardService.getMonthlyData(req.user);
+  @ApiOperation({ summary: "Dados mensais para gráfico (por ano)" })
+  monthlyChart(@Request() req: any, @Query("year") year?: string) {
+    return this.dashboardService.getMonthlyData(req.user, year ? Number(year) : undefined);
+  }
+
+  @Get("champion")
+  @ApiOperation({ summary: "Campeão por VGV (ano todo ou mês específico)" })
+  champion(
+    @Request() req: any,
+    @Query("year") year?: string,
+    @Query("month") month?: string
+  ) {
+    return this.dashboardService.getChampion(
+      req.user,
+      year ? Number(year) : new Date().getFullYear(),
+      month ? Number(month) : undefined
+    );
   }
 
   @Get("alerts")

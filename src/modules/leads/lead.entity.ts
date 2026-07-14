@@ -79,6 +79,10 @@ export class Lead {
   @Column({ type: "decimal", nullable: true })
   entrada: number;
 
+  // Valor da venda fechada (preenchido ao marcar "Venda Ganha"). Base do VGV.
+  @Column({ type: "decimal", nullable: true })
+  valorVenda: number;
+
   @Column({ type: "text", nullable: true })
   observacoes: string;
 

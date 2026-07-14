@@ -19,6 +19,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     if (this.dataSource.options.type !== "postgres") return;
     try {
       await this.ensureLeadSource();
+      await this.ensureLeadValorVenda();
       await this.ensureSettingsColumns();
       await this.ensureUserAiColumns();
     } catch (err) {
@@ -45,6 +46,11 @@ export class SchemaBootstrapService implements OnModuleInit {
       `UPDATE leads SET "source" = 'whatsapp' WHERE "source" = 'manual' AND name = phone`
     );
     this.logger.log("Coluna leads.source criada e backfill aplicado.");
+  }
+
+  /** Valor da venda fechada (base do VGV / campeão do dashboard). */
+  private async ensureLeadValorVenda() {
+    await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "valorVenda" numeric`);
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */
