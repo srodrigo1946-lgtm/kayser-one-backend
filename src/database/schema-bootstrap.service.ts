@@ -20,6 +20,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     try {
       await this.ensureLeadSource();
       await this.ensureLeadValorVenda();
+      await this.ensureLeadCadastroCompleto();
       await this.ensureSettingsColumns();
       await this.ensureUserAiColumns();
     } catch (err) {
@@ -51,6 +52,24 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Valor da venda fechada (base do VGV / campeão do dashboard). */
   private async ensureLeadValorVenda() {
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "valorVenda" numeric`);
+  }
+
+  /** Cadastro completo do cliente (financiamento / Subir Pasta para Análise). */
+  private async ensureLeadCadastroCompleto() {
+    const cols: [string, string][] = [
+      ["cpf", "varchar"],
+      ["dataNascimento", "date"],
+      ["estadoCivil", "varchar"],
+      ["cep", "varchar"],
+      ["logradouro", "varchar"],
+      ["numero", "varchar"],
+      ["complemento", "varchar"],
+      ["bairro", "varchar"],
+      ["estado", "varchar"],
+    ];
+    for (const [name, type] of cols) {
+      await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "${name}" ${type}`);
+    }
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */

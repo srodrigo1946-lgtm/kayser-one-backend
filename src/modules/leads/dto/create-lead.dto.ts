@@ -67,6 +67,17 @@ export class CreateLeadDto {
   @IsNumber()
   valorVenda?: number;
 
+  // Cadastro completo (financiamento / Subir Pasta para Análise).
+  @ApiPropertyOptional() @IsOptional() @IsString() cpf?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() dataNascimento?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() estadoCivil?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() cep?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() logradouro?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() numero?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() complemento?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() bairro?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() estado?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

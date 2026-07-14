@@ -83,6 +83,35 @@ export class Lead {
   @Column({ type: "decimal", nullable: true })
   valorVenda: number;
 
+  // Cadastro completo (financiamento / "Subir Pasta para Análise"). Endereço tem
+  // o `cidade` reaproveitado acima.
+  @Column({ nullable: true })
+  cpf: string;
+
+  @Column({ type: "date", nullable: true })
+  dataNascimento: string;
+
+  @Column({ nullable: true })
+  estadoCivil: string;
+
+  @Column({ nullable: true })
+  cep: string;
+
+  @Column({ nullable: true })
+  logradouro: string;
+
+  @Column({ nullable: true })
+  numero: string;
+
+  @Column({ nullable: true })
+  complemento: string;
+
+  @Column({ nullable: true })
+  bairro: string;
+
+  @Column({ nullable: true })
+  estado: string;
+
   @Column({ type: "text", nullable: true })
   observacoes: string;
 
