@@ -17,15 +17,21 @@ export class SchemaBootstrapService implements OnModuleInit {
   async onModuleInit() {
     // Só no Postgres (produção). Em sqlite/testes o synchronize cuida do schema.
     if (this.dataSource.options.type !== "postgres") return;
-    try {
-      await this.ensureLeadSource();
-      await this.ensureLeadValorVenda();
-      await this.ensureLeadCadastroCompleto();
-      await this.ensurePastaTable();
-      await this.ensureSettingsColumns();
-      await this.ensureUserAiColumns();
-    } catch (err) {
-      this.logger.warn(`SchemaBootstrap falhou (seguindo mesmo assim): ${(err as Error).message}`);
+    // Cada passo é independente: se um falhar, os demais ainda rodam.
+    const steps: Array<[string, () => Promise<void>]> = [
+      ["ensureLeadSource", () => this.ensureLeadSource()],
+      ["ensureLeadValorVenda", () => this.ensureLeadValorVenda()],
+      ["ensureLeadCadastroCompleto", () => this.ensureLeadCadastroCompleto()],
+      ["ensurePastaTable", () => this.ensurePastaTable()],
+      ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
+      ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
+    ];
+    for (const [name, run] of steps) {
+      try {
+        await run();
+      } catch (err) {
+        this.logger.warn(`SchemaBootstrap ${name} falhou (seguindo): ${(err as Error).message}`);
+      }
     }
   }
 
@@ -77,7 +83,7 @@ export class SchemaBootstrapService implements OnModuleInit {
   private async ensurePastaTable() {
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS analysis_folders (
-        id uuid PRIMARY KEY,
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "leadId" uuid NOT NULL,
         "clientName" varchar NOT NULL,
         "clientCpf" varchar,
@@ -103,6 +109,10 @@ export class SchemaBootstrapService implements OnModuleInit {
         "updatedAt" timestamp DEFAULT now()
       )
     `);
+    // Conserta a tabela caso já tenha sido criada sem o default (id nulo dava 500).
+    await this.dataSource.query(
+      `ALTER TABLE analysis_folders ALTER COLUMN id SET DEFAULT gen_random_uuid()`
+    );
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */
