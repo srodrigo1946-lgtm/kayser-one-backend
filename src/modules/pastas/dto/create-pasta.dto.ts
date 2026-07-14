@@ -16,4 +16,5 @@ export class CreatePastaDto {
   @ApiPropertyOptional() @IsOptional() @IsString() observacoes?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() fase?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() perfil?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() empresaId?: string;
 }
