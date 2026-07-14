@@ -71,6 +71,14 @@ export class ConversationsService {
     }
     conv.assignedToId = userId ?? null;
     await this.convRepo.save(conv);
+
+    // Sincroniza o responsável do lead vinculado (transferir a conversa move o
+    // lead junto). Escreve direto no repo do lead — não chama LeadsService.update,
+    // então não há loop.
+    if (conv.leadId) {
+      await this.leadsRepo.update(conv.leadId, { responsavelId: userId ?? null });
+    }
+
     return this.stripAssigned(
       await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] })
     );

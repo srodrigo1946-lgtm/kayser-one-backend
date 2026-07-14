@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Like, In, FindOptionsWhere } from "typeorm";
 import * as XLSX from "xlsx";
 import { Lead, LeadStatus, LeadSource } from "./lead.entity";
+import { Conversation } from "../conversations/conversation.entity";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { User, UserRole } from "../users/user.entity";
@@ -15,6 +16,8 @@ export class LeadsService {
   constructor(
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
+    @InjectRepository(Conversation)
+    private readonly convRepo: Repository<Conversation>,
     private readonly history: LeadHistoryService,
     private readonly users: UsersService
   ) {}
@@ -116,8 +119,20 @@ export class LeadsService {
         throw new ForbiddenException("Você só pode atribuir o lead a alguém da sua equipe.");
       }
     }
+    const prevResponsavelId = lead.responsavelId ?? null;
     Object.assign(lead, dto);
-    return this.leadsRepo.save(lead);
+    const saved = await this.leadsRepo.save(lead);
+
+    // Sincroniza o atendente da conversa vinculada quando o responsável do lead
+    // muda (transferir o lead move a conversa junto). Escreve direto no repo da
+    // conversa — não chama ConversationsService, então não há loop.
+    if (dto.responsavelId !== undefined) {
+      const newResponsavelId = saved.responsavelId ?? null;
+      if (newResponsavelId !== prevResponsavelId) {
+        await this.convRepo.update({ leadId: saved.id }, { assignedToId: newResponsavelId });
+      }
+    }
+    return saved;
   }
 
   async updateStatus(id: string, status: string, order?: number, user?: User) {
