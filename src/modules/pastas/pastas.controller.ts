@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards, Request } from "@nestjs/common";
+import { Controller, Get, Post, Put, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
+import { Response } from "express";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { PastasService } from "./pastas.service";
@@ -44,5 +45,25 @@ export class PastasController {
   @ApiOperation({ summary: "Garante o ambiente de documentos e devolve o token" })
   documents(@Request() req: any, @Param("id") id: string) {
     return this.service.ensureDocuments(id, req.user);
+  }
+
+  @Get(":id/files")
+  @ApiOperation({ summary: "Lista os documentos recebidos da pasta (empresa/gestor)" })
+  listFiles(@Request() req: any, @Param("id") id: string) {
+    return this.service.listFiles(id, req.user);
+  }
+
+  @Get(":id/files/:docId")
+  @ApiOperation({ summary: "Abre/baixa um documento da pasta" })
+  async getFile(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("docId") docId: string,
+    @Res() res: Response
+  ) {
+    const f = await this.service.getFile(id, docId, req.user);
+    res.setHeader("Content-Type", f.contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${f.filename}"`);
+    res.send(f.buffer);
   }
 }

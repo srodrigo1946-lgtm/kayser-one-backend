@@ -116,4 +116,23 @@ export class PastasService {
     pasta.status = status;
     return this.repo.save(pasta);
   }
+
+  /** Lista os documentos recebidos da pasta (empresa parceira / gestor com acesso). */
+  async listFiles(id: string, user: User) {
+    const pasta = await this.getScopedOrFail(id, user);
+    if (!pasta.documentRequestId) {
+      return { request: { clientName: pasta.clientName }, documents: [] as any[] };
+    }
+    return this.documents.listFilesByRequestId(pasta.documentRequestId);
+  }
+
+  /** Baixa/visualiza um documento da pasta, garantindo que ele pertence a ela. */
+  async getFile(id: string, docId: string, user: User) {
+    const pasta = await this.getScopedOrFail(id, user);
+    const file = await this.documents.getFileRaw(docId);
+    if (!pasta.documentRequestId || file.requestId !== pasta.documentRequestId) {
+      throw new ForbiddenException("Documento não pertence a esta pasta.");
+    }
+    return file;
+  }
 }

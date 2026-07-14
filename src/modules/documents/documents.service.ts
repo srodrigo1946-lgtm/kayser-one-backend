@@ -207,6 +207,45 @@ export class DocumentsService {
   }
 
   /**
+   * Lista os arquivos de uma solicitação SEM checar escopo — para quando o chamador
+   * já autorizou o acesso por outra via (ex.: a empresa parceira via pasta atribuída).
+   */
+  async listFilesByRequestId(requestId: string) {
+    const req = await this.reqRepo.findOne({ where: { id: requestId }, relations: ["documents"] });
+    if (!req) throw new NotFoundException("Solicitação não encontrada.");
+    return {
+      request: { id: req.id, clientName: req.clientName, clientPhone: req.clientPhone, fase: req.fase, token: req.token },
+      documents: (req.documents || []).map((d) => ({
+        id: d.id,
+        tipo: d.tipo,
+        filename: d.filename,
+        uploadedAt: d.uploadedAt,
+      })),
+    };
+  }
+
+  /**
+   * Carrega um arquivo por id SEM checar escopo. Devolve também o requestId para o
+   * chamador confirmar a posse (ex.: o doc pertence mesmo à pasta da empresa).
+   */
+  async getFileRaw(docId: string) {
+    const doc = await this.docRepo.findOne({ where: { id: docId } });
+    if (!doc) throw new NotFoundException("Documento não encontrado.");
+    if (doc.fileKey.startsWith("data:")) {
+      const m = doc.fileKey.match(/^data:(.+?);base64,(.*)$/s);
+      return {
+        buffer: Buffer.from(m ? m[2] : "", "base64"),
+        contentType: doc.contentType || (m ? m[1] : "application/octet-stream"),
+        filename: doc.filename,
+        requestId: doc.requestId,
+      };
+    }
+    const obj = await this.storage.getObject(doc.fileKey);
+    if (!obj) throw new NotFoundException("Arquivo indisponível.");
+    return { buffer: obj.buffer, contentType: obj.contentType, filename: doc.filename, requestId: doc.requestId };
+  }
+
+  /**
    * Organiza os documentos no R2 em pastas amigáveis (NomeCliente_Telefone):
    * - os que ainda estão como data URI no banco → sobem pro R2;
    * - os que já estão no R2 mas em pasta antiga (ID) → são copiados pra pasta
