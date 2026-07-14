@@ -7,10 +7,20 @@ export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
   private readonly apiUrl: string;
   private readonly apiKey: string;
+  private readonly webhookUrl: string;
 
   constructor(private readonly config: ConfigService) {
     this.apiUrl = config.get("EVOLUTION_API_URL", "http://localhost:8080");
     this.apiKey = config.get("EVOLUTION_API_KEY", "");
+    // URL pública deste backend, para onde a Evolution deve mandar os eventos.
+    // Usa WEBHOOK_PUBLIC_URL se definido; senão o domínio público do Railway.
+    const base =
+      config.get<string>("WEBHOOK_PUBLIC_URL") ||
+      (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : "");
+    const token = config.get<string>("WHATSAPP_WEBHOOK_TOKEN");
+    this.webhookUrl = base
+      ? `${base.replace(/\/$/, "")}/api/v1/whatsapp/webhook${token ? `?token=${token}` : ""}`
+      : "";
   }
 
   private get headers() {
@@ -18,13 +28,14 @@ export class WhatsappService {
   }
 
   async createInstance(instanceName: string) {
+    let result: any;
     try {
       const { data } = await axios.post(
         `${this.apiUrl}/instance/create`,
         { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" },
         { headers: this.headers }
       );
-      return data;
+      result = data;
     } catch (err: any) {
       // A Evolution retorna 403/409 quando a instância já existe.
       // Isso não é erro: o usuário só quer (re)conectar, então seguimos
@@ -32,18 +43,63 @@ export class WhatsappService {
       const status = err?.response?.status;
       if (status === 403 || status === 409) {
         this.logger.log(`Instância ${instanceName} já existe; reutilizando.`);
-        return { instanceName, alreadyExists: true };
+        result = { instanceName, alreadyExists: true };
+      } else {
+        throw err;
       }
-      throw err;
     }
+    // Cada cargo tem o seu WhatsApp; sem isto a ENTRADA de mensagens não chega no
+    // CRM. Configuramos o webhook da instância (idempotente) sempre que ela é
+    // criada/reconectada, para não depender de ajuste manual por usuário.
+    await this.ensureWebhook(instanceName);
+    return result;
   }
 
   async getQrCode(instanceName: string) {
+    // Reforço: garante o webhook também no fluxo de reconexão (buscar QR).
+    await this.ensureWebhook(instanceName);
     const { data } = await axios.get(
       `${this.apiUrl}/instance/connect/${instanceName}`,
       { headers: this.headers }
     );
     return data;
+  }
+
+  /**
+   * Aponta o webhook da instância para este backend, ativando o evento de
+   * mensagem recebida (MESSAGES_UPSERT). Idempotente e tolerante a falha: se der
+   * erro (ou faltar a URL pública), apenas registra um aviso — não quebra a
+   * conexão do WhatsApp.
+   */
+  async ensureWebhook(instanceName: string) {
+    if (!this.webhookUrl) {
+      this.logger.warn(
+        "WEBHOOK_PUBLIC_URL/RAILWAY_PUBLIC_DOMAIN ausente — webhook da instância NÃO configurado."
+      );
+      return;
+    }
+    try {
+      await axios.post(
+        `${this.apiUrl}/webhook/set/${instanceName}`,
+        {
+          webhook: {
+            enabled: true,
+            url: this.webhookUrl,
+            webhookByEvents: false,
+            webhookBase64: false,
+            events: ["MESSAGES_UPSERT"],
+          },
+        },
+        { headers: this.headers }
+      );
+      this.logger.log(`Webhook da instância ${instanceName} configurado.`);
+    } catch (err: any) {
+      this.logger.warn(
+        `Falha ao configurar webhook de ${instanceName}: ${err?.response?.status ?? ""} ${
+          err?.message ?? ""
+        }`
+      );
+    }
   }
 
   async getInstanceStatus(instanceName: string) {
