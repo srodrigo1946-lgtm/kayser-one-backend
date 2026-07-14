@@ -21,6 +21,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       await this.ensureLeadSource();
       await this.ensureLeadValorVenda();
       await this.ensureLeadCadastroCompleto();
+      await this.ensurePastaTable();
       await this.ensureSettingsColumns();
       await this.ensureUserAiColumns();
     } catch (err) {
@@ -70,6 +71,38 @@ export class SchemaBootstrapService implements OnModuleInit {
     for (const [name, type] of cols) {
       await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "${name}" ${type}`);
     }
+  }
+
+  /** Tabela da pasta de análise (entidade nova; synchronize está off em produção). */
+  private async ensurePastaTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS analysis_folders (
+        id uuid PRIMARY KEY,
+        "leadId" uuid NOT NULL,
+        "clientName" varchar NOT NULL,
+        "clientCpf" varchar,
+        "propertyId" uuid,
+        empreendimento varchar,
+        construtora varchar,
+        unidade varchar,
+        bloco varchar,
+        apartamento varchar,
+        "valorAvaliacao" numeric,
+        "valorVendaFinal" numeric,
+        "condicoesComerciais" text,
+        observacoes text,
+        fase varchar DEFAULT 'simplificada',
+        perfil varchar DEFAULT 'clt',
+        "documentRequestId" uuid,
+        "empresaId" uuid,
+        parecer text,
+        status varchar DEFAULT 'montando',
+        "responsavelId" uuid,
+        "createdById" uuid,
+        "createdAt" timestamp DEFAULT now(),
+        "updatedAt" timestamp DEFAULT now()
+      )
+    `);
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */
