@@ -24,6 +24,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureLeadCadastroCompleto", () => this.ensureLeadCadastroCompleto()],
       ["ensurePastaTable", () => this.ensurePastaTable()],
       ["ensureEmpresaTable", () => this.ensureEmpresaTable()],
+      ["ensureEmpresaUser", () => this.ensureEmpresaUser()],
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
     ];
@@ -136,6 +137,15 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(
       `ALTER TABLE partner_companies ALTER COLUMN id SET DEFAULT gen_random_uuid()`
     );
+  }
+
+  /** Login da empresa parceira: valor 'empresa' no enum de cargos + users.empresaId. */
+  private async ensureEmpresaUser() {
+    // Postgres 12+: adicionar valor ao enum (fora de transação, o que é o caso aqui).
+    await this.dataSource.query(
+      `ALTER TYPE users_role_enum ADD VALUE IF NOT EXISTS 'empresa'`
+    );
+    await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "empresaId" uuid`);
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */

@@ -15,6 +15,8 @@ export enum UserRole {
   GERENTE_GERAL = "gerente_geral",
   GERENTE = "gerente",
   CORRETOR = "corretor",
+  // Empresa parceira (correspondente bancário) — só analisa as pastas atribuídas.
+  EMPRESA = "empresa",
 }
 
 @Entity("users")
@@ -33,6 +35,10 @@ export class User {
 
   @Column({ type: "enum", enum: UserRole, default: UserRole.CORRETOR })
   role: UserRole;
+
+  // Quando o usuário é uma EMPRESA parceira, aponta para a empresa (partner_companies).
+  @Column({ type: "uuid", nullable: true })
+  empresaId: string;
 
   // Foto de perfil (data URI base64 ou URL). text para comportar imagens embutidas.
   @Column({ type: "text", nullable: true })

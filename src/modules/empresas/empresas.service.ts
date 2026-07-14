@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
+import * as bcrypt from "bcrypt";
 import { Empresa } from "./empresa.entity";
 import { User, UserRole } from "../users/user.entity";
 
@@ -8,7 +9,9 @@ import { User, UserRole } from "../users/user.entity";
 export class EmpresasService {
   constructor(
     @InjectRepository(Empresa)
-    private readonly repo: Repository<Empresa>
+    private readonly repo: Repository<Empresa>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>
   ) {}
 
   /** Diretor vê todas; os demais só as aprovadas (para atribuir à pasta). */
@@ -30,7 +33,11 @@ export class EmpresasService {
     return this.repo.save(emp);
   }
 
-  /** Liberação/reprovação é só do Diretor. */
+  /**
+   * Liberação/reprovação é só do Diretor. Ao aprovar, cria o LOGIN da empresa
+   * (usuário cargo EMPRESA, senha provisória padrão) e devolve as credenciais
+   * para o Diretor repassar — só na primeira vez (quando o usuário é criado).
+   */
   async setStatus(id: string, status: string, user: User) {
     if (user.role !== UserRole.DIRETOR) {
       throw new ForbiddenException("Apenas o Diretor libera empresas parceiras.");
@@ -38,6 +45,31 @@ export class EmpresasService {
     const emp = await this.repo.findOne({ where: { id } });
     if (!emp) throw new NotFoundException("Empresa não encontrada.");
     emp.status = status;
-    return this.repo.save(emp);
+    const saved = await this.repo.save(emp);
+    let credenciais: { email: string; senhaProvisoria: string } | undefined;
+    if (status === "aprovada") {
+      credenciais = await this.ensureEmpresaLogin(saved);
+    }
+    return { ...saved, credenciais };
+  }
+
+  /** Cria o usuário de login da empresa (se ainda não existir com esse e-mail). */
+  private async ensureEmpresaLogin(emp: Empresa) {
+    const existing = await this.usersRepo.findOne({ where: { email: emp.email } });
+    if (existing) return undefined; // já há conta com esse e-mail — não recria/reexibe
+    const passwordHash = await bcrypt.hash("123456789", 12);
+    await this.usersRepo.save(
+      this.usersRepo.create({
+        name: emp.nome || emp.email,
+        email: emp.email,
+        passwordHash,
+        role: UserRole.EMPRESA,
+        empresaId: emp.id,
+        firstLogin: true,
+        approved: true,
+        active: true,
+      })
+    );
+    return { email: emp.email, senhaProvisoria: "123456789" };
   }
 }
