@@ -15,8 +15,9 @@ export enum UserRole {
   GERENTE_GERAL = "gerente_geral",
   GERENTE = "gerente",
   CORRETOR = "corretor",
-  // Empresa parceira (correspondente bancário) — só analisa as pastas atribuídas.
-  EMPRESA = "empresa",
+  // OBS.: empresa parceira NÃO é um cargo novo (evita ALTER TYPE no enum do Postgres
+  // e mantém Record<UserRole,...> completo). O login da empresa nasce como CORRETOR +
+  // users.empresaId; a detecção "é empresa" é feita por empresaId.
 }
 
 @Entity("users")
