@@ -46,10 +46,16 @@ export class ConversationsService {
       .addSelect(["atendente.id", "atendente.name", "atendente.role", "atendente.avatar"])
       .orderBy("c.lastMessageAt", "DESC");
 
-    // WhatsApp é 100% individual: cada usuário — inclusive Diretor, superintendente
-    // e gerentes — vê SOMENTE as suas próprias conversas. Não há hierarquia aqui
-    // (o resto do sistema, sim; só as conversas de WhatsApp que são privadas).
-    qb.where("(c.assignedToId = :uid OR lead.responsavelId = :uid)", { uid: user.id });
+    // Visibilidade por hierarquia (igual ao resto do sistema): o Diretor vê TODAS
+    // as conversas; cada gerente vê as da sua equipe (árvore de descendentes); o
+    // corretor vê só as suas. O escopo casa tanto pelo atendente da conversa quanto
+    // pelo responsável do lead.
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null) {
+      qb.where("(c.assignedToId IN (:...ids) OR lead.responsavelId IN (:...ids))", {
+        ids: scopeIds,
+      });
+    }
     return qb.getMany();
   }
 
