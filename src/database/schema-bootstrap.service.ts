@@ -23,6 +23,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureLeadValorVenda", () => this.ensureLeadValorVenda()],
       ["ensureLeadCadastroCompleto", () => this.ensureLeadCadastroCompleto()],
       ["ensurePastaTable", () => this.ensurePastaTable()],
+      ["ensureEmpresaTable", () => this.ensureEmpresaTable()],
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
     ];
@@ -116,6 +117,25 @@ export class SchemaBootstrapService implements OnModuleInit {
     );
     // Coluna adicionada depois (Fase 3b): token do ambiente de documentos.
     await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS "docToken" varchar`);
+  }
+
+  /** Tabela de empresas parceiras (entidade nova). */
+  private async ensureEmpresaTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS partner_companies (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        cnpj varchar NOT NULL,
+        email varchar NOT NULL,
+        nome varchar,
+        status varchar DEFAULT 'pendente',
+        "createdById" uuid,
+        "createdAt" timestamp DEFAULT now(),
+        "updatedAt" timestamp DEFAULT now()
+      )
+    `);
+    await this.dataSource.query(
+      `ALTER TABLE partner_companies ALTER COLUMN id SET DEFAULT gen_random_uuid()`
+    );
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */

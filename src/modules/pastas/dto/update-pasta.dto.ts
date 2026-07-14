@@ -5,4 +5,5 @@ import { CreatePastaDto } from "./create-pasta.dto";
 export class UpdatePastaDto extends PartialType(CreatePastaDto) {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() parecer?: string;
+  @IsOptional() @IsString() empresaId?: string;
 }
