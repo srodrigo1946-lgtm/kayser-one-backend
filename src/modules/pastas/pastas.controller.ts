@@ -53,6 +53,12 @@ export class PastasController {
     return this.service.listFiles(id, req.user);
   }
 
+  @Post(":id/release")
+  @ApiOperation({ summary: "Libera/reabre a janela de 40 min p/ a empresa (corretor/Diretor)" })
+  release(@Request() req: any, @Param("id") id: string) {
+    return this.service.releaseDocs(id, req.user);
+  }
+
   @Get(":id/files/:docId")
   @ApiOperation({ summary: "Abre/baixa um documento da pasta" })
   async getFile(

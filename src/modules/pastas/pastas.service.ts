@@ -9,6 +9,9 @@ import { DocumentsService } from "../documents/documents.service";
 import { CreatePastaDto } from "./dto/create-pasta.dto";
 import { UpdatePastaDto } from "./dto/update-pasta.dto";
 
+/** Janela de acesso da empresa parceira aos documentos (Fase 5): 40 minutos. */
+const WINDOW_MS = 40 * 60 * 1000;
+
 @Injectable()
 export class PastasService {
   constructor(
@@ -121,22 +124,59 @@ export class PastasService {
     return this.repo.save(pasta);
   }
 
-  /** Lista os documentos recebidos da pasta (empresa parceira / gestor com acesso). */
-  async listFiles(id: string, user: User) {
-    const pasta = await this.getScopedOrFail(id, user);
-    if (!pasta.documentRequestId) {
-      return { request: { clientName: pasta.clientName }, documents: [] as any[] };
-    }
-    return this.documents.listFilesByRequestId(pasta.documentRequestId);
+  /**
+   * Estado da janela de 40 min (Fase 5). Corretor/Diretor sempre têm acesso
+   * (janela não se aplica); só a EMPRESA parceira é limitada pela janela.
+   */
+  private windowInfo(pasta: Pasta) {
+    const releasedAt = pasta.docsReleasedAt ? new Date(pasta.docsReleasedAt) : null;
+    const expiresAt = releasedAt ? new Date(releasedAt.getTime() + WINDOW_MS) : null;
+    const now = Date.now();
+    const released = !!releasedAt;
+    const active = !!expiresAt && now < expiresAt.getTime();
+    const archived = released && !active;
+    const remainingMs = active && expiresAt ? expiresAt.getTime() - now : 0;
+    return { released, active, archived, remainingMs, releasedAt, expiresAt };
   }
 
-  /** Baixa/visualiza um documento da pasta, garantindo que ele pertence a ela. */
+  /** Lista os documentos da pasta. Empresa só recebe os arquivos com a janela ATIVA. */
+  async listFiles(id: string, user: User) {
+    const pasta = await this.getScopedOrFail(id, user);
+    const win = this.windowInfo(pasta);
+    const isEmpresa = !!user.empresaId;
+    const base = pasta.documentRequestId
+      ? await this.documents.listFilesByRequestId(pasta.documentRequestId)
+      : { request: { clientName: pasta.clientName }, documents: [] as any[] };
+    // Empresa sem janela ativa não recebe a listagem dos arquivos (só o estado).
+    if (isEmpresa && !win.active) {
+      return { request: base.request, documents: [], window: win };
+    }
+    return { ...base, window: win };
+  }
+
+  /** Baixa/visualiza um documento da pasta, garantindo que ele pertence a ela + janela. */
   async getFile(id: string, docId: string, user: User) {
     const pasta = await this.getScopedOrFail(id, user);
+    if (user.empresaId && !this.windowInfo(pasta).active) {
+      throw new ForbiddenException(
+        "Janela de 40 minutos indisponível. Peça ao corretor para liberar os documentos."
+      );
+    }
     const file = await this.documents.getFileRaw(docId);
     if (!pasta.documentRequestId || file.requestId !== pasta.documentRequestId) {
       throw new ForbiddenException("Documento não pertence a esta pasta.");
     }
     return file;
+  }
+
+  /** Libera (ou reabre) a janela de 40 min para a empresa. Só corretor/Diretor. */
+  async releaseDocs(id: string, user: User) {
+    if (user.empresaId) {
+      throw new ForbiddenException("A empresa parceira não libera a própria janela.");
+    }
+    const pasta = await this.getScopedOrFail(id, user);
+    pasta.docsReleasedAt = new Date();
+    await this.repo.save(pasta);
+    return this.windowInfo(pasta);
   }
 }

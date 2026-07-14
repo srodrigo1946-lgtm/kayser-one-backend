@@ -68,6 +68,12 @@ export class Pasta {
   @Column({ default: "montando" })
   status: string;
 
+  // Fase 5: quando o corretor/Diretor LIBERA os documentos para a empresa parceira.
+  // A empresa tem 40 min a partir daqui para acessar/baixar; depois o acesso fecha
+  // (os arquivos seguem guardados no R2/Cloudflare — só corretor/Diretor acessam).
+  @Column({ type: "timestamp", nullable: true })
+  docsReleasedAt: Date;
+
   // Escopo por hierarquia: responsavelId = corretor dono (copiado do lead).
   @Column({ type: "uuid", nullable: true })
   responsavelId: string;

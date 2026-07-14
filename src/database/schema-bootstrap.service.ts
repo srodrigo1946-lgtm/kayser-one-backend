@@ -120,6 +120,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS "docToken" varchar`);
     // Número sequencial da análise ("Análise 01"). Backfill por ordem de criação nas linhas sem número.
     await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS numero int`);
+    // Fase 5: momento da liberação dos documentos p/ a empresa (janela de 40 min).
+    await this.dataSource.query(`ALTER TABLE analysis_folders ADD COLUMN IF NOT EXISTS "docsReleasedAt" timestamp`);
     await this.dataSource.query(`
       UPDATE analysis_folders af
       SET numero = sub.rn + COALESCE((SELECT MAX(numero) FROM analysis_folders WHERE numero IS NOT NULL), 0)
