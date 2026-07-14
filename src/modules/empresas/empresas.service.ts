@@ -63,7 +63,9 @@ export class EmpresasService {
         name: emp.nome || emp.email,
         email: emp.email,
         passwordHash,
-        role: UserRole.EMPRESA,
+        // Cargo válido do enum; o que marca "é empresa parceira" é o empresaId
+        // (evita depender de ALTER TYPE no enum do Postgres).
+        role: UserRole.CORRETOR,
         empresaId: emp.id,
         firstLogin: true,
         approved: true,

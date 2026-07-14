@@ -139,12 +139,9 @@ export class SchemaBootstrapService implements OnModuleInit {
     );
   }
 
-  /** Login da empresa parceira: valor 'empresa' no enum de cargos + users.empresaId. */
+  /** Login da empresa parceira: marca users.empresaId (o usuário fica com cargo
+   *  corretor + empresaId; não depende de novo valor no enum de cargos). */
   private async ensureEmpresaUser() {
-    // Postgres 12+: adicionar valor ao enum (fora de transação, o que é o caso aqui).
-    await this.dataSource.query(
-      `ALTER TYPE users_role_enum ADD VALUE IF NOT EXISTS 'empresa'`
-    );
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "empresaId" uuid`);
   }
 
