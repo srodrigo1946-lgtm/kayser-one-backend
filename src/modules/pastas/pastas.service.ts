@@ -3,7 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { Pasta } from "./pasta.entity";
 import { Lead } from "../leads/lead.entity";
-import { User } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
 import { DocumentsService } from "../documents/documents.service";
 import { CreatePastaDto } from "./dto/create-pasta.dto";
@@ -120,6 +120,15 @@ export class PastasService {
 
   async updateStatus(id: string, status: string, user: User) {
     const pasta = await this.getScopedOrFail(id, user);
+    // Veredito (complemento/aprovado/reprovado) só o Diretor ou a empresa parceira.
+    // Corretor/gestores só movem entre "montando" e "em_analise".
+    const veredito = ["complemento", "aprovado", "reprovado"];
+    const podeVeredito = !!user.empresaId || user.role === UserRole.DIRETOR;
+    if (veredito.includes(status) && !podeVeredito) {
+      throw new ForbiddenException(
+        "Apenas o Diretor ou a empresa parceira definem o veredito da análise."
+      );
+    }
     pasta.status = status;
     return this.repo.save(pasta);
   }

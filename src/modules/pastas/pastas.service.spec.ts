@@ -35,7 +35,8 @@ describe("PastasService", () => {
   });
 
   const empresa = { id: "u-emp", empresaId: "emp1" } as any;
-  const corretor = { id: "c1", empresaId: null } as any;
+  const corretor = { id: "c1", empresaId: null, role: "corretor" } as any;
+  const diretor = { id: "d1", empresaId: null, role: "diretor" } as any;
   const minsAgo = (m: number) => new Date(Date.now() - m * 60 * 1000);
 
   it("numera a análise com max(numero)+1 e gera o ambiente de documentos", async () => {
@@ -105,5 +106,28 @@ describe("PastasService", () => {
     expect(repo.save).toHaveBeenCalled();
     expect(win.released).toBe(true);
     expect(win.active).toBe(true);
+  });
+
+  it("updateStatus: corretor NÃO pode dar veredito (aprovado → 403)", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", responsavelId: "c1" });
+    await expect(service.updateStatus("p1", "aprovado", corretor)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("updateStatus: corretor pode mover para em_analise", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", responsavelId: "c1" });
+    const res: any = await service.updateStatus("p1", "em_analise", corretor);
+    expect(res.status).toBe("em_analise");
+  });
+
+  it("updateStatus: Diretor pode aprovar", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", responsavelId: "c1" });
+    const res: any = await service.updateStatus("p1", "aprovado", diretor);
+    expect(res.status).toBe("aprovado");
+  });
+
+  it("updateStatus: empresa parceira pode reprovar", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", empresaId: "emp1" });
+    const res: any = await service.updateStatus("p1", "reprovado", empresa);
+    expect(res.status).toBe("reprovado");
   });
 });
