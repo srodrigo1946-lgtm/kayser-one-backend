@@ -306,12 +306,12 @@ export class PastasService {
     const pasta = await this.getScopedOrFail(id, user);
     const win = this.windowInfo(pasta);
     const isEmpresa = !!user.empresaId;
-    const base = pasta.documentRequestId
+    const base: any = pasta.documentRequestId
       ? await this.documents.listFilesByRequestId(pasta.documentRequestId)
-      : { request: { clientName: pasta.clientName }, documents: [] as any[] };
-    // Empresa sem janela ativa não recebe a listagem dos arquivos (só o estado).
+      : { request: { clientName: pasta.clientName }, documents: [], pendencias: [] };
+    // Empresa sem janela ativa não recebe os arquivos (mas vê as pendências pedidas).
     if (isEmpresa && !win.active) {
-      return { request: base.request, documents: [], window: win };
+      return { request: base.request, documents: [], pendencias: base.pendencias || [], window: win };
     }
     return { ...base, window: win };
   }

@@ -218,6 +218,7 @@ export class DocumentsService {
   async listFilesByRequestId(requestId: string) {
     const req = await this.reqRepo.findOne({ where: { id: requestId }, relations: ["documents"] });
     if (!req) throw new NotFoundException("Solicitação não encontrada.");
+    const recebidosTipos = new Set((req.documents || []).map((d) => d.tipo));
     return {
       request: { id: req.id, clientName: req.clientName, clientPhone: req.clientPhone, fase: req.fase, token: req.token },
       documents: (req.documents || []).map((d) => ({
@@ -225,6 +226,11 @@ export class DocumentsService {
         tipo: d.tipo,
         filename: d.filename,
         uploadedAt: d.uploadedAt,
+      })),
+      // Pendências pedidas depois (extraDocs) + se já foram recebidas (tipo pend_N).
+      pendencias: (req.extraDocs || []).map((label, i) => ({
+        label,
+        recebido: recebidosTipos.has(`pend_${i}`),
       })),
     };
   }
