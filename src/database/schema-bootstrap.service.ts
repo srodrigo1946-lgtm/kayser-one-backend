@@ -26,6 +26,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureEmpresaTable", () => this.ensureEmpresaTable()],
       ["ensureEmpresaUser", () => this.ensureEmpresaUser()],
       ["ensureDocRequestExtra", () => this.ensureDocRequestExtra()],
+      ["ensureSupportTable", () => this.ensureSupportTable()],
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
     ];
@@ -162,6 +163,24 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Pendências extras pedidas depois (documentos que faltam) no link de docs. */
   private async ensureDocRequestExtra() {
     await this.dataSource.query(`ALTER TABLE document_requests ADD COLUMN IF NOT EXISTS "extraDocs" text`);
+  }
+
+  /** Caixinha pública de suporte/reclamação (tela de login). */
+  private async ensureSupportTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS support_messages (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        name varchar,
+        email varchar,
+        type varchar DEFAULT 'suporte',
+        message text NOT NULL,
+        read boolean DEFAULT false,
+        "createdAt" timestamp DEFAULT now()
+      )
+    `);
+    await this.dataSource.query(
+      `ALTER TABLE support_messages ALTER COLUMN id SET DEFAULT gen_random_uuid()`
+    );
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */

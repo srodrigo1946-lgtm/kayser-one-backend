@@ -24,6 +24,7 @@ import { BackupModule } from "./modules/backup/backup.module";
 import { LeadQueueModule } from "./modules/lead-queue/lead-queue.module";
 import { PastasModule } from "./modules/pastas/pastas.module";
 import { EmpresasModule } from "./modules/empresas/empresas.module";
+import { SupportModule } from "./modules/support/support.module";
 import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
 
 @Module({
@@ -80,6 +81,7 @@ import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
     LeadQueueModule,
     PastasModule,
     EmpresasModule,
+    SupportModule,
   ],
   providers: [
     SchemaBootstrapService,
