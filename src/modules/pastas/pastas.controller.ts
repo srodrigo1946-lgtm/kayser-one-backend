@@ -69,6 +69,12 @@ export class PastasController {
     return this.service.ensureDocuments(id, req.user);
   }
 
+  @Post(":id/pendencia")
+  @ApiOperation({ summary: "Pede um documento pendente (novo espaço no mesmo link)" })
+  pendencia(@Request() req: any, @Param("id") id: string, @Body("label") label: string) {
+    return this.service.addPendencia(id, label, req.user);
+  }
+
   @Delete(":id")
   @ApiOperation({ summary: "Exclui a pasta e o ambiente de documentos (só Diretor)" })
   remove(@Request() req: any, @Param("id") id: string) {

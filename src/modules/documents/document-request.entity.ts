@@ -48,6 +48,11 @@ export class DocumentRequest {
   @Column({ nullable: true })
   createdById: string;
 
+  // Documentos pendentes pedidos depois (a empresa aponta o que falta). Cada texto
+  // vira um espaço novo no MESMO link /docs/:token. Guardado como lista simples.
+  @Column({ type: "simple-array", nullable: true })
+  extraDocs: string[];
+
   @OneToMany(() => Document, (d) => d.request)
   documents: Document[];
 

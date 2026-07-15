@@ -115,8 +115,38 @@ export class PastasService {
 
   async update(id: string, dto: UpdatePastaDto, user: User) {
     const pasta = await this.getScopedOrFail(id, user);
+    const faseAntes = pasta.fase;
+    const perfilAntes = pasta.perfil;
     Object.assign(pasta, dto);
-    return this.repo.save(pasta);
+    const saved = await this.repo.save(pasta);
+    // Se mudou fase/perfil, reflete no checklist do MESMO link de documentos.
+    if (saved.documentRequestId && (saved.fase !== faseAntes || saved.perfil !== perfilAntes)) {
+      try {
+        await this.documents.updateRequestProfile(saved.documentRequestId, {
+          fase: saved.fase,
+          perfil: saved.perfil === "empresario" ? "autonomo" : "clt",
+        });
+      } catch {
+        /* segue: a pasta foi salva mesmo se o sync do checklist falhar */
+      }
+    }
+    return saved;
+  }
+
+  /** Pede um documento pendente (abre um espaço novo no mesmo link /docs/:token). */
+  async addPendencia(id: string, label: string, user: User) {
+    const pasta = await this.getScopedOrFail(id, user);
+    let requestId = pasta.documentRequestId;
+    if (!requestId) {
+      const lead = await this.leadsRepo.findOne({ where: { id: pasta.leadId } });
+      if (lead) {
+        const p = await this.ensureDocsForPasta(pasta, lead, user);
+        requestId = p.documentRequestId;
+      }
+    }
+    if (!requestId) throw new NotFoundException("Ambiente de documentos não encontrado.");
+    await this.documents.addExtraDoc(requestId, label);
+    return { ok: true };
   }
 
   async updateStatus(id: string, status: string, user: User) {

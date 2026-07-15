@@ -25,6 +25,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensurePastaTable", () => this.ensurePastaTable()],
       ["ensureEmpresaTable", () => this.ensureEmpresaTable()],
       ["ensureEmpresaUser", () => this.ensureEmpresaUser()],
+      ["ensureDocRequestExtra", () => this.ensureDocRequestExtra()],
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
     ];
@@ -156,6 +157,11 @@ export class SchemaBootstrapService implements OnModuleInit {
    *  corretor + empresaId; não depende de novo valor no enum de cargos). */
   private async ensureEmpresaUser() {
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "empresaId" uuid`);
+  }
+
+  /** Pendências extras pedidas depois (documentos que faltam) no link de docs. */
+  private async ensureDocRequestExtra() {
+    await this.dataSource.query(`ALTER TABLE document_requests ADD COLUMN IF NOT EXISTS "extraDocs" text`);
   }
 
   /** Colunas novas de follow-up em settings (defaults tratados no código). */

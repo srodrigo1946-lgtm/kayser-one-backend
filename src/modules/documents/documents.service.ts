@@ -13,6 +13,7 @@ import { Conversation } from "../conversations/conversation.entity";
 export interface ChecklistItem {
   key: string;
   label: string;
+  pendente?: boolean;
 }
 
 /** Monta o checklist conforme fase (simplificada/completa), perfil (clt/autônomo) e estado civil. */
@@ -35,6 +36,10 @@ function buildChecklist(req: DocumentRequest): ChecklistItem[] {
   } else {
     items.push({ key: "certidao_nascimento", label: "Certidão de nascimento" });
   }
+  // Pendências pedidas depois (a empresa apontou o que faltou) — viram espaços extras.
+  (req.extraDocs || []).forEach((label, i) => {
+    items.push({ key: `pend_${i}`, label, pendente: true });
+  });
   return items;
 }
 
@@ -259,6 +264,25 @@ export class DocumentsService {
     }
     await this.docRepo.delete({ requestId });
     await this.reqRepo.delete({ id: requestId });
+  }
+
+  /** Atualiza fase/perfil da solicitação (reflete no checklist do mesmo link). */
+  async updateRequestProfile(requestId: string, data: { fase?: string; perfil?: string }) {
+    const req = await this.reqRepo.findOne({ where: { id: requestId } });
+    if (!req) return;
+    if (data.fase) req.fase = data.fase;
+    if (data.perfil) req.perfil = data.perfil;
+    await this.reqRepo.save(req);
+  }
+
+  /** Adiciona um documento pendente (espaço extra) ao link. */
+  async addExtraDoc(requestId: string, label: string) {
+    const req = await this.reqRepo.findOne({ where: { id: requestId } });
+    if (!req) throw new NotFoundException("Solicitação não encontrada.");
+    const clean = (label || "").trim();
+    if (!clean) return req;
+    req.extraDocs = [...(req.extraDocs || []), clean];
+    return this.reqRepo.save(req);
   }
 
   /**

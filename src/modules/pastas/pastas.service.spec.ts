@@ -30,6 +30,8 @@ describe("PastasService", () => {
         filename: "rg.png",
         requestId: "r1",
       }),
+      updateRequestProfile: jest.fn(),
+      addExtraDoc: jest.fn(),
     };
     service = new PastasService(repo, leadsRepo, users, documents);
   });
@@ -143,5 +145,17 @@ describe("PastasService", () => {
 
   it("export Excel: só Diretor (Gerente Geral → 403)", async () => {
     await expect(service.exportAnalyses(gerenteGeral)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("update: mudar a fase reflete no checklist do mesmo link", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", fase: "simplificada", perfil: "clt", documentRequestId: "r1", empresaId: null });
+    await service.update("p1", { fase: "completa" } as any, diretor);
+    expect(documents.updateRequestProfile).toHaveBeenCalledWith("r1", { fase: "completa", perfil: "clt" });
+  });
+
+  it("addPendencia: abre espaço extra no link (empresa aponta o que falta)", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", documentRequestId: "r1", empresaId: "emp1" });
+    await service.addPendencia("p1", "Extrato do FGTS de abril", empresa);
+    expect(documents.addExtraDoc).toHaveBeenCalledWith("r1", "Extrato do FGTS de abril");
   });
 });
