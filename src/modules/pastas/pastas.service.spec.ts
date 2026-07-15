@@ -36,6 +36,8 @@ describe("PastasService", () => {
 
   const empresa = { id: "u-emp", empresaId: "emp1" } as any;
   const corretor = { id: "c1", empresaId: null, role: "corretor" } as any;
+  const gerente = { id: "g1", empresaId: null, role: "gerente" } as any;
+  const gerenteGeral = { id: "gg1", empresaId: null, role: "gerente_geral" } as any;
   const diretor = { id: "d1", empresaId: null, role: "diretor" } as any;
   const minsAgo = (m: number) => new Date(Date.now() - m * 60 * 1000);
 
@@ -129,5 +131,17 @@ describe("PastasService", () => {
     repo.findOne.mockResolvedValue({ id: "p1", empresaId: "emp1" });
     const res: any = await service.updateStatus("p1", "reprovado", empresa);
     expect(res.status).toBe("reprovado");
+  });
+
+  it("ranking: corretor NÃO pode ver (403)", async () => {
+    await expect(service.analysesRanking(corretor)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("ranking: gerente de vendas NÃO pode ver (403)", async () => {
+    await expect(service.analysesRanking(gerente)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("export Excel: só Diretor (Gerente Geral → 403)", async () => {
+    await expect(service.exportAnalyses(gerenteGeral)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

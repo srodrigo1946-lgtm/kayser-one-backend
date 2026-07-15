@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
+import * as XLSX from "xlsx";
 import { Pasta } from "./pasta.entity";
 import { Lead } from "../leads/lead.entity";
 import { User, UserRole } from "../users/user.entity";
@@ -164,6 +165,110 @@ export class PastasService {
     }
     await this.repo.delete({ id });
     return { ok: true };
+  }
+
+  /** Ranking só do Gerente Geral pra cima (gerente de vendas e corretor não veem). */
+  private assertCanViewRanking(user: User) {
+    const ok: UserRole[] = [UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL];
+    if (!ok.includes(user.role)) {
+      throw new ForbiddenException("Ranking disponível apenas do Gerente Geral para cima.");
+    }
+  }
+
+  private periodRange(year?: number, month?: number): { start?: Date; end?: Date } {
+    if (!year) return {};
+    if (month && month >= 1 && month <= 12) {
+      return { start: new Date(year, month - 1, 1), end: new Date(year, month, 1) };
+    }
+    return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1) };
+  }
+
+  /**
+   * Ranking de Análises: por responsável, nº de análises (pastas), quantas viraram
+   * venda (aprovadas) e a taxa de conversão (%). Exclui o Diretor; escopo por hierarquia.
+   */
+  async analysesRanking(user: User, year?: number, month?: number) {
+    this.assertCanViewRanking(user);
+    const scope = await this.users.getScopeIds(user);
+    const { start, end } = this.periodRange(year, month);
+    const qb = this.repo
+      .createQueryBuilder("p")
+      .innerJoin(User, "u", "u.id = p.responsavelId")
+      .select("u.id", "id")
+      .addSelect("u.name", "name")
+      .addSelect("u.role", "role")
+      .addSelect("(u.avatar IS NOT NULL)", "hasAvatar")
+      .addSelect("COUNT(p.id)", "analises")
+      .addSelect("COUNT(*) FILTER (WHERE p.status = 'aprovado')", "vendas")
+      .addSelect("COALESCE(SUM(p.\"valorVendaFinal\") FILTER (WHERE p.status = 'aprovado'), 0)", "vgv")
+      .where("u.role != :d", { d: UserRole.DIRETOR })
+      .groupBy("u.id")
+      .addGroupBy("u.name")
+      .addGroupBy("u.role")
+      .addGroupBy("u.avatar");
+    if (start) qb.andWhere('p."createdAt" >= :start', { start });
+    if (end) qb.andWhere('p."createdAt" < :end', { end });
+    if (scope !== null) {
+      qb.andWhere('p."responsavelId" IN (:...ids)', {
+        ids: scope.length ? scope : ["00000000-0000-0000-0000-000000000000"],
+      });
+    }
+    const rows = await qb.getRawMany();
+    return rows
+      .map((r) => {
+        const analises = Number(r.analises) || 0;
+        const vendas = Number(r.vendas) || 0;
+        return {
+          id: r.id,
+          name: r.name,
+          role: r.role,
+          hasAvatar: r.hasAvatar === true || r.hasAvatar === "true",
+          analises,
+          vendas,
+          conversao: analises ? Math.round((vendas / analises) * 100) : 0,
+          vgv: Number(r.vgv) || 0,
+        };
+      })
+      .sort((a, b) => b.vendas - a.vendas || b.conversao - a.conversao || b.analises - a.analises);
+  }
+
+  /** Exporta as análises em XLSX (só Diretor — evita vazamento de dados de clientes). */
+  async exportAnalyses(user: User, year?: number, month?: number): Promise<Buffer> {
+    if (user.role !== UserRole.DIRETOR) {
+      throw new ForbiddenException("Apenas o Diretor pode exportar as análises.");
+    }
+    const { start, end } = this.periodRange(year, month);
+    const qb = this.repo
+      .createQueryBuilder("p")
+      .leftJoin(User, "u", "u.id = p.responsavelId")
+      .select("p.numero", "numero")
+      .addSelect("u.name", "responsavel")
+      .addSelect("p.clientName", "cliente")
+      .addSelect("p.empreendimento", "empreendimento")
+      .addSelect("p.status", "status")
+      .addSelect('p."valorVendaFinal"', "valor")
+      .addSelect('p."createdAt"', "criadaEm")
+      .orderBy("p.numero", "ASC");
+    if (start) qb.andWhere('p."createdAt" >= :start', { start });
+    if (end) qb.andWhere('p."createdAt" < :end', { end });
+    const rows = await qb.getRawMany();
+    const LABEL: Record<string, string> = {
+      montando: "Montando", em_analise: "Em análise", complemento: "Complemento",
+      aprovado: "Aprovado", reprovado: "Reprovado",
+    };
+    const data = rows.map((r) => ({
+      "Análise": r.numero != null ? `Análise ${String(r.numero).padStart(2, "0")}` : "",
+      "Responsável": r.responsavel || "",
+      "Cliente": r.cliente || "",
+      "Empreendimento": r.empreendimento || "",
+      "Status": LABEL[r.status] || r.status || "",
+      "Valor (R$)": r.valor != null ? Number(r.valor) : "",
+      "Criada em": r.criadaEm ? new Date(r.criadaEm).toLocaleString("pt-BR") : "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Análises");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
   /** Lista os documentos da pasta. Empresa só recebe os arquivos com a janela ATIVA. */

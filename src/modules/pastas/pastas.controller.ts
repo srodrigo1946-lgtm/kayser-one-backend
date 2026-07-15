@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Res } from "@nestjs/common";
 import { Response } from "express";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { PastasService } from "./pastas.service";
 import { CreatePastaDto } from "./dto/create-pasta.dto";
 import { UpdatePastaDto } from "./dto/update-pasta.dto";
+
+const num = (v?: string) => (v != null && v !== "" ? Number(v) : undefined);
 
 @ApiTags("Pastas")
 @ApiBearerAuth()
@@ -23,6 +25,26 @@ export class PastasController {
   @ApiOperation({ summary: "Cria pasta de análise" })
   create(@Request() req: any, @Body() dto: CreatePastaDto) {
     return this.service.create(dto, req.user);
+  }
+
+  @Get("ranking/analises")
+  @ApiOperation({ summary: "Ranking de análises por responsável (só Gerente Geral pra cima)" })
+  ranking(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
+    return this.service.analysesRanking(req.user, num(year), num(month));
+  }
+
+  @Get("ranking/analises/export")
+  @ApiOperation({ summary: "Exporta as análises em Excel (só Diretor)" })
+  async exportRanking(
+    @Request() req: any,
+    @Res() res: Response,
+    @Query("year") year?: string,
+    @Query("month") month?: string
+  ) {
+    const buf = await this.service.exportAnalyses(req.user, num(year), num(month));
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="ranking-analises.xlsx"');
+    res.send(buf);
   }
 
   @Get(":id")
