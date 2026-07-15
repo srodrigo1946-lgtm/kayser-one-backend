@@ -36,6 +36,9 @@ export class PastasService {
   }
 
   async create(dto: CreatePastaDto, user: User) {
+    if (user.empresaId) {
+      throw new ForbiddenException("A empresa parceira não cria pastas.");
+    }
     const lead = await this.leadsRepo.findOne({ where: { id: dto.leadId } });
     if (!lead) throw new NotFoundException("Cliente não encontrado.");
     // Próximo número da análise (global). max+1 => recomeça em 1 se as pastas forem apagadas.
@@ -115,9 +118,17 @@ export class PastasService {
 
   async update(id: string, dto: UpdatePastaDto, user: User) {
     const pasta = await this.getScopedOrFail(id, user);
+    // A empresa parceira só altera o parecer — nunca os dados de negócio da pasta.
+    if (user.empresaId) {
+      if (dto.parecer !== undefined) pasta.parecer = dto.parecer;
+      return this.repo.save(pasta);
+    }
+    // Status muda SÓ pelo endpoint próprio (updateStatus valida o veredito por cargo);
+    // aqui ele é ignorado para não furar essa regra.
+    const { status: _ignora, ...rest } = dto as any;
     const faseAntes = pasta.fase;
     const perfilAntes = pasta.perfil;
-    Object.assign(pasta, dto);
+    Object.assign(pasta, rest);
     const saved = await this.repo.save(pasta);
     // Se mudou fase/perfil, reflete no checklist do MESMO link de documentos.
     if (saved.documentRequestId && (saved.fase !== faseAntes || saved.perfil !== perfilAntes)) {

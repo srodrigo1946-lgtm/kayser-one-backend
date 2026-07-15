@@ -158,4 +158,22 @@ describe("PastasService", () => {
     await service.addPendencia("p1", "Extrato do FGTS de abril", empresa);
     expect(documents.addExtraDoc).toHaveBeenCalledWith("r1", "Extrato do FGTS de abril");
   });
+
+  it("update: empresa só altera o parecer (ignora dados de negócio)", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", empresaId: "emp1", parecer: "old", valorVendaFinal: 100 });
+    const res: any = await service.update("p1", { parecer: "novo", valorVendaFinal: 999 } as any, empresa);
+    expect(res.parecer).toBe("novo");
+    expect(res.valorVendaFinal).toBe(100); // não deixou a empresa mexer no valor
+  });
+
+  it("update: status NÃO muda pela edição geral (só pelo updateStatus)", async () => {
+    repo.findOne.mockResolvedValue({ id: "p1", status: "montando", fase: "simplificada", perfil: "clt", empresaId: null });
+    const res: any = await service.update("p1", { status: "aprovado", empreendimento: "X" } as any, corretor);
+    expect(res.status).toBe("montando"); // guard de veredito não é furado pela edição
+    expect(res.empreendimento).toBe("X");
+  });
+
+  it("create: empresa parceira NÃO cria pasta (403)", async () => {
+    await expect(service.create({ leadId: "l1" } as any, empresa)).rejects.toBeInstanceOf(ForbiddenException);
+  });
 });
