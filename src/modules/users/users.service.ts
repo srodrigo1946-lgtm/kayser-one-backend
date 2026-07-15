@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { In, IsNull, Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
 import { User, UserRole } from "./user.entity";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -105,10 +105,15 @@ export class UsersService {
   }
 
   async findAll(requestingUser: User) {
-    // Diretor vê todos; os demais veem toda a sua equipe (árvore de descendentes).
+    // Empresa parceira (users.empresaId) NÃO é membro da equipe — fica de fora das
+    // listas de usuários / dropdowns de responsável/atendente (ela vive em "Empresas").
     if (requestingUser.role === UserRole.DIRETOR) {
       return this.cleanMany(
-        await this.usersRepo.find({ relations: ["manager"], order: { role: "ASC", name: "ASC" } })
+        await this.usersRepo.find({
+          where: { empresaId: IsNull() },
+          relations: ["manager"],
+          order: { role: "ASC", name: "ASC" },
+        })
       );
     }
     const ids = (await this.getDescendantIds(requestingUser.id)).filter(
@@ -117,7 +122,7 @@ export class UsersService {
     if (ids.length === 0) return [];
     return this.cleanMany(
       await this.usersRepo.find({
-        where: { id: In(ids) },
+        where: { id: In(ids), empresaId: IsNull() },
         relations: ["manager"],
         order: { role: "ASC", name: "ASC" },
       })
