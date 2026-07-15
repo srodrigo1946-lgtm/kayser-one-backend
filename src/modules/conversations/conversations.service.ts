@@ -183,21 +183,10 @@ export class ConversationsService {
     return conv;
   }
 
-  /**
-   * Garante que o usuário pode acessar a conversa. WhatsApp é individual:
-   * só o próprio dono (ou responsável do lead) acessa — nem gerente, nem Diretor.
-   */
-  private assertCanAccess(conv: Conversation, user: User) {
-    const ownerId = conv.assignedToId ?? undefined;
-    const leadRespId = (conv.lead as Lead | undefined)?.responsavelId ?? undefined;
-    const ok = ownerId === user.id || leadRespId === user.id;
-    if (!ok) throw new ForbiddenException("Você não tem acesso a esta conversa.");
-  }
-
   async getMessages(conversationId: string, user: User) {
     const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead", "assignedTo"] });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
-    this.assertCanAccess(conv, user);
+    await this.assertConvScope(conv, user); // visibilidade por hierarquia (igual ao list)
     this.stripAssigned(conv);
     const rows = await this.msgRepo.find({
       where: { conversationId },
@@ -335,14 +324,10 @@ export class ConversationsService {
   async getMessageMedia(messageId: string, user: User) {
     const msg = await this.msgRepo.findOne({ where: { id: messageId } });
     if (!msg || !msg.mediaKey) throw new NotFoundException("Mídia não encontrada.");
-    // Escopo por equipe: só quem atende a conversa vê a mídia dela (protege PII do cliente).
-    const scope = await this.users.getScopeIds(user);
-    if (scope !== null) {
-      const conv = await this.convRepo.findOne({ where: { id: msg.conversationId }, select: ["id", "assignedToId"] });
-      if (!conv || !(conv.assignedToId && scope.includes(conv.assignedToId))) {
-        throw new ForbiddenException("Você não tem acesso a esta mídia.");
-      }
-    }
+    // Escopo por equipe (igual ao list): protege PII do cliente na mídia.
+    const conv = await this.convRepo.findOne({ where: { id: msg.conversationId }, relations: ["lead"] });
+    if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    await this.assertConvScope(conv, user);
     if (msg.mediaKey.startsWith("data:")) {
       const m = msg.mediaKey.match(/^data:(.+?);base64,(.*)$/s);
       return {
