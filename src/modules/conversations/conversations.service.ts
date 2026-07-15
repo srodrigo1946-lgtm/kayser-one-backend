@@ -59,10 +59,24 @@ export class ConversationsService {
     return qb.getMany();
   }
 
+  /**
+   * Escopo de GESTÃO da conversa (igual ao list): Diretor tudo; demais só a sua
+   * equipe. Impede mexer (atribuir/etiquetar) em conversa fora do escopo por id.
+   */
+  private async assertConvScope(conv: Conversation, user: User) {
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds === null) return; // Diretor
+    const ownerId = conv.assignedToId ?? undefined;
+    const leadRespId = (conv.lead as Lead | undefined)?.responsavelId ?? undefined;
+    const ok = (!!ownerId && scopeIds.includes(ownerId)) || (!!leadRespId && scopeIds.includes(leadRespId));
+    if (!ok) throw new ForbiddenException("Você não tem acesso a esta conversa.");
+  }
+
   /** Atribui (ou remove) o atendente responsável por uma conversa. */
   async assign(conversationId: string, userId: string | null, requester: User) {
-    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+    const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead"] });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    await this.assertConvScope(conv, requester); // não deixa mexer em conversa fora do escopo
     if (userId) {
       const scopeIds = await this.users.getScopeIds(requester);
       if (scopeIds !== null && !scopeIds.includes(userId)) {
@@ -92,6 +106,7 @@ export class ConversationsService {
   async setEtiquetas(conversationId: string, etiquetas: string[], requester: User) {
     const conv = await this.convRepo.findOne({ where: { id: conversationId }, relations: ["lead"] });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    await this.assertConvScope(conv, requester); // não deixa etiquetar conversa fora do escopo
 
     const antigas = conv.etiquetas ?? [];
     const novas = Array.isArray(etiquetas) ? etiquetas : [];

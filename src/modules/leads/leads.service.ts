@@ -22,7 +22,9 @@ export class LeadsService {
     private readonly users: UsersService
   ) {}
 
-  findHistory(leadId: string) {
+  async findHistory(leadId: string, user?: User) {
+    // Valida o escopo do lead antes de devolver a timeline (evita IDOR por id).
+    await this.findOne(leadId, user);
     return this.history.findByLead(leadId);
   }
 

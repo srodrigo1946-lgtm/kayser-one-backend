@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Between, In, Repository } from "typeorm";
 import { Appointment } from "./appointment.entity";
@@ -35,23 +35,36 @@ export class AppointmentsService {
     return this.repo.save(appointment);
   }
 
-  async update(id: string, dto: Partial<Appointment>) {
+  /** Escopo por equipe: só acessa/edita compromissos do seu time (Diretor tudo). */
+  private async assertScope(appointment: Appointment, user?: User) {
+    if (!user) return; // chamada interna sem contexto de usuário
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds === null) return; // Diretor
+    if (!appointment.userId || !scopeIds.includes(appointment.userId)) {
+      throw new ForbiddenException("Você não tem acesso a este compromisso.");
+    }
+  }
+
+  async update(id: string, dto: Partial<Appointment>, user?: User) {
     const appointment = await this.repo.findOne({ where: { id } });
     if (!appointment) throw new NotFoundException("Agendamento não encontrado.");
+    await this.assertScope(appointment, user);
     Object.assign(appointment, dto);
     return this.repo.save(appointment);
   }
 
-  async remove(id: string) {
+  async remove(id: string, user?: User) {
     const appointment = await this.repo.findOne({ where: { id } });
     if (!appointment) throw new NotFoundException("Agendamento não encontrado.");
+    await this.assertScope(appointment, user);
     await this.repo.remove(appointment);
     return { message: "Agendamento removido." };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: User) {
     const appointment = await this.repo.findOne({ where: { id }, relations: ["lead", "user"] });
     if (!appointment) throw new NotFoundException("Agendamento não encontrado.");
+    await this.assertScope(appointment, user);
     return appointment;
   }
 

@@ -46,9 +46,9 @@ export class LeadsController {
   }
 
   @Get(":id/history")
-  @ApiOperation({ summary: "Histórico/timeline do lead" })
-  history(@Param("id") id: string) {
-    return this.leadsService.findHistory(id);
+  @ApiOperation({ summary: "Histórico/timeline do lead (escopo por equipe)" })
+  history(@Param("id") id: string, @Request() req: any) {
+    return this.leadsService.findHistory(id, req.user);
   }
 
   @Post()

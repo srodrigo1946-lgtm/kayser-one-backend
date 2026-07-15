@@ -51,8 +51,8 @@ export class AppointmentsController {
 
   @Get(":id/ics")
   @ApiOperation({ summary: "Baixar o compromisso em formato .ics (Google/Outlook/Apple)" })
-  async ics(@Param("id") id: string, @Res() res: Response) {
-    const appointment = await this.appointmentsService.findOne(id);
+  async ics(@Param("id") id: string, @Res() res: Response, @Request() req: any) {
+    const appointment = await this.appointmentsService.findOne(id, req.user);
     const ics = this.appointmentsService.buildIcs(appointment);
     res.setHeader("Content-Type", "text/calendar; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="compromisso-${id}.ics"`);
@@ -61,15 +61,15 @@ export class AppointmentsController {
 
   @Put(":id")
   @ApiOperation({ summary: "Atualizar agendamento" })
-  update(@Param("id") id: string, @Body() dto: Partial<CreateAppointmentDto>) {
+  update(@Param("id") id: string, @Body() dto: Partial<CreateAppointmentDto>, @Request() req: any) {
     const patch: any = { ...dto };
     if (dto.scheduledAt) patch.scheduledAt = new Date(dto.scheduledAt);
-    return this.appointmentsService.update(id, patch);
+    return this.appointmentsService.update(id, patch, req.user);
   }
 
   @Delete(":id")
   @ApiOperation({ summary: "Remover agendamento" })
-  remove(@Param("id") id: string) {
-    return this.appointmentsService.remove(id);
+  remove(@Param("id") id: string, @Request() req: any) {
+    return this.appointmentsService.remove(id, req.user);
   }
 }
