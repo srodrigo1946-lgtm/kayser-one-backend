@@ -245,6 +245,22 @@ export class DocumentsService {
     return { buffer: obj.buffer, contentType: obj.contentType, filename: doc.filename, requestId: doc.requestId };
   }
 
+  /** Apaga a solicitação e seus documentos (DB + best-effort no R2). */
+  async deleteRequest(requestId: string) {
+    const docs = await this.docRepo.find({ where: { requestId } });
+    for (const d of docs) {
+      if (d.fileKey && !d.fileKey.startsWith("data:")) {
+        try {
+          await this.storage.remove(d.fileKey);
+        } catch {
+          /* best-effort: se o R2 falhar, segue apagando do banco */
+        }
+      }
+    }
+    await this.docRepo.delete({ requestId });
+    await this.reqRepo.delete({ id: requestId });
+  }
+
   /**
    * Organiza os documentos no R2 em pastas amigáveis (NomeCliente_Telefone):
    * - os que ainda estão como data URI no banco → sobem pro R2;

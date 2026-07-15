@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
 import { Response } from "express";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -45,6 +45,12 @@ export class PastasController {
   @ApiOperation({ summary: "Garante o ambiente de documentos e devolve o token" })
   documents(@Request() req: any, @Param("id") id: string) {
     return this.service.ensureDocuments(id, req.user);
+  }
+
+  @Delete(":id")
+  @ApiOperation({ summary: "Exclui a pasta e o ambiente de documentos (só Diretor)" })
+  remove(@Request() req: any, @Param("id") id: string) {
+    return this.service.remove(id, req.user);
   }
 
   @Get(":id/files")

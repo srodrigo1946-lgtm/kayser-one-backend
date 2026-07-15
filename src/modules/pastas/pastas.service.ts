@@ -148,6 +148,24 @@ export class PastasService {
     return { released, active, archived, remainingMs, releasedAt, expiresAt };
   }
 
+  /** Exclui a pasta (só Diretor) + o ambiente de documentos ligado (evita lixo). */
+  async remove(id: string, user: User) {
+    if (user.role !== UserRole.DIRETOR) {
+      throw new ForbiddenException("Apenas o Diretor pode excluir pastas.");
+    }
+    const pasta = await this.repo.findOne({ where: { id } });
+    if (!pasta) throw new NotFoundException("Pasta não encontrada.");
+    if (pasta.documentRequestId) {
+      try {
+        await this.documents.deleteRequest(pasta.documentRequestId);
+      } catch {
+        /* segue apagando a pasta mesmo se a limpeza dos docs falhar */
+      }
+    }
+    await this.repo.delete({ id });
+    return { ok: true };
+  }
+
   /** Lista os documentos da pasta. Empresa só recebe os arquivos com a janela ATIVA. */
   async listFiles(id: string, user: User) {
     const pasta = await this.getScopedOrFail(id, user);
