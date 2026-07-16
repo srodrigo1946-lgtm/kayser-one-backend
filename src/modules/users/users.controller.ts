@@ -121,6 +121,13 @@ export class UsersController {
     return this.usersService.activate(id, req.user);
   }
 
+  @Delete(":id/permanent")
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Excluir usuário de vez (só Diretor)" })
+  hardRemove(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.hardRemove(id, req.user);
+  }
+
   @Post(":id/reset-password")
   @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
   @ApiOperation({ summary: "Redefinir a senha de um usuário da equipe (volta à padrão + troca forçada)" })

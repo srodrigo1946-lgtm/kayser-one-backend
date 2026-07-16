@@ -1,5 +1,6 @@
 import { UsersService } from "./users.service";
 import { UserRole } from "./user.entity";
+import { ForbiddenException, BadRequestException } from "@nestjs/common";
 
 describe("UsersService", () => {
   let repo: any;
@@ -7,10 +8,18 @@ describe("UsersService", () => {
   let service: UsersService;
 
   beforeEach(() => {
-    repo = { findOneOrFail: jest.fn(), findOne: jest.fn(), save: jest.fn(async (u: any) => u) };
+    repo = {
+      findOneOrFail: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(async (u: any) => u),
+      query: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({}),
+    };
     storage = { isEnabled: false, upload: jest.fn(), getObject: jest.fn() };
     service = new UsersService(repo, storage);
   });
+
+  const diretor: any = { id: "d1", role: UserRole.DIRETOR };
 
   it("updateSelf atualiza nome/telefone do próprio usuário sem expor o hash", async () => {
     const user: any = { id: "u1", name: "Antigo", role: UserRole.CORRETOR, passwordHash: "x" };
@@ -68,5 +77,26 @@ describe("UsersService", () => {
     repo.findOneOrFail.mockResolvedValue({ id: "u1" });
     const file: any = { mimetype: "application/pdf", buffer: Buffer.from("x"), originalname: "a.pdf" };
     await expect(service.setAvatar("u1", file)).rejects.toBeTruthy();
+  });
+
+  it("hardRemove: só o Diretor pode excluir (corretor → 403)", async () => {
+    await expect(service.hardRemove("x", { id: "c1", role: UserRole.CORRETOR } as any)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("hardRemove: não exclui a si mesmo", async () => {
+    repo.findOne.mockResolvedValue({ id: "d1", role: UserRole.DIRETOR });
+    await expect(service.hardRemove("d1", diretor)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("hardRemove: não exclui outro Diretor", async () => {
+    repo.findOne.mockResolvedValue({ id: "d2", role: UserRole.DIRETOR });
+    await expect(service.hardRemove("d2", diretor)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("hardRemove: Diretor exclui um corretor (solta referências + delete)", async () => {
+    repo.findOne.mockResolvedValue({ id: "c9", role: UserRole.CORRETOR });
+    await service.hardRemove("c9", diretor);
+    expect(repo.query).toHaveBeenCalled(); // soltou refs (leads/conversas/pastas/gestor)
+    expect(repo.delete).toHaveBeenCalledWith({ id: "c9" });
   });
 });

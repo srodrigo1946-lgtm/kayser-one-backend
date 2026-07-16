@@ -184,6 +184,38 @@ export class UsersService {
     return { message: "Usuário ativado." };
   }
 
+  /**
+   * Exclui um usuário DE VEZ (só Diretor). Protege: não exclui a si mesmo nem outro
+   * Diretor. Solta as referências (leads/conversas/pastas/gestor) pra não quebrar
+   * FK nem deixar dado travado — os leads ficam "sem responsável".
+   */
+  async hardRemove(id: string, requester: User) {
+    if (requester.role !== UserRole.DIRETOR) {
+      throw new ForbiddenException("Apenas o Diretor pode excluir usuários.");
+    }
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException("Usuário não encontrado.");
+    if (user.id === requester.id) throw new BadRequestException("Você não pode excluir a si mesmo.");
+    if (user.role === UserRole.DIRETOR) throw new BadRequestException("Não é possível excluir um Diretor.");
+
+    const clears: [string, string][] = [
+      ["leads", "responsavelId"],
+      ["conversations", "assignedToId"],
+      ["conversations", "instanceOwnerId"],
+      ["analysis_folders", "responsavelId"],
+      ["users", "managerId"],
+    ];
+    for (const [table, col] of clears) {
+      try {
+        await this.usersRepo.query(`UPDATE ${table} SET "${col}" = NULL WHERE "${col}" = $1`, [id]);
+      } catch {
+        /* best-effort: se a tabela/coluna não existir, segue */
+      }
+    }
+    await this.usersRepo.delete({ id });
+    return { message: "Usuário excluído." };
+  }
+
   /** Redefine a senha de alguém da equipe para a padrão, forçando troca no próximo acesso. */
   async resetPassword(id: string, requester: User) {
     const user = await this.usersRepo.findOne({ where: { id } });
