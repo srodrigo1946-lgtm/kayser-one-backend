@@ -9,9 +9,11 @@ import {
   Query,
   UseGuards,
   Request,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
+import { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { LeadsService } from "./leads.service";
@@ -88,7 +90,10 @@ export class LeadsController {
 
   @Get("export/excel")
   @ApiOperation({ summary: "Exportar leads para Excel" })
-  exportExcel(@Request() req: any) {
-    return this.leadsService.exportToExcel(req.user);
+  async exportExcel(@Request() req: any, @Res() res: Response) {
+    const buf = await this.leadsService.exportToExcel(req.user);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="leads-kayser-one.xlsx"');
+    res.send(buf);
   }
 }
