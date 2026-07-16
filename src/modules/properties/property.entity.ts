@@ -70,6 +70,10 @@ export class Property {
   @Column({ type: "simple-array", nullable: true })
   amenities: string[];
 
+  // Previsão de entrega (texto livre: "Dez/2026", "12/2026", "Pronto"…)
+  @Column({ type: "varchar", nullable: true })
+  deliveryDate: string;
+
   // URL de capa opcional (link externo)
   @Column({ type: "text", nullable: true })
   imageUrl: string;

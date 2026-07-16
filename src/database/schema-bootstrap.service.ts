@@ -29,6 +29,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureSupportTable", () => this.ensureSupportTable()],
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
+      ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -191,6 +192,11 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgNoite" text`);
+  }
+
+  /** Previsão de entrega do empreendimento (texto livre). */
+  private async ensurePropertyDeliveryDate() {
+    await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "deliveryDate" varchar`);
   }
 
   /** IA por usuário: provedor/modelo/chave próprios (chave é opcional). */
