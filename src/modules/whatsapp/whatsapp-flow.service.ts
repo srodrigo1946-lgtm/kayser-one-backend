@@ -61,11 +61,13 @@ export class WhatsappFlowService {
       // Anúncio "Clique para WhatsApp": marca origem/campanha e, se a fila do Diretor
       // estiver ligada, distribui automaticamente em rodízio entre os cargos.
       if (ad) {
-        await this.conversations.setAdOrigin(conv.id, ad.platform, ad.campaign, conv.leadId);
+        // Garante o Lead (cria se não existir) → cai no Kanban como Novo Lead.
+        const adLeadId = await this.conversations.setAdOrigin(conv.id, ad.platform, ad.campaign, conv.leadId);
+        conv.leadId = adLeadId ?? conv.leadId;
         conv.fromAd = true;
         const queue = await this.leadQueue.getSettings();
         if (queue.enabled) {
-          await this.leadQueue.enqueueAdLead({ conversationId: conv.id, leadId: conv.leadId });
+          await this.leadQueue.enqueueAdLead({ conversationId: conv.id, leadId: conv.leadId ?? undefined });
         }
       }
 

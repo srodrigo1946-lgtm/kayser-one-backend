@@ -247,15 +247,49 @@ export class ConversationsService {
     return this.convRepo.save(conv);
   }
 
-  /** Marca a conversa/lead como originada de anúncio (origem + campanha). */
-  async setAdOrigin(conversationId: string, platform: string, campaign?: string, leadId?: string) {
+  /**
+   * Marca a conversa como originada de anúncio e GARANTE um Lead. Se já existe lead,
+   * atualiza origem/campanha; se não, CRIA um Lead automaticamente (preenchido com o
+   * número/nome do contato) — ele nasce com status "Novo Lead" e cai no Kanban.
+   * Devolve o id do lead (novo ou existente).
+   */
+  async setAdOrigin(
+    conversationId: string,
+    platform: string,
+    campaign?: string,
+    leadId?: string
+  ): Promise<string | undefined> {
     await this.convRepo.update(conversationId, { fromAd: true });
-    if (leadId)
+    if (leadId) {
       await this.leadsRepo.update(leadId, {
         origem: platform,
         campanha: campaign ?? null,
         source: LeadSource.ANUNCIO,
       });
+      return leadId;
+    }
+    // Sem lead ainda: cria um automaticamente a partir da conversa.
+    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+    if (!conv) return undefined;
+    const numero = (conv.remoteJid ?? "").replace(/\D/g, "");
+    try {
+      const lead = this.leadsRepo.create({
+        name: conv.contactName || numero || "Contato WhatsApp",
+        phone: numero,
+        whatsapp: numero,
+        origem: platform,
+        campanha: campaign ?? undefined,
+        source: LeadSource.ANUNCIO,
+        responsavelId: conv.assignedToId ?? undefined,
+        // status usa o default da entidade = Novo Lead
+      });
+      const saved = await this.leadsRepo.save(lead);
+      conv.leadId = saved.id;
+      await this.convRepo.save(conv);
+      return saved.id;
+    } catch {
+      return undefined; // não quebra o inbound se a criação do lead falhar
+    }
   }
 
   /** Atualiza nome (pushName) e/ou foto de perfil do contato, se mudaram. */
