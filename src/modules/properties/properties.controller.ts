@@ -38,6 +38,7 @@ class UpsertPropertyDto {
   @IsOptional() @IsNumber() bedrooms?: number;
   @IsOptional() @IsNumber() parkingSpots?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) amenities?: string[];
+  @IsOptional() @IsString() deliveryDate?: string;
   @IsOptional() @IsString() imageUrl?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) photos?: string[];
   @IsOptional() @IsBoolean() active?: boolean;
