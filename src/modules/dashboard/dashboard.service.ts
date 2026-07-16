@@ -4,6 +4,7 @@ import { Repository, Between, IsNull, LessThan, In } from "typeorm";
 import { Lead, LeadStatus } from "../leads/lead.entity";
 import { User, UserRole } from "../users/user.entity";
 import { Goal } from "../goals/goal.entity";
+import { LeadHistory, LeadHistoryType } from "../lead-history/lead-history.entity";
 import { UsersService } from "../users/users.service";
 import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
@@ -201,6 +202,56 @@ export class DashboardService {
       vgv: Number(row.vgv) || 0,
       vendas: Number(row.vendas) || 0,
     };
+  }
+
+  /**
+   * Follow-ups automáticos que a IA disparou (registrados no histórico do lead).
+   * Traz nome + telefone + quando, para o Diretor/gestor ver e clicar direto na
+   * conversa. Escopado por equipe. `semana` = total dos últimos 7 dias (para o card).
+   */
+  async getFollowups(user: User) {
+    const scopeIds = await this.users.getScopeIds(user);
+    const now = new Date();
+    const weekAgo = subDays(now, 7);
+    const startDay = startOfDay(now);
+    const LIKE = "Follow-up automático%";
+
+    const listQb = this.leadsRepo.manager
+      .createQueryBuilder(LeadHistory, "h")
+      .innerJoin(Lead, "lead", "lead.id = h.leadId")
+      .select("h.id", "id")
+      .addSelect("h.createdAt", "at")
+      .addSelect("h.leadId", "leadId")
+      .addSelect("lead.name", "nome")
+      .addSelect("lead.phone", "phone")
+      .addSelect("lead.whatsapp", "whatsapp")
+      .where("h.type = :t", { t: LeadHistoryType.CONTATO })
+      .andWhere("h.description LIKE :d", { d: LIKE })
+      .orderBy("h.createdAt", "DESC")
+      .limit(30);
+
+    const countQb = this.leadsRepo.manager
+      .createQueryBuilder(LeadHistory, "h")
+      .innerJoin(Lead, "lead", "lead.id = h.leadId")
+      .where("h.type = :t", { t: LeadHistoryType.CONTATO })
+      .andWhere("h.description LIKE :d", { d: LIKE })
+      .andWhere("h.createdAt >= :weekAgo", { weekAgo });
+
+    if (scopeIds !== null) {
+      listQb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+      countQb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+    }
+
+    const [rows, semana] = await Promise.all([listQb.getRawMany(), countQb.getCount()]);
+    const items = rows.map((r) => ({
+      id: r.id,
+      leadId: r.leadId,
+      nome: r.nome as string,
+      phone: (r.phone || r.whatsapp || "") as string,
+      at: r.at as Date,
+    }));
+    const hoje = items.filter((i) => new Date(i.at) >= startDay).length;
+    return { items, semana, hoje };
   }
 
   async getAlerts(user: User) {

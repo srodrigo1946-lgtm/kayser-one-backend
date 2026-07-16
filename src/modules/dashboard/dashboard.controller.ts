@@ -57,4 +57,10 @@ export class DashboardController {
   alerts(@Request() req: any) {
     return this.dashboardService.getAlerts(req.user);
   }
+
+  @Get("followups")
+  @ApiOperation({ summary: "Follow-ups automáticos que a IA disparou (nome/telefone/quando)" })
+  followups(@Request() req: any) {
+    return this.dashboardService.getFollowups(req.user);
+  }
 }
