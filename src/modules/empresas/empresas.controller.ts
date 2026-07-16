@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards, Request } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { EmpresasService } from "./empresas.service";
@@ -27,5 +27,11 @@ export class EmpresasController {
   @ApiOperation({ summary: "Aprova/reprova empresa (só Diretor)" })
   setStatus(@Request() req: any, @Param("id") id: string, @Body("status") status: string) {
     return this.service.setStatus(id, status, req.user);
+  }
+
+  @Delete(":id")
+  @ApiOperation({ summary: "Exclui empresa parceira de vez (só Diretor)" })
+  remove(@Request() req: any, @Param("id") id: string) {
+    return this.service.remove(id, req.user);
   }
 }

@@ -54,6 +54,45 @@ export class EmpresasService {
   }
 
   /**
+   * Exclui a empresa parceira DE VEZ (só Diretor): solta as pastas atribuídas a ela,
+   * remove o usuário de login dela (soltando refs pra não travar FK) e apaga a empresa.
+   */
+  async remove(id: string, user: User) {
+    if (user.role !== UserRole.DIRETOR) {
+      throw new ForbiddenException("Apenas o Diretor pode excluir empresas parceiras.");
+    }
+    const emp = await this.repo.findOne({ where: { id } });
+    if (!emp) throw new NotFoundException("Empresa não encontrada.");
+
+    const safe = async (sql: string, params: any[]) => {
+      try {
+        await this.usersRepo.query(sql, params);
+      } catch {
+        /* best-effort */
+      }
+    };
+    // Pastas atribuídas a esta empresa ficam sem empresa.
+    await safe(`UPDATE analysis_folders SET "empresaId" = NULL WHERE "empresaId" = $1`, [id]);
+
+    // Remove o usuário de login da empresa (soltando referências antes).
+    const loginUser = await this.usersRepo.findOne({ where: { empresaId: id } });
+    if (loginUser) {
+      const uid = loginUser.id;
+      const clears: [string, string][] = [
+        ["leads", "responsavelId"],
+        ["conversations", "assignedToId"],
+        ["conversations", "instanceOwnerId"],
+        ["analysis_folders", "responsavelId"],
+        ["users", "managerId"],
+      ];
+      for (const [t, c] of clears) await safe(`UPDATE ${t} SET "${c}" = NULL WHERE "${c}" = $1`, [uid]);
+      await this.usersRepo.delete({ id: uid });
+    }
+    await this.repo.delete({ id });
+    return { ok: true };
+  }
+
+  /**
    * Garante o usuário de login da empresa. Se já existir conta com esse e-mail,
    * VINCULA à empresa e reseta a senha provisória (idempotente e à prova de
    * colisão). Cargo CORRETOR + empresaId (o marcador de "é empresa").
