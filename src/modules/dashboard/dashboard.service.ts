@@ -207,13 +207,16 @@ export class DashboardService {
   /**
    * Follow-ups automáticos que a IA disparou (registrados no histórico do lead).
    * Traz nome + telefone + quando, para o Diretor/gestor ver e clicar direto na
-   * conversa. Escopado por equipe. `semana` = total dos últimos 7 dias (para o card).
+   * conversa. Escopado por equipe. Segue a mesma regra do VGV: mês específico ou,
+   * sem mês, o ANO todo consolidado. `total` = quantidade no período (para o card).
    */
-  async getFollowups(user: User) {
+  async getFollowups(user: User, year: number, month?: number) {
     const scopeIds = await this.users.getScopeIds(user);
-    const now = new Date();
-    const weekAgo = subDays(now, 7);
-    const startDay = startOfDay(now);
+    const targetYear = year || new Date().getFullYear();
+    const start = month ? new Date(targetYear, month - 1, 1) : new Date(targetYear, 0, 1);
+    const end = month
+      ? new Date(targetYear, month, 0, 23, 59, 59, 999)
+      : new Date(targetYear, 11, 31, 23, 59, 59, 999);
     const LIKE = "Follow-up automático%";
 
     const listQb = this.leadsRepo.manager
@@ -227,6 +230,7 @@ export class DashboardService {
       .addSelect("lead.whatsapp", "whatsapp")
       .where("h.type = :t", { t: LeadHistoryType.CONTATO })
       .andWhere("h.description LIKE :d", { d: LIKE })
+      .andWhere("h.createdAt BETWEEN :start AND :end", { start, end })
       .orderBy("h.createdAt", "DESC")
       .limit(30);
 
@@ -235,14 +239,14 @@ export class DashboardService {
       .innerJoin(Lead, "lead", "lead.id = h.leadId")
       .where("h.type = :t", { t: LeadHistoryType.CONTATO })
       .andWhere("h.description LIKE :d", { d: LIKE })
-      .andWhere("h.createdAt >= :weekAgo", { weekAgo });
+      .andWhere("h.createdAt BETWEEN :start AND :end", { start, end });
 
     if (scopeIds !== null) {
       listQb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
       countQb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
     }
 
-    const [rows, semana] = await Promise.all([listQb.getRawMany(), countQb.getCount()]);
+    const [rows, total] = await Promise.all([listQb.getRawMany(), countQb.getCount()]);
     const items = rows.map((r) => ({
       id: r.id,
       leadId: r.leadId,
@@ -250,8 +254,7 @@ export class DashboardService {
       phone: (r.phone || r.whatsapp || "") as string,
       at: r.at as Date,
     }));
-    const hoje = items.filter((i) => new Date(i.at) >= startDay).length;
-    return { items, semana, hoje };
+    return { items, total };
   }
 
   async getAlerts(user: User) {

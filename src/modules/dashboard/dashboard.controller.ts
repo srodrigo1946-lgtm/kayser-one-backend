@@ -59,8 +59,12 @@ export class DashboardController {
   }
 
   @Get("followups")
-  @ApiOperation({ summary: "Follow-ups automáticos que a IA disparou (nome/telefone/quando)" })
-  followups(@Request() req: any) {
-    return this.dashboardService.getFollowups(req.user);
+  @ApiOperation({ summary: "Follow-ups automáticos da IA no período (ano todo ou mês)" })
+  followups(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
+    return this.dashboardService.getFollowups(
+      req.user,
+      year ? Number(year) : new Date().getFullYear(),
+      month ? Number(month) : undefined
+    );
   }
 }
