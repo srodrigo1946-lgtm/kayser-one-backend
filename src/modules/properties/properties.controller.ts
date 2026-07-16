@@ -65,7 +65,7 @@ export class PropertiesController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Cadastrar imóvel (gestores)" })
   create(@Body() dto: UpsertPropertyDto) {
     return this.service.create(dto);
@@ -73,7 +73,7 @@ export class PropertiesController {
 
   @Patch(":id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Editar imóvel (gestores)" })
   update(@Param("id") id: string, @Body() dto: UpsertPropertyDto) {
     return this.service.update(id, dto);
@@ -81,7 +81,7 @@ export class PropertiesController {
 
   @Delete(":id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Remover imóvel (gestores)" })
   remove(@Param("id") id: string) {
     return this.service.remove(id);
