@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
 import { User, UserRole } from "../users/user.entity";
 import { LoginDto } from "./dto/login.dto";
@@ -32,13 +32,20 @@ export class AuthService {
     private readonly jwtService: JwtService
   ) {}
 
-  /** Lista os possíveis gestores (cargo do nível acima) para um cargo em autocadastro. */
+  /**
+   * Lista os possíveis gestores para um cargo em autocadastro: o cargo do nível
+   * acima (hierarquia correta) MAIS o Diretor como opção de fallback — assim
+   * ninguém fica travado se o chefe direto ainda não se cadastrou (o Diretor
+   * pode reassociar o chefe correto depois, na tela de Usuários).
+   */
   async listManagers(role: UserRole) {
     const parent = PARENT_ROLE[role];
     if (!parent) return [];
+    // Cargos aceitos como gestor: o pai direto + o Diretor (fallback), sem duplicar.
+    const roles = parent === UserRole.DIRETOR ? [UserRole.DIRETOR] : [parent, UserRole.DIRETOR];
     const users = await this.usersRepo.find({
-      where: { role: parent, active: true },
-      order: { name: "ASC" },
+      where: { role: In(roles), active: true },
+      order: { role: "ASC", name: "ASC" },
     });
     return users.map((u) => ({ id: u.id, name: u.name, role: u.role }));
   }
@@ -52,9 +59,11 @@ export class AuthService {
     const exists = await this.usersRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new BadRequestException("E-mail já cadastrado.");
 
+    // Aceita o gestor do nível acima OU o Diretor (fallback p/ não travar o cadastro).
+    const allowed = parent === UserRole.DIRETOR ? [UserRole.DIRETOR] : [parent, UserRole.DIRETOR];
     const manager = await this.usersRepo.findOne({ where: { id: dto.managerId } });
-    if (!manager || manager.role !== parent) {
-      throw new BadRequestException(`Selecione um(a) ${ROLE_LABEL[parent]} válido(a) como gestor.`);
+    if (!manager || !allowed.includes(manager.role)) {
+      throw new BadRequestException(`Selecione um(a) ${ROLE_LABEL[parent]} ou o Diretor como gestor.`);
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
@@ -72,7 +81,7 @@ export class AuthService {
 
     return {
       pending: true,
-      message: `Cadastro enviado! Aguarde a aprovação do seu ${ROLE_LABEL[parent]} (${manager.name}) para acessar.`,
+      message: `Cadastro enviado! Aguarde a aprovação do seu ${ROLE_LABEL[manager.role]} (${manager.name}) para acessar.`,
     };
   }
 
