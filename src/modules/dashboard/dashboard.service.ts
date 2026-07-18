@@ -81,6 +81,8 @@ export class DashboardService {
       .where("user.role IN (:...roles)", { roles })
       .andWhere("user.active = true")
       .andWhere("user.approved = true")
+      // Empresa parceira (corretor + empresaId) NÃO compete no ranking.
+      .andWhere("user.empresaId IS NULL")
       .setParameters({ venda: LeadStatus.VENDA_GANHA, start, end });
 
     if (scopeIds !== null) {
@@ -184,6 +186,8 @@ export class DashboardService {
       .addSelect("COUNT(lead.id)", "vendas")
       .where("lead.status = :venda", { venda: LeadStatus.VENDA_GANHA })
       .andWhere("lead.updatedAt BETWEEN :start AND :end", { start, end })
+      // Empresa parceira (corretor + empresaId) não entra como campeão.
+      .andWhere("user.empresaId IS NULL")
       .groupBy("user.id")
       .orderBy("vgv", "DESC")
       .addOrderBy("vendas", "DESC")
