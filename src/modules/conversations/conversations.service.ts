@@ -37,6 +37,20 @@ export class ConversationsService {
   ) {}
 
   /** Lista conversas respeitando a hierarquia (cada gestor vê apenas as da sua equipe). */
+  /**
+   * Sinal LEVE para o alerta sonoro: só quantas conversas existem no escopo do
+   * usuário. Se esse número sobe, é contato novo no WhatsApp (lead orgânico
+   * chegando). Evita baixar a lista inteira a cada consulta.
+   */
+  async contarConversas(user: User) {
+    const qb = this.convRepo.createQueryBuilder("c").leftJoin("c.lead", "lead");
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null) {
+      qb.where("(c.assignedToId IN (:...ids) OR lead.responsavelId IN (:...ids))", { ids: scopeIds });
+    }
+    return { total: await qb.getCount() };
+  }
+
   async list(user: User) {
     const qb = this.convRepo
       .createQueryBuilder("c")

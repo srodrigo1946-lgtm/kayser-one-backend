@@ -17,6 +17,12 @@ export class ConversationsController {
     return this.conversationsService.list(req.user);
   }
 
+  @Get("contagem")
+  @ApiOperation({ summary: "Total de conversas do escopo (sinal leve p/ o alerta sonoro)" })
+  contagem(@Request() req: any) {
+    return this.conversationsService.contarConversas(req.user);
+  }
+
   @Get(":id/messages")
   @ApiOperation({ summary: "Mensagens de uma conversa" })
   messages(@Param("id") id: string, @Request() req: any) {
