@@ -123,6 +123,13 @@ export class LeadsService {
     }
     const prevResponsavelId = lead.responsavelId ?? null;
     Object.assign(lead, dto);
+    // GOTCHA TypeORM: o lead vem de findOne com a relação `responsavel` carregada
+    // (o usuário ANTIGO). No save(), a relação vence o FK e regravaria o antigo —
+    // a transferência "funcionava" na resposta mas não persistia. Soltar a relação
+    // faz valer o responsavelId novo.
+    if (dto.responsavelId !== undefined) {
+      (lead as any).responsavel = undefined;
+    }
     const saved = await this.leadsRepo.save(lead);
 
     // Sincroniza o atendente da conversa vinculada quando o responsável do lead
