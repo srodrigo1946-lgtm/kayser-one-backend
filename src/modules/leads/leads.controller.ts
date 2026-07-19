@@ -20,6 +20,9 @@ import { LeadsService } from "./leads.service";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../users/user.entity";
 
 @ApiTags("Leads")
 @ApiBearerAuth()
@@ -76,7 +79,9 @@ export class LeadsController {
   }
 
   @Delete(":id")
-  @ApiOperation({ summary: "Remover lead (escopo por equipe)" })
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Excluir lead — só o Diretor" })
   remove(@Param("id") id: string, @Request() req: any) {
     return this.leadsService.remove(id, req.user);
   }
