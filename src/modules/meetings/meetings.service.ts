@@ -26,6 +26,34 @@ export class MeetingsService {
     return { ...m, link: this.link(m) };
   }
 
+  /**
+   * Cria/atualiza um compromisso na Agenda para CADA pessoa da reunião (host +
+   * participantes) — assim a agenda de todos fica travada e avisa da reunião.
+   * Recria do zero (apaga por meetingId e cria de novo) — cobre mudança de participantes.
+   */
+  private async syncAgenda(m: Meeting) {
+    try {
+      await this.apptRepo.delete({ meetingId: m.id });
+      const ids = Array.from(new Set([m.hostId, ...(m.participantIds || [])])).filter(Boolean);
+      const link = this.link(m);
+      for (const uid of ids) {
+        await this.apptRepo.save(
+          this.apptRepo.create({
+            title: `Reunião: ${m.title}`,
+            type: AppointmentType.REUNIAO,
+            scheduledAt: m.scheduledAt,
+            durationMin: m.durationMin,
+            userId: uid,
+            location: link,
+            meetingId: m.id,
+          })
+        );
+      }
+    } catch {
+      /* agenda é best-effort */
+    }
+  }
+
   async create(
     dto: { title: string; scheduledAt: string; durationMin?: number; participantIds?: string[] },
     user: User
@@ -42,23 +70,8 @@ export class MeetingsService {
         status: "agendada",
       })
     );
-    // Trava o horário na Agenda do CRM (compromisso do tipo reunião).
-    try {
-      const appt = await this.apptRepo.save(
-        this.apptRepo.create({
-          title: `Reunião: ${dto.title}`,
-          type: AppointmentType.REUNIAO,
-          scheduledAt: saved.scheduledAt,
-          durationMin: saved.durationMin,
-          userId: user.id,
-          location: this.link(saved),
-        })
-      );
-      saved.appointmentId = appt.id;
-      await this.repo.save(saved);
-    } catch {
-      /* agenda é best-effort */
-    }
+    // Trava o horário na Agenda de todos (host + participantes).
+    await this.syncAgenda(saved);
     return this.withLink(saved);
   }
 
@@ -87,18 +100,8 @@ export class MeetingsService {
     if (!m) throw new NotFoundException("Reunião não encontrada.");
     Object.assign(m, dto);
     const saved = await this.repo.save(m);
-    // Mantém a Agenda em sincronia (horário/título/duração).
-    if (saved.appointmentId) {
-      try {
-        await this.apptRepo.update(saved.appointmentId, {
-          title: `Reunião: ${saved.title}`,
-          scheduledAt: saved.scheduledAt,
-          durationMin: saved.durationMin,
-        });
-      } catch {
-        /* best-effort */
-      }
-    }
+    // Mantém a Agenda de todos em sincronia (horário/título/participantes).
+    await this.syncAgenda(saved);
     return this.withLink(saved);
   }
 
@@ -111,12 +114,10 @@ export class MeetingsService {
   async remove(id: string) {
     const m = await this.repo.findOne({ where: { id } });
     if (!m) throw new NotFoundException("Reunião não encontrada.");
-    if (m.appointmentId) {
-      try {
-        await this.apptRepo.delete(m.appointmentId);
-      } catch {
-        /* best-effort */
-      }
+    try {
+      await this.apptRepo.delete({ meetingId: id });
+    } catch {
+      /* best-effort */
     }
     await this.repo.delete(id);
     return { message: "Reunião cancelada." };

@@ -202,6 +202,7 @@ export class SchemaBootstrapService implements OnModuleInit {
 
   /** Reuniões em vídeo (aba Reuniões). */
   private async ensureMeetingsTable() {
+    await this.dataSource.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS "meetingId" uuid`);
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS meetings (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

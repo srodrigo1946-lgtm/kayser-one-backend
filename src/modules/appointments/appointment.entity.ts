@@ -49,6 +49,10 @@ export class Appointment {
   @Column({ type: "text", nullable: true })
   notes: string;
 
+  // Se veio de uma reunião (aba Reuniões), o id dela — pra sincronizar/cancelar juntos.
+  @Column({ nullable: true })
+  meetingId: string;
+
   @Column({ nullable: true })
   leadId: string;
 
