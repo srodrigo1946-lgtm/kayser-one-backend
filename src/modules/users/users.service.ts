@@ -116,10 +116,11 @@ export class UsersService {
         })
       );
     }
-    const ids = (await this.getDescendantIds(requestingUser.id)).filter(
-      (id) => id !== requestingUser.id
-    );
-    if (ids.length === 0) return [];
+    // INCLUI o próprio usuário: ele precisa aparecer na lista para poder ficar com
+    // o lead (ou receber de volta). Sem isso, um gestor sem equipe cadastrada abaixo
+    // dele via lista vazia e não conseguia transferir lead para ninguém.
+    // (Ações de gerenciar/aprovar/excluir a si mesmo seguem bloqueadas em assertCanManage.)
+    const ids = await this.getDescendantIds(requestingUser.id);
     return this.cleanMany(
       await this.usersRepo.find({
         where: { id: In(ids), empresaId: IsNull() },
