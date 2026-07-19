@@ -30,6 +30,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
       ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
+      ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -197,6 +198,26 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Previsão de entrega do empreendimento (texto livre). */
   private async ensurePropertyDeliveryDate() {
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "deliveryDate" varchar`);
+  }
+
+  /** Reuniões em vídeo (aba Reuniões). */
+  private async ensureMeetingsTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS meetings (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        title varchar NOT NULL,
+        "roomName" varchar NOT NULL,
+        "scheduledAt" timestamp NOT NULL,
+        "durationMin" int NOT NULL DEFAULT 90,
+        notes text,
+        status varchar NOT NULL DEFAULT 'agendada',
+        "hostId" uuid,
+        "participantIds" text,
+        "appointmentId" uuid,
+        "createdAt" timestamp NOT NULL DEFAULT now(),
+        "updatedAt" timestamp NOT NULL DEFAULT now()
+      )
+    `);
   }
 
   /** IA por usuário: provedor/modelo/chave próprios (chave é opcional). */
