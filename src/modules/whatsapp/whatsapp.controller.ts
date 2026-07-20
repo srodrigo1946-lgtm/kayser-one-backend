@@ -47,6 +47,21 @@ export class WhatsappController {
     return this.flowService.sendManual(req.user.id, body.to, body.text);
   }
 
+  @Post("send-media")
+  @ApiOperation({ summary: "Enviar arquivo/imagem (registra na conversa)" })
+  sendMediaMessage(
+    @Body()
+    body: { to: string; base64: string; mimetype: string; fileName: string; caption?: string },
+    @Request() req: any
+  ) {
+    return this.flowService.sendManualMedia(req.user.id, body.to, {
+      base64: body.base64,
+      mimetype: body.mimetype,
+      fileName: body.fileName,
+      caption: body.caption,
+    });
+  }
+
   @Delete("instance")
   @ApiOperation({ summary: "Desconectar sessão WhatsApp" })
   deleteInstance(@Request() req: any) {

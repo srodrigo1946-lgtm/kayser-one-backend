@@ -126,6 +126,31 @@ export class WhatsappFlowService {
     return this.whatsapp.sendText(`user_${instanceOwner}`, remoteJid, text);
   }
 
+  /**
+   * Envio manual de ARQUIVO (imagem, PDF, Excel...) pelo cargo: registra na conversa
+   * (a mídia vai pro R2/banco via addMessage) e envia pelo número dono da conversa.
+   */
+  async sendManualMedia(
+    senderUserId: string,
+    remoteJid: string,
+    file: { base64: string; mimetype: string; fileName: string; caption?: string }
+  ) {
+    const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
+    const instanceOwner = conv.instanceOwnerId || senderUserId;
+    const ehImagem = file.mimetype.startsWith("image/");
+    const rotulo = file.caption?.trim() || (ehImagem ? "📷 Imagem" : `📎 ${file.fileName}`);
+
+    await this.conversations.addMessage(conv.id, rotulo, "out", false, {
+      mediaType: ehImagem ? "image" : "document",
+      mediaMime: file.mimetype,
+      base64: file.base64,
+    });
+    if (conv.fromAd) {
+      await this.leadQueue.markAttended(conv.id, senderUserId).catch(() => {});
+    }
+    return this.whatsapp.sendMedia(`user_${instanceOwner}`, remoteJid, file);
+  }
+
   /** Extrai os campos relevantes do payload da Evolution API (evento messages.upsert). */
   private parseEvolutionMessage(payload: any): {
     remoteJid: string;
