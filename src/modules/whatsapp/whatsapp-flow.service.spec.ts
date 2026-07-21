@@ -5,7 +5,7 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
 
   beforeEach(() => {
     // Dependências não são usadas no parsing — mocks vazios bastam.
-    service = new WhatsappFlowService({} as any, {} as any, {} as any, {} as any, {} as any);
+    service = new WhatsappFlowService({} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
   });
 
   const parse = (payload: any) => (service as any).parseEvolutionMessage(payload);

@@ -4,6 +4,8 @@ import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
 import { WhatsappService } from "./whatsapp.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
+import { UsersService } from "../users/users.service";
+import { UserRole } from "../users/user.entity";
 
 @Injectable()
 export class WhatsappFlowService {
@@ -14,7 +16,8 @@ export class WhatsappFlowService {
     private readonly settings: SettingsService,
     private readonly ai: AiService,
     private readonly whatsapp: WhatsappService,
-    private readonly leadQueue: LeadQueueService
+    private readonly leadQueue: LeadQueueService,
+    private readonly users: UsersService
   ) {}
 
   /**
@@ -33,7 +36,7 @@ export class WhatsappFlowService {
       const receivingUserId = instanceName?.startsWith("user_")
         ? instanceName.slice("user_".length)
         : undefined;
-      const conv = await this.conversations.findOrCreateByPhone(remoteJid, receivingUserId);
+      const conv = await this.conversations.findOrCreateByPhone(remoteJid, receivingUserId, isGroup);
 
       // Baixa a mídia (imagem/áudio/vídeo/documento) para exibir no chat.
       let media: { mediaType: string; mediaMime: string; base64: string } | undefined;
@@ -58,9 +61,23 @@ export class WhatsappFlowService {
         await this.conversations.setContactInfo(conv.id, info.name, info.avatar);
       }
 
-      // Anúncio "Clique para WhatsApp": marca origem/campanha e, se a fila do Diretor
-      // estiver ligada, distribui automaticamente em rodízio entre os cargos.
-      if (ad) {
+      // REGRA: só o NÚMERO CENTRAL (Diretor) gera lead/rodízio automático. No
+      // WhatsApp de um cargo, quem chega é cliente dele, contato pessoal ou grupo
+      // — nada disso pode virar lead aleatório nem entrar na fila. Grupo nunca.
+      let recebeuNoCentral = false;
+      if (ad && !isGroup && receivingUserId) {
+        const dono = await this.users.findOne(receivingUserId).catch(() => null);
+        recebeuNoCentral = dono?.role === UserRole.DIRETOR;
+        if (!recebeuNoCentral) {
+          this.logger.log(
+            `Anúncio ignorado para a fila: chegou no número de um cargo (${receivingUserId}), não no central.`
+          );
+        }
+      }
+
+      // Anúncio "Clique para WhatsApp" NO NÚMERO CENTRAL: marca origem/campanha e,
+      // se a fila estiver ligada, distribui em rodízio entre os cargos.
+      if (ad && !isGroup && recebeuNoCentral) {
         // Log para diagnóstico: sem isto, um anúncio que chega num formato
         // inesperado não distribui e não deixa rastro nenhum.
         this.logger.log(

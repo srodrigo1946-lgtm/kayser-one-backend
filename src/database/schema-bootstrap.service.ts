@@ -31,6 +31,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
       ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
+      ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -193,6 +194,13 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgNoite" text`);
+  }
+
+  /** Marca conversas de grupo (@g.us) — grupo nunca vira lead. */
+  private async ensureConversationIsGroup() {
+    await this.dataSource.query(
+      `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS "isGroup" boolean NOT NULL DEFAULT false`
+    );
   }
 
   /** Previsão de entrega do empreendimento (texto livre). */

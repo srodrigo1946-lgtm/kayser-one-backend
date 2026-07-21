@@ -24,6 +24,10 @@ export class Conversation {
   @Column({ nullable: true })
   remoteJid: string;
 
+  // Grupo do WhatsApp (@g.us). Grupo NUNCA vira lead.
+  @Column({ default: false })
+  isGroup: boolean;
+
   // Nome de exibição do contato no WhatsApp (pushName) e foto de perfil (URL).
   @Column({ type: "text", nullable: true })
   contactName: string;

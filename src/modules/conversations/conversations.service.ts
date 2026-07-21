@@ -131,7 +131,8 @@ export class ConversationsService {
 
     // Toda etiqueta é uma coluna do Kanban → sempre implica movimento.
     // Se ainda não há lead vinculado, cria a partir do número (para o card aparecer/mover).
-    const precisaLead = adicionadas.length > 0;
+    // Grupo NUNCA vira lead, nem quando etiquetado por engano.
+    const precisaLead = adicionadas.length > 0 && !conv.isGroup;
     if (precisaLead && !conv.leadId) {
       const numero = conv.remoteJid ?? "";
       try {
@@ -228,11 +229,19 @@ export class ConversationsService {
    * `receivingUserId` é o dono da instância que recebeu (cada cargo tem o seu WhatsApp):
    * quando não há responsável de lead, a conversa nasce atribuída a ele.
    */
-  async findOrCreateByPhone(remoteJid: string, receivingUserId?: string): Promise<Conversation> {
+  async findOrCreateByPhone(
+    remoteJid: string,
+    receivingUserId?: string,
+    isGroup = false
+  ): Promise<Conversation> {
     const phone = remoteJid.replace(/\D/g, "");
     let conv = await this.convRepo.findOne({ where: { remoteJid: phone }, relations: ["lead"] });
     if (conv) {
       let changed = false;
+      if (isGroup && !conv.isGroup) {
+        conv.isGroup = true;
+        changed = true;
+      }
       // Se ainda não tem dono e sabemos quem recebeu, assume o dono do número.
       if (!conv.assignedToId && receivingUserId) {
         conv.assignedToId = receivingUserId;
@@ -258,6 +267,7 @@ export class ConversationsService {
     // Isso define a visibilidade por equipe (cada cargo vê as conversas do seu WhatsApp).
     conv = this.convRepo.create({
       remoteJid: phone,
+      isGroup,
       leadId: lead?.id,
       assignedToId: lead?.responsavelId ?? receivingUserId,
       instanceOwnerId: receivingUserId,

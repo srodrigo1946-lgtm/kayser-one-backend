@@ -7,9 +7,10 @@ import { ConversationsModule } from "../conversations/conversations.module";
 import { SettingsModule } from "../settings/settings.module";
 import { AiModule } from "../ai/ai.module";
 import { LeadQueueModule } from "../lead-queue/lead-queue.module";
+import { UsersModule } from "../users/users.module";
 
 @Module({
-  imports: [ConversationsModule, SettingsModule, AiModule, LeadQueueModule],
+  imports: [ConversationsModule, SettingsModule, AiModule, LeadQueueModule, UsersModule],
   controllers: [WhatsappController, WhatsappWebhookController],
   providers: [WhatsappService, WhatsappFlowService],
   exports: [WhatsappService, WhatsappFlowService],
