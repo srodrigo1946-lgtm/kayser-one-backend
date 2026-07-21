@@ -1,6 +1,8 @@
 import { LeadQueueService } from "./lead-queue.service";
 
-function make(settings: any, assignments: any[] = []) {
+// `validUserIds` = quem REALMENTE existe no banco. Por padrão, todos os membros
+// da fila existem; passe uma lista menor para simular usuário apagado/inativo.
+function make(settings: any, assignments: any[] = [], validUserIds?: string[]) {
   const settingsRepo: any = {
     findOne: jest.fn(async () => settings),
     create: jest.fn((v) => v),
@@ -21,7 +23,16 @@ function make(settings: any, assignments: any[] = []) {
     }),
   };
   const convRepo: any = { update: jest.fn(async () => ({})) };
-  return { svc: new LeadQueueService(settingsRepo, assignRepo, convRepo), settings, assignments, convRepo };
+  const idsValidos: string[] = validUserIds ?? settings.memberIds ?? [];
+  const usersRepo: any = {
+    find: jest.fn(async () => idsValidos.map((id) => ({ id, active: true, approved: true }))),
+  };
+  return {
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo),
+    settings,
+    assignments,
+    convRepo,
+  };
 }
 
 describe("LeadQueueService", () => {
@@ -44,6 +55,24 @@ describe("LeadQueueService", () => {
 
   it("enqueueAdLead retorna null sem membros", async () => {
     const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: [], pointer: 0 });
+    expect(await svc.enqueueAdLead({ conversationId: "c1" })).toBeNull();
+  });
+
+  // Usuário apagado continuava no rodízio e recebia leads que ninguém via:
+  // o lead sumia até o prazo estourar. Foi a causa de "0 atendidos" em produção.
+  it("pula membro que não existe mais e o remove do rodízio", async () => {
+    const { svc, settings } = make(
+      { enabled: true, slaMinutes: 5, memberIds: ["fantasma", "B", "C"], pointer: 0 },
+      [],
+      ["B", "C"] // "fantasma" foi apagado do banco
+    );
+    const a1 = await svc.enqueueAdLead({ conversationId: "c1" });
+    expect(a1?.assignedToId).toBe("B");
+    expect(settings.memberIds).toEqual(["B", "C"]);
+  });
+
+  it("não distribui quando TODOS os membros foram apagados", async () => {
+    const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: ["x", "y"], pointer: 0 }, [], []);
     expect(await svc.enqueueAdLead({ conversationId: "c1" })).toBeNull();
   });
 

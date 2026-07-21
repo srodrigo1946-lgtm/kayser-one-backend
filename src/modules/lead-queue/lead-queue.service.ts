@@ -1,10 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { LessThan, Repository } from "typeorm";
+import { In, LessThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { LeadQueueSettings } from "./lead-queue-settings.entity";
 import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
+import { User } from "../users/user.entity";
 
 @Injectable()
 export class LeadQueueService {
@@ -16,8 +17,36 @@ export class LeadQueueService {
     @InjectRepository(LeadQueueAssignment)
     private readonly assignRepo: Repository<LeadQueueAssignment>,
     @InjectRepository(Conversation)
-    private readonly convRepo: Repository<Conversation>
+    private readonly convRepo: Repository<Conversation>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>
   ) {}
+
+  /**
+   * Membros do rodízio que REALMENTE existem e podem atender.
+   * Usuário apagado (ou desativado/não aprovado) continuava no `memberIds` e
+   * recebia leads que ninguém via — o lead sumia até o prazo estourar.
+   * Aqui os fantasmas são removidos da fila de forma definitiva.
+   */
+  private async activeMembers(s: LeadQueueSettings): Promise<string[]> {
+    const ids = s.memberIds ?? [];
+    if (ids.length === 0) return [];
+    const users = await this.usersRepo.find({ where: { id: In(ids) } });
+    const validos = new Set(
+      users.filter((u) => u.active !== false && u.approved !== false).map((u) => u.id)
+    );
+    const limpos = ids.filter((id) => validos.has(id));
+    if (limpos.length !== ids.length) {
+      const removidos = ids.filter((id) => !validos.has(id));
+      this.logger.warn(
+        `Fila: ${removidos.length} membro(s) inexistente(s)/inativo(s) removido(s) do rodízio.`
+      );
+      s.memberIds = limpos;
+      s.pointer = 0;
+      await this.settingsRepo.save(s);
+    }
+    return limpos;
+  }
 
   /** Configuração única da fila (cria o singleton se ainda não existir). */
   async getSettings(): Promise<LeadQueueSettings> {
@@ -47,7 +76,7 @@ export class LeadQueueService {
     leadId?: string;
   }): Promise<LeadQueueAssignment | null> {
     const s = await this.getSettings();
-    const members = s.memberIds ?? [];
+    const members = await this.activeMembers(s);
     if (!s.enabled || members.length === 0) return null;
 
     const idx = ((s.pointer % members.length) + members.length) % members.length;
@@ -88,7 +117,7 @@ export class LeadQueueService {
     if (expired.length === 0) return 0;
 
     const s = await this.getSettings();
-    const members = s.memberIds ?? [];
+    const members = await this.activeMembers(s);
     let count = 0;
     for (const a of expired) {
       a.status = "expirado";
