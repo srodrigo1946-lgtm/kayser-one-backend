@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { MoreThan, Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
 import { Lead, LeadStatus, LeadSource } from "../leads/lead.entity";
@@ -342,6 +342,22 @@ export class ConversationsService {
       changed = true;
     }
     if (changed) await this.convRepo.save(conv);
+  }
+
+  /**
+   * Registra uma mensagem de SAÍDA que o cargo enviou pelo PRÓPRIO CELULAR
+   * (evento `fromMe` do webhook) — sem isso o histórico do atendimento fica
+   * incompleto (só aparece o que foi enviado pelo CRM). Deduplica o ECO: quando
+   * o próprio CRM envia, a Evolution devolve a mesma mensagem como `fromMe`; se
+   * já existe uma saída idêntica nos últimos 20s, ignora para não duplicar.
+   */
+  async recordOutbound(conversationId: string, content: string): Promise<Message | null> {
+    const since = new Date(Date.now() - 20_000);
+    const eco = await this.msgRepo.findOne({
+      where: { conversationId, direction: "out", content, createdAt: MoreThan(since) },
+    });
+    if (eco) return null;
+    return this.addMessage(conversationId, content, "out", false);
   }
 
   async addMessage(

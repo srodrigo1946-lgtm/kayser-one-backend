@@ -30,13 +30,21 @@ export class WhatsappFlowService {
       if (!parsed) return { ignored: true };
 
       const { remoteJid, remoteJidFull, isGroup, text, mediaType, fromMe, pushName, instanceName, ad } = parsed;
-      if (fromMe || !text) return { ignored: true };
+      if (!text) return { ignored: true };
 
       // A instância se chama "user_<id>": é o dono do número que recebeu a mensagem.
       const receivingUserId = instanceName?.startsWith("user_")
         ? instanceName.slice("user_".length)
         : undefined;
       const conv = await this.conversations.findOrCreateByPhone(remoteJid, receivingUserId, isGroup);
+
+      // Mensagem que o CARGO enviou pelo próprio celular (fromMe): registra no
+      // histórico do atendimento e para por aqui — não gera IA, lead nem rodízio.
+      // recordOutbound deduplica o eco das mensagens que o próprio CRM enviou.
+      if (fromMe) {
+        await this.conversations.recordOutbound(conv.id, text);
+        return { persisted: true, fromMe: true };
+      }
 
       // Baixa a mídia (imagem/áudio/vídeo/documento) para exibir no chat.
       let media: { mediaType: string; mediaMime: string; base64: string } | undefined;
