@@ -201,10 +201,16 @@ export class WhatsappFlowService {
       ).toLowerCase();
       const platform = app.includes("insta") ? "instagram" : app.includes("tiktok") ? "tiktok" : "facebook";
       ad = { platform, campaign: ext?.title || ext?.sourceId || ctx?.ctwaPayload || undefined };
-    } else if (ctx) {
-      // Diagnóstico: mensagem com contextInfo que NÃO foi reconhecida como anúncio.
-      // Só as chaves (nunca o conteúdo), pra identificar formato novo sem vazar dado.
-      this.logger.debug(`contextInfo sem anúncio reconhecido. Chaves: ${Object.keys(ctx).join(",")}`);
+    } else {
+      // Diagnóstico (temporário): mensagem NÃO reconhecida como anúncio.
+      // Loga só as CHAVES (nunca o conteúdo) pra identificar o formato que o Meta
+      // manda de verdade. Nível `log` de propósito: em produção `debug` não sai.
+      // Sem contextInfo também loga — senão ficamos cegos justamente no caso ruim.
+      this.logger.log(
+        `Inbound sem anúncio. message=[${Object.keys(message).join(",")}] contextInfo=[${
+          ctx ? Object.keys(ctx).join(",") : "AUSENTE"
+        }]`
+      );
     }
 
     // Mídia: quando não há texto, mostra um marcador para o atendente saber o que chegou.
