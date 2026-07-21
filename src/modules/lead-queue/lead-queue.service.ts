@@ -6,6 +6,7 @@ import { LeadQueueSettings } from "./lead-queue-settings.entity";
 import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { User } from "../users/user.entity";
+import { Lead } from "../leads/lead.entity";
 
 @Injectable()
 export class LeadQueueService {
@@ -19,8 +20,20 @@ export class LeadQueueService {
     @InjectRepository(Conversation)
     private readonly convRepo: Repository<Conversation>,
     @InjectRepository(User)
-    private readonly usersRepo: Repository<User>
+    private readonly usersRepo: Repository<User>,
+    @InjectRepository(Lead)
+    private readonly leadsRepo: Repository<Lead>
   ) {}
+
+  /**
+   * Atribuir na fila tem que refletir NO LEAD também: antes só a conversa
+   * ganhava atendente, e a lista de Leads mostrava "Responsável —" — parecia
+   * que a fila não tinha distribuído nada.
+   */
+  private async atribuir(conversationId: string, leadId: string | undefined, userId: string) {
+    await this.convRepo.update(conversationId, { assignedToId: userId });
+    if (leadId) await this.leadsRepo.update(leadId, { responsavelId: userId });
+  }
 
   /**
    * Membros do rodízio que REALMENTE existem e podem atender.
@@ -94,7 +107,7 @@ export class LeadQueueService {
       attempts: 1,
     });
     const saved = await this.assignRepo.save(assignment);
-    await this.convRepo.update(input.conversationId, { assignedToId: userId });
+    await this.atribuir(input.conversationId, input.leadId, userId);
     this.logger.log(`Lead de anúncio ${input.conversationId} atribuído a ${userId}.`);
     return saved;
   }
@@ -136,7 +149,7 @@ export class LeadQueueService {
         attempts: a.attempts + 1,
       });
       await this.assignRepo.save(next);
-      await this.convRepo.update(a.conversationId, { assignedToId: nextUser });
+      await this.atribuir(a.conversationId, a.leadId, nextUser);
       count++;
     }
     if (count) this.logger.log(`Fila: ${count} lead(s) reatribuído(s) por SLA vencido.`);

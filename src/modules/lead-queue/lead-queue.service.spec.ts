@@ -27,11 +27,13 @@ function make(settings: any, assignments: any[] = [], validUserIds?: string[]) {
   const usersRepo: any = {
     find: jest.fn(async () => idsValidos.map((id) => ({ id, active: true, approved: true }))),
   };
+  const leadsRepo: any = { update: jest.fn(async () => ({})) };
   return {
-    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo),
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo),
     settings,
     assignments,
     convRepo,
+    leadsRepo,
   };
 }
 
@@ -56,6 +58,14 @@ describe("LeadQueueService", () => {
   it("enqueueAdLead retorna null sem membros", async () => {
     const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: [], pointer: 0 });
     expect(await svc.enqueueAdLead({ conversationId: "c1" })).toBeNull();
+  });
+
+  // Antes a fila só marcava atendente na CONVERSA; a lista de Leads continuava
+  // com "Responsável —" e parecia que nada tinha sido distribuído.
+  it("preenche o responsável do lead ao distribuir", async () => {
+    const { svc, leadsRepo } = make({ enabled: true, slaMinutes: 5, memberIds: ["A", "B"], pointer: 0 });
+    await svc.enqueueAdLead({ conversationId: "c1", leadId: "lead-1" });
+    expect(leadsRepo.update).toHaveBeenCalledWith("lead-1", { responsavelId: "A" });
   });
 
   // Usuário apagado continuava no rodízio e recebia leads que ninguém via:
