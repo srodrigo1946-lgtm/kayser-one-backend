@@ -58,15 +58,18 @@ export class ConversationsService {
       // Só os campos do atendente que interessam ao front (sem passwordHash).
       .leftJoin("c.assignedTo", "atendente")
       .addSelect(["atendente.id", "atendente.name", "atendente.role", "atendente.avatar"])
-      .orderBy("c.lastMessageAt", "DESC");
+      .orderBy("c.lastMessageAt", "DESC")
+      // SÓ conversas de LEAD entram no Kayser One. Conversa pessoal e grupo (que
+      // nunca têm lead vinculado) ficam de fora — o WhatsApp da pessoa não vira CRM.
+      .where("c.leadId IS NOT NULL");
 
     // Visibilidade por hierarquia (igual ao resto do sistema): o Diretor vê TODAS
-    // as conversas; cada gerente vê as da sua equipe (árvore de descendentes); o
-    // corretor vê só as suas. O escopo casa tanto pelo atendente da conversa quanto
-    // pelo responsável do lead.
+    // as conversas (de lead); cada gerente vê as da sua equipe (árvore de
+    // descendentes); o corretor vê só as suas. O escopo casa tanto pelo atendente
+    // da conversa quanto pelo responsável do lead.
     const scopeIds = await this.users.getScopeIds(user);
     if (scopeIds !== null) {
-      qb.where("(c.assignedToId IN (:...ids) OR lead.responsavelId IN (:...ids))", {
+      qb.andWhere("(c.assignedToId IN (:...ids) OR lead.responsavelId IN (:...ids))", {
         ids: scopeIds,
       });
     }
