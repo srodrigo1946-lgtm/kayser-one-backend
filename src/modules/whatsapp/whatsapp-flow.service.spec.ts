@@ -67,4 +67,58 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
     expect(r.ad?.platform).toBe("instagram");
     expect(r.ad?.campaign).toBe("Campanha Verão");
   });
+
+  // Formato REAL do click-to-WhatsApp: o externalAdReply vem VAZIO e quem
+  // identifica o anúncio é o entryPointConversionSource. Olhar só o
+  // externalAdReply preenchido fazia a fila nunca disparar em anúncio de verdade.
+  it("detecta anúncio quando externalAdReply vem vazio (entryPointConversionSource=ctwa_ad)", () => {
+    const r = parse({
+      instance: "user_diretor",
+      data: {
+        key: { remoteJid: "5521999999999@s.whatsapp.net", fromMe: false },
+        pushName: "Cliente",
+        message: {
+          conversation: "Oi, vi o anúncio",
+          contextInfo: {
+            externalAdReply: {},
+            entryPointConversionSource: "ctwa_ad",
+            entryPointConversionApp: "facebook",
+            ctwaPayload: "campanha-lancamento",
+          },
+        },
+      },
+    });
+    expect(r.ad?.platform).toBe("facebook");
+    expect(r.ad?.campaign).toBe("campanha-lancamento");
+  });
+
+  it("detecta anúncio mesmo SEM externalAdReply nenhum", () => {
+    const r = parse({
+      instance: "user_diretor",
+      data: {
+        key: { remoteJid: "5521999999999@s.whatsapp.net", fromMe: false },
+        message: {
+          conversation: "Oi",
+          contextInfo: { entryPointConversionSource: "ctwa_ad", entryPointConversionApp: "instagram" },
+        },
+      },
+    });
+    expect(r.ad?.platform).toBe("instagram");
+  });
+
+  it("NÃO marca como anúncio uma mensagem comum com contextInfo (resposta citada)", () => {
+    const r = parse({
+      instance: "user_diretor",
+      data: {
+        key: { remoteJid: "5521999999999@s.whatsapp.net", fromMe: false },
+        message: {
+          extendedTextMessage: {
+            text: "respondendo",
+            contextInfo: { stanzaId: "ABC", participant: "5521988887777@s.whatsapp.net" },
+          },
+        },
+      },
+    });
+    expect(r.ad).toBeUndefined();
+  });
 });

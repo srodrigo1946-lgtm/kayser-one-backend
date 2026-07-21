@@ -187,12 +187,24 @@ export class WhatsappFlowService {
       message.extendedTextMessage?.contextInfo ||
       (message as any).contextInfo ||
       (msg as any).contextInfo;
+    // ATENÇÃO: em mensagem de anúncio o `externalAdReply` costuma vir VAZIO ({}).
+    // O sinal confiável é `entryPointConversionSource: "ctwa_ad"` (click-to-WhatsApp),
+    // com a plataforma em `entryPointConversionApp`. Olhar só o externalAdReply fazia
+    // a fila nunca disparar em anúncio real.
     const ext = ctx?.externalAdReply;
+    const conversionSource = String(ctx?.entryPointConversionSource || "").toLowerCase();
+    const veioDeAnuncio = !!ext || conversionSource.includes("ctwa") || conversionSource.includes("ad");
     let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string } | undefined;
-    if (ext) {
-      const app = String(ext.sourceApp || ext.sourceType || "").toLowerCase();
+    if (veioDeAnuncio) {
+      const app = String(
+        ctx?.entryPointConversionApp || ext?.sourceApp || ext?.sourceType || ""
+      ).toLowerCase();
       const platform = app.includes("insta") ? "instagram" : app.includes("tiktok") ? "tiktok" : "facebook";
-      ad = { platform, campaign: ext.title || ext.sourceId || undefined };
+      ad = { platform, campaign: ext?.title || ext?.sourceId || ctx?.ctwaPayload || undefined };
+    } else if (ctx) {
+      // Diagnóstico: mensagem com contextInfo que NÃO foi reconhecida como anúncio.
+      // Só as chaves (nunca o conteúdo), pra identificar formato novo sem vazar dado.
+      this.logger.debug(`contextInfo sem anúncio reconhecido. Chaves: ${Object.keys(ctx).join(",")}`);
     }
 
     // Mídia: quando não há texto, mostra um marcador para o atendente saber o que chegou.
