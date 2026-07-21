@@ -137,8 +137,12 @@ export class ConversationsService {
       try {
         const lead = await this.leads.create(
           {
-            name: numero || "Contato WhatsApp",
+            name: conv.contactName || numero || "Contato WhatsApp",
             phone: numero,
+            whatsapp: numero,
+            // Sem isso a coluna Origem ficava vazia para quem chega direto no
+            // WhatsApp — e não dava pra distinguir de lead sem procedência.
+            origem: conv.fromAd ? "anuncio" : "whatsapp",
             responsavelId: conv.assignedToId ?? undefined,
           } as any,
           requester,

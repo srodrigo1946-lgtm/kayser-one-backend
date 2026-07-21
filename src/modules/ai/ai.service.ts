@@ -184,6 +184,7 @@ export class AiService {
 - renda_detectada: número ou null
 - fgts_detectado: número ou null
 - cidade_detectada: string ou null
+- empreendimento_detectado: string ou null (nome do imóvel/empreendimento que o cliente citou; null se ele não citou nenhum — NÃO invente)
 - proximo_passo: string (ação recomendada)
 Retorne APENAS o JSON, sem texto adicional.`;
 
@@ -214,6 +215,11 @@ Retorne APENAS o JSON, sem texto adicional.`;
         if (data.renda_detectada) lead.renda = data.renda_detectada;
         if (data.fgts_detectado) lead.fgts = data.fgts_detectado;
         if (data.cidade_detectada) lead.cidade = data.cidade_detectada;
+        // Só completa o que está vazio: o que o corretor (ou o anúncio) já
+        // preencheu vale mais que o palpite da IA.
+        if (data.empreendimento_detectado && !lead.empreendimento) {
+          lead.empreendimento = data.empreendimento_detectado;
+        }
         await this.leadsRepo.save(lead);
       }
       return data;
