@@ -61,6 +61,11 @@ export class WhatsappFlowService {
       // Anúncio "Clique para WhatsApp": marca origem/campanha e, se a fila do Diretor
       // estiver ligada, distribui automaticamente em rodízio entre os cargos.
       if (ad) {
+        // Log para diagnóstico: sem isto, um anúncio que chega num formato
+        // inesperado não distribui e não deixa rastro nenhum.
+        this.logger.log(
+          `Lead de ANÚNCIO detectado (${ad.platform}${ad.campaign ? ` / ${ad.campaign}` : ""}) de ${remoteJid}.`
+        );
         // Garante o Lead (cria se não existir) → cai no Kanban como Novo Lead.
         const adLeadId = await this.conversations.setAdOrigin(conv.id, ad.platform, ad.campaign, conv.leadId);
         conv.leadId = adLeadId ?? conv.leadId;
