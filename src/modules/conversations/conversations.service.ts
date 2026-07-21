@@ -275,10 +275,14 @@ export class ConversationsService {
   ): Promise<string | undefined> {
     await this.convRepo.update(conversationId, { fromAd: true });
     if (leadId) {
+      // O título do anúncio é a única pista de empreendimento que o Meta manda.
+      // NUNCA sobrescrever o que o corretor já preencheu — só completar o vazio.
+      const atual = await this.leadsRepo.findOne({ where: { id: leadId } });
       await this.leadsRepo.update(leadId, {
         origem: platform,
         campanha: campaign ?? null,
         source: LeadSource.ANUNCIO,
+        ...(campaign && !atual?.empreendimento ? { empreendimento: campaign } : {}),
       });
       return leadId;
     }
@@ -293,6 +297,7 @@ export class ConversationsService {
         whatsapp: numero,
         origem: platform,
         campanha: campaign ?? undefined,
+        empreendimento: campaign ?? undefined, // título do anúncio
         source: LeadSource.ANUNCIO,
         responsavelId: conv.assignedToId ?? undefined,
         // status usa o default da entidade = Novo Lead

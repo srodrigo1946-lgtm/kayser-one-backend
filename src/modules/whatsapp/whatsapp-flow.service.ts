@@ -101,6 +101,16 @@ export class WhatsappFlowService {
 
       if (reply) {
         await this.conversations.addMessage(conv.id, reply, "out", true);
+
+        // Score do lead: a IA qualifica sozinha a partir da conversa. Roda em
+        // segundo plano (não segura a resposta ao cliente) e falha em silêncio —
+        // sem score é melhor que sem resposta.
+        if (conv.leadId) {
+          const texto = history.map((m) => `${m.role}: ${m.content}`).join("\n");
+          this.ai
+            .qualifyLead(conv.leadId, texto, userAi)
+            .catch((err) => this.logger.warn(`Não foi possível qualificar o lead: ${err?.message}`));
+        }
         if (instanceName) {
           try {
             await this.whatsapp.sendText(instanceName, remoteJidFull, reply);
