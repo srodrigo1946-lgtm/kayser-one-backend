@@ -65,11 +65,20 @@ export class LeadsService {
             { ...where, email: Like(`%${search}%`) },
           ]
         : where,
-      relations: ["responsavel"],
+      // `responsavel.manager` = gestor do responsável (para mostrar a equipe ao lado).
+      relations: ["responsavel", "responsavel.manager"],
       order: { createdAt: "DESC" },
       skip: (page - 1) * limit,
       take: limit,
     });
+
+    // Nunca vazar o hash de senha do responsável nem do gestor.
+    for (const l of leads) {
+      if (l.responsavel) {
+        delete (l.responsavel as any).passwordHash;
+        if ((l.responsavel as any).manager) delete (l.responsavel as any).manager.passwordHash;
+      }
+    }
 
     return {
       data: leads,
