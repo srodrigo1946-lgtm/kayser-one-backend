@@ -194,6 +194,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgNoite" text`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalImage" text`);
   }
 
   /** Marca conversas de grupo (@g.us) — grupo nunca vira lead. */

@@ -11,7 +11,8 @@ describe("SettingsService", () => {
       create: jest.fn((x) => x),
       save: jest.fn(async (x) => ({ id: "s1", ...x })),
     };
-    service = new SettingsService(repo);
+    const storage = { upload: jest.fn(), getObject: jest.fn() };
+    service = new SettingsService(repo, storage as any);
   });
 
   it("cria a linha de configuração padrão quando não existe", async () => {

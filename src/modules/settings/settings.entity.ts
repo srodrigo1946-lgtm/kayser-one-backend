@@ -67,6 +67,11 @@ export class Settings {
   @Column({ default: false })
   aiReplyGroups: boolean;
 
+  // Imagem das condições comerciais do mês (aba Grupo Direcional). Chave no R2
+  // ou data URI (fallback). Só o Diretor troca; todos os cargos veem.
+  @Column({ type: "text", nullable: true })
+  direcionalImage: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

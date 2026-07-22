@@ -1,4 +1,16 @@
-import { Controller, Get, Put, Body, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Put,
+  Post,
+  Body,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Res,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { SettingsService } from "./settings.service";
@@ -65,5 +77,29 @@ export class SettingsController {
   @ApiOperation({ summary: "Atualizar configurações (somente Diretor)" })
   update(@Body() dto: UpdateSettingsDto) {
     return this.settingsService.update(dto);
+  }
+
+  // Imagem de condições comerciais do mês (aba Grupo Direcional).
+  // Trocar = só Diretor. Ver = todos os cargos (JWT via header OU ?token=).
+  @Post("direcional-image")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiOperation({ summary: "Enviar a imagem de condições comerciais (somente Diretor)" })
+  setDirecionalImage(@UploadedFile() file: Express.Multer.File) {
+    return this.settingsService.setDirecionalImage(file);
+  }
+
+  @Get("direcional-image")
+  @ApiOperation({ summary: "Servir a imagem de condições comerciais (todos os cargos)" })
+  async getDirecionalImage(@Res() res: Response) {
+    const img = await this.settingsService.getDirecionalImageData();
+    if (!img) {
+      res.status(404).send();
+      return;
+    }
+    res.setHeader("Content-Type", img.contentType);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.send(img.buffer);
   }
 }
