@@ -191,6 +191,37 @@ export class WhatsappFlowService {
     return this.whatsapp.sendMedia(`user_${instanceOwner}`, remoteJid, file);
   }
 
+  /**
+   * Procura o referral do anúncio "Clique para WhatsApp" em qualquer nível do
+   * payload. As chaves (`externalAdReply`, `entryPointConversionSource`) só
+   * aparecem em mensagem de anúncio, então buscar em profundidade é seguro —
+   * pega o referral onde quer que o Meta/Evolution o aninhe.
+   */
+  private findAdReferral(
+    obj: any,
+    depth = 0
+  ): {
+    externalAdReply?: any;
+    entryPointConversionSource?: string;
+    entryPointConversionApp?: string;
+    ctwaPayload?: string;
+  } | null {
+    if (!obj || typeof obj !== "object" || depth > 6) return null;
+    if (obj.externalAdReply !== undefined || obj.entryPointConversionSource !== undefined) {
+      return {
+        externalAdReply: obj.externalAdReply,
+        entryPointConversionSource: obj.entryPointConversionSource,
+        entryPointConversionApp: obj.entryPointConversionApp,
+        ctwaPayload: obj.ctwaPayload,
+      };
+    }
+    for (const k of Object.keys(obj)) {
+      const found = this.findAdReferral(obj[k], depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
   /** Extrai os campos relevantes do payload da Evolution API (evento messages.upsert). */
   private parseEvolutionMessage(payload: any): {
     remoteJid: string;
@@ -216,36 +247,24 @@ export class WhatsappFlowService {
     let text = message.conversation || message.extendedTextMessage?.text || "";
     let mediaType: string | null = null;
 
-    // Anúncio "Clique para WhatsApp": o Meta manda o referral no contextInfo.externalAdReply.
-    // O contextInfo pode vir dentro do extendedTextMessage, na própria message, ou no msg.
-    const ctx =
-      message.extendedTextMessage?.contextInfo ||
-      (message as any).contextInfo ||
-      (msg as any).contextInfo;
-    // ATENÇÃO: em mensagem de anúncio o `externalAdReply` costuma vir VAZIO ({}).
-    // O sinal confiável é `entryPointConversionSource: "ctwa_ad"` (click-to-WhatsApp),
-    // com a plataforma em `entryPointConversionApp`. Olhar só o externalAdReply fazia
-    // a fila nunca disparar em anúncio real.
-    const ext = ctx?.externalAdReply;
-    const conversionSource = String(ctx?.entryPointConversionSource || "").toLowerCase();
-    const veioDeAnuncio = !!ext || conversionSource.includes("ctwa") || conversionSource.includes("ad");
+    // Anúncio "Clique para WhatsApp": o Meta manda o referral do anúncio no
+    // payload, mas o LUGAR varia (contextInfo do extendedTextMessage, de uma
+    // imageMessage, aninhado etc). Em vez de checar caminhos fixos, procuramos o
+    // referral em QUALQUER profundidade — as chaves são exclusivas de anúncio,
+    // então não há falso-positivo.
+    const ref = this.findAdReferral(msg);
     let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string } | undefined;
-    if (veioDeAnuncio) {
-      const app = String(
-        ctx?.entryPointConversionApp || ext?.sourceApp || ext?.sourceType || ""
-      ).toLowerCase();
-      const platform = app.includes("insta") ? "instagram" : app.includes("tiktok") ? "tiktok" : "facebook";
-      ad = { platform, campaign: ext?.title || ext?.sourceId || ctx?.ctwaPayload || undefined };
+    if (ref) {
+      const ext = ref.externalAdReply || {};
+      const hay = `${ref.entryPointConversionApp || ""} ${ext.sourceApp || ""} ${
+        ext.sourceType || ""
+      } ${ext.sourceUrl || ""}`.toLowerCase();
+      const platform = hay.includes("insta") ? "instagram" : hay.includes("tiktok") ? "tiktok" : "facebook";
+      ad = { platform, campaign: ext.title || ext.sourceId || ref.ctwaPayload || undefined };
     } else {
-      // Diagnóstico (temporário): mensagem NÃO reconhecida como anúncio.
-      // Loga só as CHAVES (nunca o conteúdo) pra identificar o formato que o Meta
-      // manda de verdade. Nível `log` de propósito: em produção `debug` não sai.
-      // Sem contextInfo também loga — senão ficamos cegos justamente no caso ruim.
-      this.logger.log(
-        `Inbound sem anúncio. message=[${Object.keys(message).join(",")}] contextInfo=[${
-          ctx ? Object.keys(ctx).join(",") : "AUSENTE"
-        }]`
-      );
+      // Diagnóstico: mensagem NÃO reconhecida como anúncio. Loga só as CHAVES
+      // (nunca o conteúdo) pra identificar formato novo. Nível `log` de propósito.
+      this.logger.log(`Inbound sem anúncio. message=[${Object.keys(message).join(",")}]`);
     }
 
     // Mídia: quando não há texto, mostra um marcador para o atendente saber o que chegou.

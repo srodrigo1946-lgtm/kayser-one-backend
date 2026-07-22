@@ -106,6 +106,30 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
     expect(r.ad?.platform).toBe("instagram");
   });
 
+  // Caso real (Lorena Altino): o referral do anúncio veio ANINHADO numa
+  // imageMessage — os caminhos fixos antigos não pegavam, a busca em
+  // profundidade pega. Era um anúncio do Instagram ("Pontal!") que não virava lead.
+  it("detecta anúncio com referral aninhado em imageMessage (busca profunda)", () => {
+    const r = parse({
+      instance: "user_diretor",
+      data: {
+        key: { remoteJid: "5521969509865@s.whatsapp.net", fromMe: false },
+        pushName: "Lorena Altino",
+        message: {
+          imageMessage: {
+            caption: "Olá! Posso ter mais informações sobre isso?",
+            contextInfo: {
+              externalAdReply: { title: "Pontal !", sourceUrl: "https://instagram.com/..." },
+            },
+          },
+          extendedTextMessage: { text: "Olá! Posso ter mais informações sobre isso?" },
+        },
+      },
+    });
+    expect(r.ad?.platform).toBe("instagram");
+    expect(r.ad?.campaign).toBe("Pontal !");
+  });
+
   it("NÃO marca como anúncio uma mensagem comum com contextInfo (resposta citada)", () => {
     const r = parse({
       instance: "user_diretor",
