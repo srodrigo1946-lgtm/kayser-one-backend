@@ -22,11 +22,17 @@ export class SettingsService {
     return settings;
   }
 
-  /** Versão segura para o front: não expõe a chave de API nem a imagem (grande). */
+  /** Versão segura para o front: não expõe chaves/tokens nem a imagem (grande). */
   async getPublic() {
     const s = await this.get();
-    const { aiApiKey, direcionalImage, ...rest } = s;
-    return { ...rest, hasApiKey: !!aiApiKey, hasDirecionalImage: !!direcionalImage };
+    const { aiApiKey, direcionalImage, metaPageToken, metaVerifyToken, ...rest } = s;
+    return {
+      ...rest,
+      hasApiKey: !!aiApiKey,
+      hasDirecionalImage: !!direcionalImage,
+      hasMetaToken: !!metaPageToken,
+      hasMetaVerify: !!metaVerifyToken,
+    };
   }
 
   /** Salva a imagem de condições comerciais do mês (R2 quando ativo, senão data URI). */
@@ -55,8 +61,10 @@ export class SettingsService {
 
   async update(dto: Partial<Settings>) {
     const settings = await this.get();
-    // Não sobrescreve a chave com vazio (permite manter a existente).
-    if (dto.aiApiKey === "" || dto.aiApiKey === undefined) delete dto.aiApiKey;
+    // Não sobrescreve segredos com vazio (permite manter os existentes).
+    for (const k of ["aiApiKey", "metaPageToken", "metaVerifyToken"] as const) {
+      if (dto[k] === "" || dto[k] === undefined) delete dto[k];
+    }
     Object.assign(settings, dto);
     await this.repo.save(settings);
     return this.getPublic();

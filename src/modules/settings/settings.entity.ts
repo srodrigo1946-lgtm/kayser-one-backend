@@ -72,6 +72,13 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   direcionalImage: string;
 
+  // Integração Meta (formulário de anúncio). O Diretor cola aqui em vez de env.
+  @Column({ type: "text", nullable: true })
+  metaPageToken: string;
+
+  @Column({ type: "text", nullable: true })
+  metaVerifyToken: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

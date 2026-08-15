@@ -6,6 +6,7 @@ import axios from "axios";
 import { Lead } from "../leads/lead.entity";
 import { ConversationsService } from "../conversations/conversations.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
+import { SettingsService } from "../settings/settings.service";
 
 interface DadosLead {
   name: string;
@@ -22,12 +23,23 @@ export class MetaFormsService {
     private readonly leadQueue: LeadQueueService,
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    private readonly settings: SettingsService
   ) {}
 
+  /** Tokens: primeiro o que o Diretor colou nas Configurações, senão a env. */
+  private async verifyToken(): Promise<string> {
+    const s = await this.settings.get().catch(() => null);
+    return s?.metaVerifyToken || this.config.get<string>("META_VERIFY_TOKEN") || "";
+  }
+  private async pageToken(): Promise<string> {
+    const s = await this.settings.get().catch(() => null);
+    return s?.metaPageToken || this.config.get<string>("META_PAGE_ACCESS_TOKEN") || "";
+  }
+
   /** Verificação do webhook (GET): devolve o challenge só se o token bater. */
-  verify(mode: string, token: string, challenge: string): string | null {
-    const esperado = this.config.get<string>("META_VERIFY_TOKEN");
+  async verify(mode: string, token: string, challenge: string): Promise<string | null> {
+    const esperado = await this.verifyToken();
     return mode === "subscribe" && !!esperado && token === esperado ? challenge : null;
   }
 
@@ -49,7 +61,7 @@ export class MetaFormsService {
 
   /** Busca os dados do lead na Graph API. Null se não há token configurado. */
   private async fetchLead(leadgenId: string): Promise<DadosLead | null> {
-    const token = this.config.get<string>("META_PAGE_ACCESS_TOKEN");
+    const token = await this.pageToken();
     if (!token) {
       this.logger.warn("META_PAGE_ACCESS_TOKEN ausente — não busco o lead do formulário.");
       return null;

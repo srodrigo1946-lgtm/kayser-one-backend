@@ -4,15 +4,17 @@ function svc() {
   const conversations: any = {};
   const leadQueue: any = {};
   const leadsRepo: any = {};
-  const config: any = { get: (k: string) => (k === "META_VERIFY_TOKEN" ? "segredo" : "") };
-  return new MetaFormsService(conversations, leadQueue, leadsRepo, config);
+  const config: any = { get: () => "" };
+  // Token vem das Configurações (banco), como em produção.
+  const settings: any = { get: async () => ({ metaVerifyToken: "segredo", metaPageToken: "" }) };
+  return new MetaFormsService(conversations, leadQueue, leadsRepo, config, settings);
 }
 
 describe("MetaFormsService", () => {
-  it("verify devolve o challenge só com o token certo", () => {
-    expect(svc().verify("subscribe", "segredo", "123")).toBe("123");
-    expect(svc().verify("subscribe", "errado", "123")).toBeNull();
-    expect(svc().verify("outro", "segredo", "123")).toBeNull();
+  it("verify devolve o challenge só com o token certo", async () => {
+    expect(await svc().verify("subscribe", "segredo", "123")).toBe("123");
+    expect(await svc().verify("subscribe", "errado", "123")).toBeNull();
+    expect(await svc().verify("outro", "segredo", "123")).toBeNull();
   });
 
   it("mapFieldData extrai nome, telefone (só dígitos) e email", () => {

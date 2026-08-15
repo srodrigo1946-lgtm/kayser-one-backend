@@ -56,6 +56,12 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsBoolean()
   aiReplyGroups?: boolean;
+
+  @IsOptional() @IsString()
+  metaPageToken?: string;
+
+  @IsOptional() @IsString()
+  metaVerifyToken?: string;
 }
 
 @ApiTags("Configurações")

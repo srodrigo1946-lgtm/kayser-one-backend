@@ -11,13 +11,13 @@ export class MetaFormsController {
 
   @Get("leadgen")
   @ApiOperation({ summary: "Verificação do webhook do Meta (responde o challenge)" })
-  verify(
+  async verify(
     @Query("hub.mode") mode: string,
     @Query("hub.verify_token") token: string,
     @Query("hub.challenge") challenge: string,
     @Res() res: Response
   ) {
-    const ok = this.meta.verify(mode, token, challenge);
+    const ok = await this.meta.verify(mode, token, challenge);
     if (ok) res.status(200).send(ok);
     else res.status(403).send();
   }
