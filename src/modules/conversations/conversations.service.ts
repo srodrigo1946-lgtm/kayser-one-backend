@@ -328,6 +328,14 @@ export class ConversationsService {
     }
   }
 
+  /** Vincula um lead à conversa (usado pela entrada de formulário Meta). */
+  async setLead(conversationId: string, leadId: string, contactName?: string) {
+    await this.convRepo.update(conversationId, {
+      leadId,
+      ...(contactName ? { contactName } : {}),
+    });
+  }
+
   /** Atualiza nome (pushName) e/ou foto de perfil do contato, se mudaram. */
   async setContactInfo(conversationId: string, name?: string | null, avatar?: string | null) {
     const conv = await this.convRepo.findOne({ where: { id: conversationId } });
