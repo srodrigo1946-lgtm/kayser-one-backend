@@ -32,6 +32,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
+      ["ensureEscalaTable", () => this.ensureEscalaTable()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -195,6 +196,19 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgNoite" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalImage" text`);
+  }
+
+  /** Escala de Atendimento — turnos de plantão (7 dias × 3 turnos). */
+  private async ensureEscalaTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS escala_turnos (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "diaSemana" int NOT NULL,
+        turno int NOT NULL,
+        "horaInicio" varchar NOT NULL,
+        "horaFim" varchar NOT NULL,
+        "atendenteIds" text DEFAULT ''
+      )`);
   }
 
   /** Marca conversas de grupo (@g.us) — grupo nunca vira lead. */
