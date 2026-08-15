@@ -7,6 +7,7 @@ import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { User } from "../users/user.entity";
 import { Lead } from "../leads/lead.entity";
+import { EscalaService } from "../escala/escala.service";
 
 @Injectable()
 export class LeadQueueService {
@@ -22,7 +23,8 @@ export class LeadQueueService {
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
     @InjectRepository(Lead)
-    private readonly leadsRepo: Repository<Lead>
+    private readonly leadsRepo: Repository<Lead>,
+    private readonly escala: EscalaService
   ) {}
 
   /**
@@ -35,30 +37,31 @@ export class LeadQueueService {
     if (leadId) await this.leadsRepo.update(leadId, { responsavelId: userId });
   }
 
-  /**
-   * Membros do rodízio que REALMENTE existem e podem atender.
-   * Usuário apagado (ou desativado/não aprovado) continuava no `memberIds` e
-   * recebia leads que ninguém via — o lead sumia até o prazo estourar.
-   * Aqui os fantasmas são removidos da fila de forma definitiva.
-   */
-  private async activeMembers(s: LeadQueueSettings): Promise<string[]> {
-    const ids = s.memberIds ?? [];
-    if (ids.length === 0) return [];
+  /** Filtra ids mantendo só usuários que existem e podem atender (ativo + aprovado). */
+  private async filtrarAtivos(ids: string[]): Promise<string[]> {
+    if (!ids || ids.length === 0) return [];
     const users = await this.usersRepo.find({ where: { id: In(ids) } });
     const validos = new Set(
       users.filter((u) => u.active !== false && u.approved !== false).map((u) => u.id)
     );
-    const limpos = ids.filter((id) => validos.has(id));
-    if (limpos.length !== ids.length) {
-      const removidos = ids.filter((id) => !validos.has(id));
-      this.logger.warn(
-        `Fila: ${removidos.length} membro(s) inexistente(s)/inativo(s) removido(s) do rodízio.`
-      );
-      s.memberIds = limpos;
-      s.pointer = 0;
-      await this.settingsRepo.save(s);
-    }
-    return limpos;
+    return ids.filter((id) => validos.has(id));
+  }
+
+  /** Atendentes de plantão AGORA = turno ativo ∩ usuários válidos. Vazio fora de plantão. */
+  private async atendentesDoTurno(now = new Date()): Promise<string[]> {
+    const turno = await this.escala.turnoAtivo(now);
+    return turno ? this.filtrarAtivos(turno.atendenteIds) : [];
+  }
+
+  /** Próximo do rodízio (avança o ponteiro em `s`; caller salva `s`). */
+  private proximo(s: LeadQueueSettings, membros: string[]): string {
+    const idx = ((s.pointer % membros.length) + membros.length) % membros.length;
+    s.pointer = (idx + 1) % membros.length;
+    return membros[idx];
+  }
+
+  private prazo(s: LeadQueueSettings): Date {
+    return new Date(Date.now() + s.slaMinutes * 60_000);
   }
 
   /** Configuração única da fila (cria o singleton se ainda não existir). */
@@ -83,33 +86,76 @@ export class LeadQueueService {
     return this.settingsRepo.save(s);
   }
 
-  /** Atribui o lead ao próximo membro do rodízio. Null se desligada/sem membros. */
-  async enqueueAdLead(input: {
+  /**
+   * Enfileira um lead (anúncio ou formulário). Distribui entre os atendentes do
+   * turno ativo; se ninguém está de plantão, fica `aguardando` o próximo turno
+   * (assignedToId "" = sem dono). Null se a fila estiver desligada.
+   */
+  async enqueueLead(input: {
     conversationId: string;
     leadId?: string;
   }): Promise<LeadQueueAssignment | null> {
     const s = await this.getSettings();
-    const members = await this.activeMembers(s);
-    if (!s.enabled || members.length === 0) return null;
+    if (!s.enabled) return null;
 
-    const idx = ((s.pointer % members.length) + members.length) % members.length;
-    const userId = members[idx];
-    s.pointer = (idx + 1) % members.length;
+    const membros = await this.atendentesDoTurno();
+    if (membros.length === 0) {
+      this.logger.log(`Lead ${input.conversationId} sem plantão ativo → aguardando próximo turno.`);
+      return this.assignRepo.save(
+        this.assignRepo.create({
+          conversationId: input.conversationId,
+          leadId: input.leadId,
+          assignedToId: "",
+          dueAt: new Date(),
+          status: "aguardando",
+          attempts: 0,
+        })
+      );
+    }
+
+    const userId = this.proximo(s, membros);
     await this.settingsRepo.save(s);
-
-    const dueAt = new Date(Date.now() + s.slaMinutes * 60_000);
-    const assignment = this.assignRepo.create({
-      conversationId: input.conversationId,
-      leadId: input.leadId,
-      assignedToId: userId,
-      dueAt,
-      status: "pendente",
-      attempts: 1,
-    });
-    const saved = await this.assignRepo.save(assignment);
+    const saved = await this.assignRepo.save(
+      this.assignRepo.create({
+        conversationId: input.conversationId,
+        leadId: input.leadId,
+        assignedToId: userId,
+        dueAt: this.prazo(s),
+        status: "pendente",
+        attempts: 1,
+      })
+    );
     await this.atribuir(input.conversationId, input.leadId, userId);
-    this.logger.log(`Lead de anúncio ${input.conversationId} atribuído a ${userId}.`);
+    this.logger.log(`Lead ${input.conversationId} atribuído a ${userId} (plantão).`);
     return saved;
+  }
+
+  /** Distribui os leads `aguardando` quando um turno abre. Roda a cada minuto. */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async liberarAguardando(): Promise<number> {
+    const s = await this.getSettings();
+    if (!s.enabled) return 0;
+    const membros = await this.atendentesDoTurno();
+    if (membros.length === 0) return 0;
+
+    const espera = await this.assignRepo.find({
+      where: { status: "aguardando" },
+      order: { assignedAt: "ASC" },
+    });
+    let count = 0;
+    for (const a of espera) {
+      const userId = this.proximo(s, membros);
+      a.status = "pendente";
+      a.assignedToId = userId;
+      a.attempts = 1;
+      a.dueAt = this.prazo(s);
+      await this.assignRepo.save(a);
+      await this.atribuir(a.conversationId, a.leadId, userId);
+      count++;
+    }
+    await this.settingsRepo.save(s);
+    if (count) this.logger.log(`Fila: ${count} lead(s) aguardando distribuído(s) no início do turno.`);
+    return count;
   }
 
   /** Marca a atribuição pendente como atendida quando o cargo atribuído responde. */
@@ -130,21 +176,28 @@ export class LeadQueueService {
     if (expired.length === 0) return 0;
 
     const s = await this.getSettings();
-    const members = await this.activeMembers(s);
+    if (!s.enabled) return 0;
+    const membros = await this.atendentesDoTurno();
     let count = 0;
     for (const a of expired) {
+      // Turno fechou: volta a aguardar o próximo (não se perde nem gira sozinho).
+      if (membros.length === 0) {
+        a.status = "aguardando";
+        a.assignedToId = "";
+        await this.assignRepo.save(a);
+        continue;
+      }
       a.status = "expirado";
       await this.assignRepo.save(a);
-      if (!s.enabled || members.length === 0) continue;
 
-      const cur = members.indexOf(a.assignedToId);
-      const nextIdx = (((cur + 1) % members.length) + members.length) % members.length;
-      const nextUser = members[nextIdx];
+      const cur = membros.indexOf(a.assignedToId);
+      const nextIdx = (((cur + 1) % membros.length) + membros.length) % membros.length;
+      const nextUser = membros[nextIdx];
       const next = this.assignRepo.create({
         conversationId: a.conversationId,
         leadId: a.leadId,
         assignedToId: nextUser,
-        dueAt: new Date(Date.now() + s.slaMinutes * 60_000),
+        dueAt: this.prazo(s),
         status: "pendente",
         attempts: a.attempts + 1,
       });
@@ -152,7 +205,7 @@ export class LeadQueueService {
       await this.atribuir(a.conversationId, a.leadId, nextUser);
       count++;
     }
-    if (count) this.logger.log(`Fila: ${count} lead(s) reatribuído(s) por SLA vencido.`);
+    if (count) this.logger.log(`Fila: ${count} lead(s) reatribuído(s) por SLA (plantão).`);
     return count;
   }
 

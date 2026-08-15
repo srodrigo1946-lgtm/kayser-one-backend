@@ -1,8 +1,8 @@
 import { LeadQueueService } from "./lead-queue.service";
 
-// `validUserIds` = quem REALMENTE existe no banco. Por padrão, todos os membros
-// da fila existem; passe uma lista menor para simular usuário apagado/inativo.
-function make(settings: any, assignments: any[] = [], validUserIds?: string[]) {
+// `turno` = atendenteIds de plantão AGORA (ou null = fora de plantão).
+// `validUserIds` = quem realmente existe/está ativo (default: todos do turno).
+function make(settings: any, assignments: any[] = [], turno: string[] | null = [], validUserIds?: string[]) {
   const settingsRepo: any = {
     findOne: jest.fn(async () => settings),
     create: jest.fn((v) => v),
@@ -15,7 +15,9 @@ function make(settings: any, assignments: any[] = [], validUserIds?: string[]) {
     findOne: jest.fn(async ({ where }: any) =>
       assignments.find((a) => a.conversationId === where.conversationId && a.status === where.status) || null
     ),
-    find: jest.fn(async () => assignments.filter((a) => a.status === "pendente")),
+    find: jest.fn(async ({ where }: any = {}) =>
+      where?.status ? assignments.filter((a) => a.status === where.status) : assignments
+    ),
     create: jest.fn((v) => v),
     save: jest.fn(async (v) => {
       if (!assignments.includes(v)) assignments.push(v);
@@ -23,13 +25,14 @@ function make(settings: any, assignments: any[] = [], validUserIds?: string[]) {
     }),
   };
   const convRepo: any = { update: jest.fn(async () => ({})) };
-  const idsValidos: string[] = validUserIds ?? settings.memberIds ?? [];
+  const idsValidos: string[] = validUserIds ?? turno ?? [];
   const usersRepo: any = {
     find: jest.fn(async () => idsValidos.map((id) => ({ id, active: true, approved: true }))),
   };
   const leadsRepo: any = { update: jest.fn(async () => ({})) };
+  const escala: any = { turnoAtivo: jest.fn(async () => (turno ? { atendenteIds: turno } : null)) };
   return {
-    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo),
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala),
     settings,
     assignments,
     convRepo,
@@ -38,64 +41,74 @@ function make(settings: any, assignments: any[] = [], validUserIds?: string[]) {
 }
 
 describe("LeadQueueService", () => {
-  it("enqueueAdLead atribui ao próximo e avança o ponteiro", async () => {
-    const { svc, settings, convRepo } = make({ enabled: true, slaMinutes: 5, memberIds: ["A", "B", "C"], pointer: 0 });
-    const a1 = await svc.enqueueAdLead({ conversationId: "c1" });
+  it("distribui entre os atendentes do turno e avança o ponteiro", async () => {
+    const { svc, settings, convRepo } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], ["A", "B", "C"]);
+    const a1 = await svc.enqueueLead({ conversationId: "c1" });
     expect(a1?.assignedToId).toBe("A");
     expect(settings.pointer).toBe(1);
     expect(convRepo.update).toHaveBeenCalledWith("c1", { assignedToId: "A" });
 
-    const a2 = await svc.enqueueAdLead({ conversationId: "c2" });
+    const a2 = await svc.enqueueLead({ conversationId: "c2" });
     expect(a2?.assignedToId).toBe("B");
     expect(settings.pointer).toBe(2);
   });
 
-  it("enqueueAdLead retorna null quando a fila está desligada", async () => {
-    const { svc } = make({ enabled: false, slaMinutes: 5, memberIds: ["A"], pointer: 0 });
-    expect(await svc.enqueueAdLead({ conversationId: "c1" })).toBeNull();
+  it("retorna null quando a fila está desligada", async () => {
+    const { svc } = make({ enabled: false, slaMinutes: 5, pointer: 0 }, [], ["A"]);
+    expect(await svc.enqueueLead({ conversationId: "c1" })).toBeNull();
   });
 
-  it("enqueueAdLead retorna null sem membros", async () => {
-    const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: [], pointer: 0 });
-    expect(await svc.enqueueAdLead({ conversationId: "c1" })).toBeNull();
+  it("fora de plantão o lead fica aguardando (sem atendente)", async () => {
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], null); // turnoAtivo=null
+    const a = await svc.enqueueLead({ conversationId: "c1", leadId: "l1" });
+    expect(a?.status).toBe("aguardando");
+    expect(a?.assignedToId).toBe("");
   });
 
-  // Antes a fila só marcava atendente na CONVERSA; a lista de Leads continuava
-  // com "Responsável —" e parecia que nada tinha sido distribuído.
+  it("turno só com usuário inválido → aguardando", async () => {
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], ["fantasma"], []);
+    const a = await svc.enqueueLead({ conversationId: "c1" });
+    expect(a?.status).toBe("aguardando");
+  });
+
   it("preenche o responsável do lead ao distribuir", async () => {
-    const { svc, leadsRepo } = make({ enabled: true, slaMinutes: 5, memberIds: ["A", "B"], pointer: 0 });
-    await svc.enqueueAdLead({ conversationId: "c1", leadId: "lead-1" });
+    const { svc, leadsRepo } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], ["A", "B"]);
+    await svc.enqueueLead({ conversationId: "c1", leadId: "lead-1" });
     expect(leadsRepo.update).toHaveBeenCalledWith("lead-1", { responsavelId: "A" });
   });
 
-  // Usuário apagado continuava no rodízio e recebia leads que ninguém via:
-  // o lead sumia até o prazo estourar. Foi a causa de "0 atendidos" em produção.
-  it("pula membro que não existe mais e o remove do rodízio", async () => {
-    const { svc, settings } = make(
-      { enabled: true, slaMinutes: 5, memberIds: ["fantasma", "B", "C"], pointer: 0 },
-      [],
-      ["B", "C"] // "fantasma" foi apagado do banco
-    );
-    const a1 = await svc.enqueueAdLead({ conversationId: "c1" });
-    expect(a1?.assignedToId).toBe("B");
-    expect(settings.memberIds).toEqual(["B", "C"]);
+  it("pula atendente inválido dentro do turno", async () => {
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], ["fantasma", "B"], ["B"]);
+    const a = await svc.enqueueLead({ conversationId: "c1" });
+    expect(a?.assignedToId).toBe("B");
   });
 
-  it("não distribui quando TODOS os membros foram apagados", async () => {
-    const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: ["x", "y"], pointer: 0 }, [], []);
-    expect(await svc.enqueueAdLead({ conversationId: "c1" })).toBeNull();
+  it("liberarAguardando distribui os represados quando abre o turno", async () => {
+    const aguardando = { conversationId: "c1", leadId: "l1", status: "aguardando", assignedToId: "" };
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [aguardando], ["A"]);
+    await svc.liberarAguardando();
+    expect(aguardando.status).toBe("pendente");
+    expect(aguardando.assignedToId).toBe("A");
+  });
+
+  it("SLA vencido volta a aguardar se o turno fechou", async () => {
+    const venc = { conversationId: "c1", assignedToId: "A", status: "pendente", dueAt: new Date(Date.now() - 1000), attempts: 1 };
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [venc], null); // turno fechou
+    await svc.reassignExpired();
+    expect(venc.status).toBe("aguardando");
+    expect(venc.assignedToId).toBe("");
   });
 
   it("markAttended encerra o SLA quando o cargo atribuído responde", async () => {
     const pending = { conversationId: "c1", assignedToId: "A", status: "pendente" };
-    const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: ["A", "B"], pointer: 0 }, [pending]);
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [pending], ["A", "B"]);
     expect(await svc.markAttended("c1", "A")).toBe(true);
     expect(pending.status).toBe("atendido");
   });
 
   it("markAttended não marca se o usuário não é o atribuído", async () => {
     const pending = { conversationId: "c2", assignedToId: "A", status: "pendente" };
-    const { svc } = make({ enabled: true, slaMinutes: 5, memberIds: ["A", "B"], pointer: 0 }, [pending]);
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [pending], ["A", "B"]);
     expect(await svc.markAttended("c2", "B")).toBe(false);
     expect(pending.status).toBe("pendente");
   });

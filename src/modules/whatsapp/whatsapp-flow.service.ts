@@ -97,7 +97,7 @@ export class WhatsappFlowService {
         conv.fromAd = true;
         const queue = await this.leadQueue.getSettings();
         if (queue.enabled) {
-          await this.leadQueue.enqueueAdLead({ conversationId: conv.id, leadId: conv.leadId ?? undefined });
+          await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId ?? undefined });
         }
       }
 

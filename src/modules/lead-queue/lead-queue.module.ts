@@ -7,9 +7,13 @@ import { User } from "../users/user.entity";
 import { Lead } from "../leads/lead.entity";
 import { LeadQueueService } from "./lead-queue.service";
 import { LeadQueueController } from "./lead-queue.controller";
+import { EscalaModule } from "../escala/escala.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([LeadQueueSettings, LeadQueueAssignment, Conversation, User, Lead])],
+  imports: [
+    TypeOrmModule.forFeature([LeadQueueSettings, LeadQueueAssignment, Conversation, User, Lead]),
+    EscalaModule,
+  ],
   providers: [LeadQueueService],
   controllers: [LeadQueueController],
   exports: [LeadQueueService],
