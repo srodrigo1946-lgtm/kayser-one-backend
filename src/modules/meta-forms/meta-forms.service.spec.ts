@@ -32,4 +32,17 @@ describe("MetaFormsService", () => {
     expect(r.name).toBe("Contato do formulário");
     expect(r.phone).toBe("21999");
   });
+
+  it("recebeDireto rejeita token errado e aceita o certo", async () => {
+    const s: any = svc();
+    const criados: any[] = [];
+    s.criarLead = async (d: any) => criados.push(d); // não toca no banco no teste
+
+    expect(await s.recebeDireto("errado", { nome: "X", telefone: "21988887777" })).toEqual({ ok: false });
+    expect(criados).toHaveLength(0);
+
+    const r = await s.recebeDireto("segredo", { nome: "Lorena", telefone: "+55 21 96950-9865", email: "a@b.com" });
+    expect(r).toEqual({ ok: true });
+    expect(criados[0]).toEqual({ name: "Lorena", phone: "5521969509865", email: "a@b.com" });
+  });
 });

@@ -29,4 +29,11 @@ export class MetaFormsController {
     res.status(200).send("EVENT_RECEIVED");
     await this.meta.handleLeadgen(body).catch(() => {});
   }
+
+  @Post("lead-direct")
+  @ApiOperation({ summary: "Lead pronto via Zapier/Make (protegido por ?token=)" })
+  async direct(@Query("token") token: string, @Body() body: any) {
+    // Zapier/Make mandam o lead pronto (nome/telefone/email). Token = Verify Token.
+    return this.meta.recebeDireto(token, body);
+  }
 }

@@ -43,6 +43,27 @@ export class MetaFormsService {
     return mode === "subscribe" && !!esperado && token === esperado ? challenge : null;
   }
 
+  /**
+   * Entrada DIRETA (Zapier/Make/qualquer ferramenta que POSTa o lead pronto).
+   * Não precisa da Graph API nem de app do Meta — a ferramenta parceira já manda
+   * nome/telefone/email. Protegido pelo mesmo Verify Token (colado na aba Integrações).
+   */
+  async recebeDireto(token: string, body: any): Promise<{ ok: boolean }> {
+    if (token !== (await this.verifyToken())) return { ok: false };
+    const pega = (...ks: string[]) => {
+      for (const k of ks) if (body?.[k]) return String(body[k]);
+      return "";
+    };
+    const phone = pega("phone", "telefone", "phone_number", "celular", "whatsapp").replace(/\D/g, "");
+    if (!phone) return { ok: false };
+    await this.criarLead({
+      name: pega("name", "nome", "full_name") || "Contato do formulário",
+      phone,
+      email: pega("email", "e-mail") || undefined,
+    });
+    return { ok: true };
+  }
+
   /** Evento de leadgen: para cada lead novo, busca os dados e cria no CRM + fila. */
   async handleLeadgen(body: any): Promise<void> {
     const changes: any[] = (body?.entry ?? []).flatMap((e: any) => e?.changes ?? []);
