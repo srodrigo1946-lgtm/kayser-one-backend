@@ -62,6 +62,12 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsString()
   metaVerifyToken?: string;
+
+  @IsOptional() @IsString()
+  direcionalUrl?: string;
+
+  @IsOptional() @IsString()
+  tabelaRivaUrl?: string;
 }
 
 @ApiTags("Configurações")

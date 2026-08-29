@@ -72,6 +72,13 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   direcionalImage: string;
 
+  // Links dos relatórios Looker da aba Grupo Direcional (o Diretor edita pela UI).
+  @Column({ type: "text", nullable: true })
+  direcionalUrl: string;
+
+  @Column({ type: "text", nullable: true })
+  tabelaRivaUrl: string;
+
   // Integração Meta (formulário de anúncio). O Diretor cola aqui em vez de env.
   @Column({ type: "text", nullable: true })
   metaPageToken: string;
