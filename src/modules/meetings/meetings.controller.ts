@@ -34,8 +34,8 @@ export class MeetingsController {
 
   @Get(":id")
   @ApiOperation({ summary: "Detalhe da reunião" })
-  get(@Param("id") id: string) {
-    return this.service.findOne(id);
+  get(@Param("id") id: string, @Request() req: any) {
+    return this.service.findOne(id, req.user);
   }
 
   @Post()
@@ -46,21 +46,21 @@ export class MeetingsController {
 
   @Put(":id")
   @ApiOperation({ summary: "Editar reunião" })
-  update(@Param("id") id: string, @Body() dto: UpdateMeetingDto) {
+  update(@Param("id") id: string, @Body() dto: UpdateMeetingDto, @Request() req: any) {
     const patch: any = { ...dto };
     if (dto.scheduledAt) patch.scheduledAt = new Date(dto.scheduledAt);
-    return this.service.update(id, patch);
+    return this.service.update(id, patch, req.user);
   }
 
   @Put(":id/notes")
   @ApiOperation({ summary: "Salvar anotações da reunião" })
-  notes(@Param("id") id: string, @Body("notes") notes: string) {
-    return this.service.setNotes(id, notes ?? "");
+  notes(@Param("id") id: string, @Body("notes") notes: string, @Request() req: any) {
+    return this.service.setNotes(id, notes ?? "", req.user);
   }
 
   @Delete(":id")
   @ApiOperation({ summary: "Cancelar reunião (remove da Agenda)" })
-  remove(@Param("id") id: string) {
-    return this.service.remove(id);
+  remove(@Param("id") id: string, @Request() req: any) {
+    return this.service.remove(id, req.user);
   }
 }

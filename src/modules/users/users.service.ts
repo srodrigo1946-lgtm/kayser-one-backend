@@ -35,7 +35,12 @@ export class UsersService {
 
   /** Config de IA do próprio usuário (sem expor a chave). */
   async getMyAi(userId: string) {
-    const u = await this.usersRepo.findOneOrFail({ where: { id: userId } });
+    // aiApiKey é select:false — addSelect só para calcular o booleano (a chave não sai daqui).
+    const u = await this.usersRepo
+      .createQueryBuilder("u")
+      .addSelect("u.aiApiKey")
+      .where("u.id = :id", { id: userId })
+      .getOneOrFail();
     return { aiProvider: u.aiProvider ?? null, aiModel: u.aiModel ?? null, hasAiKey: !!u.aiApiKey };
   }
 

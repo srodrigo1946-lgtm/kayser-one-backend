@@ -71,7 +71,12 @@ export class AiService {
   /** Config de IA de um usuário (para override), ou undefined se ele não tem chave própria. */
   async getUserAiConfig(userId?: string): Promise<UserAiConfig | undefined> {
     if (!userId) return undefined;
-    const u = await this.usersRepo.findOne({ where: { id: userId } });
+    // aiApiKey é select:false na entidade — addSelect para trazer a chave do usuário.
+    const u = await this.usersRepo
+      .createQueryBuilder("u")
+      .addSelect("u.aiApiKey")
+      .where("u.id = :id", { id: userId })
+      .getOne();
     return this.userAiFrom(u);
   }
 

@@ -54,9 +54,12 @@ export class AuthController {
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Dados do usuário autenticado" })
-  me(@Request() req: any) {
+  async me(@Request() req: any) {
     // Nunca expõe passwordHash / aiApiKey / recoveryCodeHash ao front — só o booleano.
-    return { ...this.authService.sanitize(req.user), hasRecoveryCode: !!req.user.recoveryCodeHash };
+    return {
+      ...this.authService.sanitize(req.user),
+      hasRecoveryCode: await this.authService.hasRecoveryCode(req.user.id),
+    };
   }
 
   @Put("recovery-code")

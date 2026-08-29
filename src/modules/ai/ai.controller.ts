@@ -18,17 +18,22 @@ export class AiController {
 
   @Post("chat")
   @ApiOperation({ summary: "Chat com a Kayser One AI (usa a IA do usuário logado)" })
-  chat(@Body() dto: ChatDto, @Request() req: any) {
-    return this.aiService.chat(dto.messages, this.aiService.userAiFrom(req.user));
+  // req.user não carrega mais a aiApiKey (select:false) — busca a config pelo id.
+  async chat(@Body() dto: ChatDto, @Request() req: any) {
+    return this.aiService.chat(dto.messages, await this.aiService.getUserAiConfig(req.user.id));
   }
 
   @Post("qualify/:leadId")
   @ApiOperation({ summary: "Qualificar lead automaticamente com IA" })
-  qualify(
+  async qualify(
     @Param("leadId") leadId: string,
     @Body() body: { conversation: string },
     @Request() req: any
   ) {
-    return this.aiService.qualifyLead(leadId, body.conversation, this.aiService.userAiFrom(req.user));
+    return this.aiService.qualifyLead(
+      leadId,
+      body.conversation,
+      await this.aiService.getUserAiConfig(req.user.id)
+    );
   }
 }

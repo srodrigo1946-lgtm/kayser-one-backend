@@ -31,7 +31,9 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
+  // select: false — nunca vem em find() comum. Só quem precisa (login/troca de senha)
+  // pede com addSelect. Evita vazar o hash em respostas que carregam User por relação.
+  @Column({ select: false })
   passwordHash: string;
 
   @Column({ type: "enum", enum: UserRole, default: UserRole.CORRETOR })
@@ -63,7 +65,7 @@ export class User {
   @Column({ nullable: true })
   aiModel: string;
 
-  @Column({ type: "text", nullable: true })
+  @Column({ type: "text", nullable: true, select: false })
   aiApiKey: string;
 
   @Column({ default: true })
@@ -71,7 +73,7 @@ export class User {
 
   // Código de recuperação do Diretor (bcrypt). NUNCA retornado ao front (só hasRecoveryCode).
   // Permite ao Diretor (topo da hierarquia) recuperar a senha sem depender de e-mail/gestor.
-  @Column({ type: "text", nullable: true })
+  @Column({ type: "text", nullable: true, select: false })
   recoveryCodeHash: string;
 
   // Aprovação do gestor para autocadastros. Usuários criados pelo painel já nascem

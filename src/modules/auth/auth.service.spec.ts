@@ -10,7 +10,19 @@ describe("AuthService", () => {
   let service: AuthService;
 
   beforeEach(() => {
-    repo = { findOne: jest.fn(), findOneOrFail: jest.fn(), save: jest.fn() };
+    repo = { findOne: jest.fn(), findOneOrFail: jest.fn(), save: jest.fn(), count: jest.fn() };
+    // O service usa createQueryBuilder para pedir os campos select:false (passwordHash,
+    // recoveryCodeHash). O stub encadeia e devolve o mesmo valor dos mocks acima.
+    repo.createQueryBuilder = jest.fn(() => {
+      const qb: any = {
+        addSelect: () => qb,
+        where: () => qb,
+        andWhere: () => qb,
+        getOne: () => repo.findOne(),
+        getOneOrFail: () => repo.findOneOrFail(),
+      };
+      return qb;
+    });
     jwt = { sign: jest.fn().mockReturnValue("token-123") };
     service = new AuthService(repo, jwt);
   });

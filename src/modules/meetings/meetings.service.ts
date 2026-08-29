@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { randomBytes } from "crypto";
@@ -24,6 +24,16 @@ export class MeetingsService {
   }
   private withLink(m: Meeting) {
     return { ...m, link: this.link(m) };
+  }
+
+  /** Garante que o usuário é Diretor, o host, participante, ou o host está no escopo hierárquico. */
+  private async assertScope(m: Meeting, user: User) {
+    if (m.hostId === user.id) return;
+    if ((m.participantIds || []).includes(user.id)) return;
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds === null) return; // Diretor vê tudo
+    if (m.hostId && scopeIds.includes(m.hostId)) return;
+    throw new ForbiddenException("Você não tem acesso a esta reunião.");
   }
 
   /**
@@ -89,15 +99,17 @@ export class MeetingsService {
     return rows.map((m) => this.withLink(m));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: User) {
     const m = await this.repo.findOne({ where: { id } });
     if (!m) throw new NotFoundException("Reunião não encontrada.");
+    await this.assertScope(m, user);
     return this.withLink(m);
   }
 
-  async update(id: string, dto: Partial<Meeting>) {
+  async update(id: string, dto: Partial<Meeting>, user: User) {
     const m = await this.repo.findOne({ where: { id } });
     if (!m) throw new NotFoundException("Reunião não encontrada.");
+    await this.assertScope(m, user);
     Object.assign(m, dto);
     const saved = await this.repo.save(m);
     // Mantém a Agenda de todos em sincronia (horário/título/participantes).
@@ -105,15 +117,18 @@ export class MeetingsService {
     return this.withLink(saved);
   }
 
-  async setNotes(id: string, notes: string) {
-    const r = await this.repo.update(id, { notes });
-    if (!r.affected) throw new NotFoundException("Reunião não encontrada.");
+  async setNotes(id: string, notes: string, user: User) {
+    const m = await this.repo.findOne({ where: { id } });
+    if (!m) throw new NotFoundException("Reunião não encontrada.");
+    await this.assertScope(m, user);
+    await this.repo.update(id, { notes });
     return { ok: true };
   }
 
-  async remove(id: string) {
+  async remove(id: string, user: User) {
     const m = await this.repo.findOne({ where: { id } });
     if (!m) throw new NotFoundException("Reunião não encontrada.");
+    await this.assertScope(m, user);
     try {
       await this.apptRepo.delete({ meetingId: id });
     } catch {

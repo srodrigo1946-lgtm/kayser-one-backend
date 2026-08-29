@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { In, IsNull, Not, Repository } from "typeorm";
 import * as bcrypt from "bcrypt";
 import { User, UserRole } from "../users/user.entity";
 import { LoginDto } from "./dto/login.dto";
@@ -86,7 +86,13 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersRepo.findOne({ where: { email: dto.email, active: true } });
+    // passwordHash é select:false na entidade — addSelect traz todas as colunas + o hash.
+    const user = await this.usersRepo
+      .createQueryBuilder("u")
+      .addSelect("u.passwordHash")
+      .where("u.email = :email", { email: dto.email })
+      .andWhere("u.active = true")
+      .getOne();
     if (!user) throw new UnauthorizedException("Credenciais inválidas.");
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
@@ -105,7 +111,11 @@ export class AuthService {
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
-    const user = await this.usersRepo.findOneOrFail({ where: { id: userId } });
+    const user = await this.usersRepo
+      .createQueryBuilder("u")
+      .addSelect("u.passwordHash")
+      .where("u.id = :id", { id: userId })
+      .getOneOrFail();
     const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
     if (!valid) throw new BadRequestException("Senha atual incorreta.");
 
@@ -137,7 +147,11 @@ export class AuthService {
    */
   async recover(dto: { email: string; recoveryCode: string; newPassword: string }) {
     const genericError = new UnauthorizedException("E-mail ou código de recuperação inválido.");
-    const user = await this.usersRepo.findOne({ where: { email: dto.email } });
+    const user = await this.usersRepo
+      .createQueryBuilder("u")
+      .addSelect("u.recoveryCodeHash")
+      .where("u.email = :email", { email: dto.email })
+      .getOne();
     if (!user || user.role !== UserRole.DIRETOR || !user.recoveryCodeHash) throw genericError;
     const ok = await bcrypt.compare(dto.recoveryCode, user.recoveryCodeHash);
     if (!ok) throw genericError;
@@ -146,6 +160,12 @@ export class AuthService {
     user.firstLogin = false;
     await this.usersRepo.save(user);
     return { message: "Senha redefinida com sucesso. Faça login com a nova senha." };
+  }
+
+  /** Só o booleano: recoveryCodeHash é select:false e não vem no req.user. */
+  async hasRecoveryCode(userId: string) {
+    const n = await this.usersRepo.count({ where: { id: userId, recoveryCodeHash: Not(IsNull()) } });
+    return n > 0;
   }
 
   sanitize(user: User) {
