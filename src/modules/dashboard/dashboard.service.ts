@@ -111,6 +111,48 @@ export class DashboardService {
     }));
   }
 
+  /**
+   * Detalhamento por responsável no período (mês específico ou ano todo):
+   * leads recebidos e vendas de cada cargo. O front calcula % conversão e custo.
+   * Escopado por equipe (Diretor vê todos).
+   */
+  async getBreakdown(user: User, year: number, month?: number) {
+    const scopeIds = await this.users.getScopeIds(user);
+    const targetYear = year || new Date().getFullYear();
+    const start = month ? new Date(targetYear, month - 1, 1) : new Date(targetYear, 0, 1);
+    const end = month
+      ? new Date(targetYear, month, 0, 23, 59, 59, 999)
+      : new Date(targetYear, 11, 31, 23, 59, 59, 999);
+    const roles = [UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE, UserRole.CORRETOR];
+
+    const qb = this.userRepo
+      .createQueryBuilder("user")
+      .leftJoin(Lead, "lead", "lead.responsavelId = user.id")
+      .select("user.id", "responsavelId")
+      .addSelect("user.name", "nome")
+      .addSelect("user.role", "role")
+      .addSelect(
+        "COUNT(lead.id) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end)",
+        "vendas"
+      )
+      .addSelect("COUNT(lead.id) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
+      .where("user.role IN (:...roles)", { roles })
+      .andWhere("user.active = true")
+      .andWhere("user.empresaId IS NULL")
+      .setParameters({ venda: LeadStatus.VENDA_GANHA, start, end });
+
+    if (scopeIds !== null) qb.andWhere("user.id IN (:...ids)", { ids: scopeIds });
+
+    const rows = await qb.groupBy("user.id").orderBy("leads", "DESC").getRawMany();
+    return rows.map((r) => ({
+      responsavelId: r.responsavelId,
+      nome: r.nome,
+      role: r.role,
+      leads: Number(r.leads) || 0,
+      vendas: Number(r.vendas) || 0,
+    }));
+  }
+
   async getMonthlyData(user: User, year?: number) {
     const base = await this.scopeWhere(user);
     const targetYear = year || new Date().getFullYear();

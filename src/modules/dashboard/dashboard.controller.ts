@@ -28,6 +28,16 @@ export class DashboardController {
     return this.dashboardService.getMonthlyData(req.user, year ? Number(year) : undefined);
   }
 
+  @Get("breakdown")
+  @ApiOperation({ summary: "Leads/vendas por responsável no período" })
+  breakdown(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
+    return this.dashboardService.getBreakdown(
+      req.user,
+      year ? Number(year) : new Date().getFullYear(),
+      month ? Number(month) : undefined
+    );
+  }
+
   @Get("vgv")
   @ApiOperation({ summary: "VGV total do período (ano todo ou mês)" })
   vgv(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
