@@ -38,6 +38,18 @@ export class DashboardController {
     );
   }
 
+  @Get("funil")
+  @ApiOperation({ summary: "Funil por etapa (status) de um alvo (ids=a,b,c)" })
+  funil(@Request() req: any, @Query("ids") ids?: string, @Query("year") year?: string, @Query("month") month?: string) {
+    const lista = (ids ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return this.dashboardService.getFunil(
+      req.user,
+      year ? Number(year) : new Date().getFullYear(),
+      month ? Number(month) : undefined,
+      lista
+    );
+  }
+
   @Get("vgv")
   @ApiOperation({ summary: "VGV total do período (ano todo ou mês)" })
   vgv(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {

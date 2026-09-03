@@ -34,6 +34,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
       ["ensureAdInvestmentTable", () => this.ensureAdInvestmentTable()],
+      ["ensureFeedbackTable", () => this.ensureFeedbackTable()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -202,6 +203,19 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);
+  }
+
+  /** Anotações de 1-on-1 / feedback (individual ou de time). */
+  private async ensureFeedbackTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS feedback_notes (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "alvoTipo" varchar DEFAULT 'user',
+        "alvoId" uuid NOT NULL,
+        "autorId" uuid NOT NULL,
+        texto text NOT NULL,
+        "createdAt" timestamp DEFAULT now()
+      )`);
   }
 
   /** Investimento em anúncio por mês (custo por lead). */

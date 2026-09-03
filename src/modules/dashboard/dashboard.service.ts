@@ -112,6 +112,33 @@ export class DashboardService {
   }
 
   /**
+   * Funil por etapa (status atual) para um alvo — pessoa(s) específicas. Conta os
+   * leads criados no período agrupados por status. `ids` é intersectado com o
+   * escopo do requester (evita ver time de fora). Diretor vê qualquer id.
+   */
+  async getFunil(user: User, year: number, month: number | undefined, ids: string[]) {
+    const scope = await this.users.getScopeIds(user);
+    const efetivos = scope === null ? ids : ids.filter((id) => scope.includes(id));
+    if (efetivos.length === 0) return [] as { status: string; count: number }[];
+
+    const targetYear = year || new Date().getFullYear();
+    const start = month ? new Date(targetYear, month - 1, 1) : new Date(targetYear, 0, 1);
+    const end = month
+      ? new Date(targetYear, month, 0, 23, 59, 59, 999)
+      : new Date(targetYear, 11, 31, 23, 59, 59, 999);
+
+    const rows = await this.leadsRepo
+      .createQueryBuilder("lead")
+      .select("lead.status", "status")
+      .addSelect("COUNT(lead.id)", "count")
+      .where("lead.responsavelId IN (:...ids)", { ids: efetivos })
+      .andWhere("lead.createdAt BETWEEN :start AND :end", { start, end })
+      .groupBy("lead.status")
+      .getRawMany();
+    return rows.map((r) => ({ status: r.status, count: Number(r.count) || 0 }));
+  }
+
+  /**
    * Detalhamento por responsável no período (mês específico ou ano todo):
    * leads recebidos e vendas de cada cargo. O front calcula % conversão e custo.
    * Escopado por equipe (Diretor vê todos).
@@ -136,6 +163,10 @@ export class DashboardService {
         "vendas"
       )
       .addSelect("COUNT(lead.id) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
+      .addSelect(
+        "COALESCE(SUM(lead.valorVenda) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end), 0)",
+        "vgv"
+      )
       .where("user.role IN (:...roles)", { roles })
       .andWhere("user.active = true")
       .andWhere("user.empresaId IS NULL")
@@ -150,6 +181,7 @@ export class DashboardService {
       role: r.role,
       leads: Number(r.leads) || 0,
       vendas: Number(r.vendas) || 0,
+      vgv: Number(r.vgv) || 0,
     }));
   }
 
