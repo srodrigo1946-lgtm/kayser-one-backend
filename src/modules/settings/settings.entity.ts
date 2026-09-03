@@ -72,6 +72,10 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   direcionalImage: string;
 
+  // Diretor libera a aba "Custo por Lead" para todos os cargos verem (padrão: só ele).
+  @Column({ default: false })
+  custoLeadVisivel: boolean;
+
   // Links dos relatórios Looker da aba Grupo Direcional (o Diretor edita pela UI).
   @Column({ type: "text", nullable: true })
   direcionalUrl: string;

@@ -68,6 +68,9 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsString()
   tabelaRivaUrl?: string;
+
+  @IsOptional() @IsBoolean()
+  custoLeadVisivel?: boolean;
 }
 
 @ApiTags("Configurações")

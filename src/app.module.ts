@@ -24,6 +24,7 @@ import { BackupModule } from "./modules/backup/backup.module";
 import { LeadQueueModule } from "./modules/lead-queue/lead-queue.module";
 import { EscalaModule } from "./modules/escala/escala.module";
 import { MetaFormsModule } from "./modules/meta-forms/meta-forms.module";
+import { InvestimentoModule } from "./modules/investimento/investimento.module";
 import { PastasModule } from "./modules/pastas/pastas.module";
 import { EmpresasModule } from "./modules/empresas/empresas.module";
 import { SupportModule } from "./modules/support/support.module";
@@ -84,6 +85,7 @@ import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
     LeadQueueModule,
     EscalaModule,
     MetaFormsModule,
+    InvestimentoModule,
     PastasModule,
     EmpresasModule,
     SupportModule,

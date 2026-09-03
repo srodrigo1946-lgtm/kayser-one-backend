@@ -33,6 +33,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
+      ["ensureAdInvestmentTable", () => this.ensureAdInvestmentTable()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -200,6 +201,20 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaVerifyToken" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);
+  }
+
+  /** Investimento em anúncio por mês (custo por lead). */
+  private async ensureAdInvestmentTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS ad_investments (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        ano int NOT NULL,
+        mes int NOT NULL,
+        valor numeric DEFAULT 0,
+        fonte varchar DEFAULT 'manual',
+        UNIQUE (ano, mes)
+      )`);
   }
 
   /** Escala de Atendimento — turnos de plantão (7 dias × 3 turnos). */
