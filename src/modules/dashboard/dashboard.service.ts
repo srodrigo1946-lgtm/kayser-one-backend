@@ -8,6 +8,10 @@ import { LeadHistory, LeadHistoryType } from "../lead-history/lead-history.entit
 import { UsersService } from "../users/users.service";
 import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
+// Leads que contam pra custo/funil: só os PAGOS (anúncio + formulário Meta).
+// Oferta do corretor (manual) e orgânico (whatsapp) NÃO entram.
+const LEADS_PAGOS = ["anuncio", "formulario_meta"];
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -133,6 +137,8 @@ export class DashboardService {
       .addSelect("COUNT(lead.id)", "count")
       .where("lead.responsavelId IN (:...ids)", { ids: efetivos })
       .andWhere("lead.createdAt BETWEEN :start AND :end", { start, end })
+      // Só leads pagos (anúncio + formulário Meta) — oferta do corretor não conta.
+      .andWhere("lead.source IN (:...pagos)", { pagos: LEADS_PAGOS })
       .groupBy("lead.status")
       .getRawMany();
     return rows.map((r) => ({ status: r.status, count: Number(r.count) || 0 }));
@@ -154,7 +160,8 @@ export class DashboardService {
 
     const qb = this.userRepo
       .createQueryBuilder("user")
-      .leftJoin(Lead, "lead", "lead.responsavelId = user.id")
+      // O join já filtra por leads PAGOS (anúncio/formulário) — oferta do corretor não conta.
+      .leftJoin(Lead, "lead", "lead.responsavelId = user.id AND lead.source IN (:...pagos)", { pagos: LEADS_PAGOS })
       .select("user.id", "responsavelId")
       .addSelect("user.name", "nome")
       .addSelect("user.role", "role")
