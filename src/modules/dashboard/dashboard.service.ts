@@ -192,6 +192,33 @@ export class DashboardService {
     }));
   }
 
+  /**
+   * Leads pagos por DIA do mês (01..fim). Para o gráfico diário de gasto × custo
+   * por lead na aba Custo por Lead — ver dias fracos e ajustar/cancelar o anúncio.
+   * Escopado por equipe. Só leads pagos (anúncio/formulário).
+   * ponytail: agrupa pelo dia bruto (mesmo fuso das faixas usadas no resto do app);
+   * se leads na virada da meia-noite caírem no dia errado, aplicar AT TIME ZONE.
+   */
+  async getDaily(user: User, year: number, month: number) {
+    const scopeIds = await this.users.getScopeIds(user);
+    const targetYear = year || new Date().getFullYear();
+    const start = new Date(targetYear, month - 1, 1);
+    const end = new Date(targetYear, month, 0, 23, 59, 59, 999);
+
+    const qb = this.leadsRepo
+      .createQueryBuilder("lead")
+      .select("EXTRACT(DAY FROM lead.createdAt)", "dia")
+      .addSelect("COUNT(lead.id)", "leads")
+      .where("lead.createdAt BETWEEN :start AND :end", { start, end })
+      .andWhere("lead.source IN (:...pagos)", { pagos: LEADS_PAGOS })
+      .groupBy("dia");
+
+    if (scopeIds !== null) qb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({ dia: Number(r.dia), leads: Number(r.leads) || 0 }));
+  }
+
   async getMonthlyData(user: User, year?: number) {
     const base = await this.scopeWhere(user);
     const targetYear = year || new Date().getFullYear();

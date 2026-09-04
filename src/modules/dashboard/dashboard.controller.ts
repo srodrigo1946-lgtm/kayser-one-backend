@@ -50,6 +50,16 @@ export class DashboardController {
     );
   }
 
+  @Get("daily")
+  @ApiOperation({ summary: "Leads pagos por dia do mês (gráfico diário)" })
+  daily(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
+    return this.dashboardService.getDaily(
+      req.user,
+      year ? Number(year) : new Date().getFullYear(),
+      month ? Number(month) : new Date().getMonth() + 1
+    );
+  }
+
   @Get("vgv")
   @ApiOperation({ summary: "VGV total do período (ano todo ou mês)" })
   vgv(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
