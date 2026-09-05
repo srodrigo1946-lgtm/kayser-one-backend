@@ -92,4 +92,11 @@ export class CreateLeadDto {
   @IsOptional()
   @IsString()
   responsavelId?: string;
+
+  // Origem para CONTAGEM de custo: "anuncio"/"formulario_meta" (pagos, contam no
+  // Custo por Lead) ou "manual"/"whatsapp" (não contam). varchar livre no banco.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  source?: string;
 }
