@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Query, Body, UseGuards } from "@nestjs/common";
+import { Controller, Get, Put, Post, Delete, Query, Body, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsInt, IsNumber, Min, Max, IsArray, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
@@ -72,6 +72,14 @@ export class InvestimentoController {
   @ApiOperation({ summary: "Salvar gasto por dia (somente Diretor)" })
   setDias(@Body() dto: SetDiasDto) {
     return this.service.setDays(dto.ano, dto.mes, dto.dias);
+  }
+
+  @Delete("dias")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Apagar o gasto por dia do mês — volta ao valor único (Diretor)" })
+  limparDias(@Query("year") year: string, @Query("month") month: string) {
+    return this.service.clearDays(Number(year), Number(month));
   }
 
   // Entrada automática (FiqOn/Make empurra o gasto do FB). Público, protegido por token.

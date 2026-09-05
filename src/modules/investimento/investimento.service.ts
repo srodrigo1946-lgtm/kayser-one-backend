@@ -65,6 +65,12 @@ export class InvestimentoService {
     return { ok: true };
   }
 
+  /** Apaga o gasto por dia do mês — volta a usar o valor único mensal. */
+  async clearDays(ano: number, mes: number): Promise<{ ok: boolean }> {
+    await this.dayRepo.delete({ ano, mes });
+    return { ok: true };
+  }
+
   private async upsertDay(ano: number, mes: number, dia: number, valor: number, fonte: string) {
     let row = await this.dayRepo.findOne({ where: { ano, mes, dia } });
     if (!row) row = this.dayRepo.create({ ano, mes, dia });
