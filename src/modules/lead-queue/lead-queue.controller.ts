@@ -38,6 +38,12 @@ export class LeadQueueController {
     return this.queue.getBoard();
   }
 
+  @Get("pendentes")
+  @ApiOperation({ summary: "Atribuições pendentes (leadId + prazo) para o relógio no card" })
+  pendentes() {
+    return this.queue.getPendentes();
+  }
+
   @Post("distribuir/:leadId")
   @UseGuards(DiretorGuard)
   @ApiOperation({ summary: "Joga um lead manual no rodízio de plantão (somente Diretor)" })

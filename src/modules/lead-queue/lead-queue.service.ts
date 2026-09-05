@@ -270,6 +270,14 @@ export class LeadQueueService {
     return count;
   }
 
+  /** Atribuições pendentes (leadId + prazo) — para o relógio de contagem no card. */
+  async getPendentes(): Promise<{ leadId: string; dueAt: Date }[]> {
+    const rows = await this.assignRepo.find({ where: { status: "pendente" } });
+    return rows
+      .filter((r) => !!r.leadId)
+      .map((r) => ({ leadId: r.leadId as string, dueAt: r.dueAt }));
+  }
+
   /** Métricas do dia (não expõe conteúdo das conversas). */
   async getBoard() {
     const since = new Date();
