@@ -7,7 +7,8 @@ function make(
   assignments: any[] = [],
   turno: string[] | null = [],
   validUserIds?: string[],
-  rolesById: Record<string, string> = {}
+  rolesById: Record<string, string> = {},
+  lead: any = null
 ) {
   const settingsRepo: any = {
     findOne: jest.fn(async () => settings),
@@ -37,10 +38,17 @@ function make(
       idsValidos.map((id) => ({ id, active: true, approved: true, role: rolesById[id] ?? "corretor" }))
     ),
   };
-  const leadsRepo: any = { update: jest.fn(async () => ({})) };
+  const leadsRepo: any = {
+    update: jest.fn(async () => ({})),
+    findOne: jest.fn(async () => lead),
+  };
   const escala: any = { turnoAtivo: jest.fn(async () => (turno ? { atendenteIds: turno } : null)) };
+  const conversations: any = {
+    findOrCreateByPhone: jest.fn(async (phone: string) => ({ id: `conv-${phone}`, leadId: null })),
+    setLead: jest.fn(async () => ({})),
+  };
   return {
-    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala),
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala, conversations),
     settings,
     assignments,
     convRepo,
@@ -144,5 +152,31 @@ describe("LeadQueueService", () => {
     const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [pending], ["A", "B"]);
     expect(await svc.markAttended("c2", "B")).toBe(false);
     expect(pending.status).toBe("pendente");
+  });
+
+  it("distribuirLeadManual joga o lead no rodízio pro corretor de plantão", async () => {
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [], ["A"], undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    const r = await svc.distribuirLeadManual("L1");
+    expect(r.status).toBe("distribuido");
+    expect(r.assignedToId).toBe("A");
+  });
+
+  it("distribuirLeadManual sem plantão → aguardando", async () => {
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [], null, undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    expect((await svc.distribuirLeadManual("L1")).status).toBe("aguardando");
+  });
+
+  it("distribuirLeadManual com a fila desligada não distribui", async () => {
+    const { svc } = make(
+      { enabled: false, slaMinutes: 5, pointer: 0 },
+      [], ["A"], undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    expect((await svc.distribuirLeadManual("L1")).status).toBe("fila_desligada");
   });
 });

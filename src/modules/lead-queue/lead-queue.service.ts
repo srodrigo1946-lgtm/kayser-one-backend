@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, LessThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -8,6 +8,7 @@ import { Conversation } from "../conversations/conversation.entity";
 import { User, UserRole } from "../users/user.entity";
 import { Lead } from "../leads/lead.entity";
 import { EscalaService } from "../escala/escala.service";
+import { ConversationsService } from "../conversations/conversations.service";
 
 @Injectable()
 export class LeadQueueService {
@@ -24,7 +25,8 @@ export class LeadQueueService {
     private readonly usersRepo: Repository<User>,
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
-    private readonly escala: EscalaService
+    private readonly escala: EscalaService,
+    private readonly conversations: ConversationsService
   ) {}
 
   /**
@@ -140,6 +142,43 @@ export class LeadQueueService {
     await this.atribuir(input.conversationId, input.leadId, userId);
     this.logger.log(`Lead ${input.conversationId} atribuído a ${userId} (plantão).`);
     return saved;
+  }
+
+  /**
+   * Joga um lead cadastrado MANUALMENTE no rodízio: cria/acha a conversa pelo
+   * telefone e enfileira (mesma máquina do anúncio/Meta). Diretor dispara pelo
+   * painel do lead. Devolve um status pra UI mostrar o que aconteceu.
+   */
+  async distribuirLeadManual(
+    leadId: string
+  ): Promise<{ status: "distribuido" | "aguardando" | "ja_na_fila" | "sem_telefone" | "fila_desligada"; assignedToId?: string }> {
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
+    if (!lead) throw new NotFoundException("Lead não encontrado.");
+
+    const s = await this.getSettings();
+    if (!s.enabled) return { status: "fila_desligada" };
+
+    const phone = (lead.phone || lead.whatsapp || "").replace(/\D/g, "");
+    if (!phone) return { status: "sem_telefone" };
+
+    const conv = await this.conversations.findOrCreateByPhone(phone);
+    if (!conv.leadId) await this.conversations.setLead(conv.id, lead.id, lead.name);
+
+    // Já tem atribuição em aberto? Não duplica (evita clique repetido / lead de anúncio).
+    const aberta = await this.assignRepo.findOne({
+      where: [
+        { conversationId: conv.id, status: "pendente" },
+        { conversationId: conv.id, status: "aguardando" },
+      ],
+    });
+    if (aberta) return { status: aberta.status as any, assignedToId: aberta.assignedToId || undefined };
+
+    const a = await this.enqueueLead({ conversationId: conv.id, leadId: lead.id });
+    if (!a) return { status: "fila_desligada" };
+    return {
+      status: a.status === "aguardando" ? "aguardando" : "distribuido",
+      assignedToId: a.assignedToId || undefined,
+    };
   }
 
   /** Distribui os leads `aguardando` quando um turno abre. Roda a cada minuto. */

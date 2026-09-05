@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Put, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { LeadQueueService } from "./lead-queue.service";
@@ -36,5 +36,12 @@ export class LeadQueueController {
   @ApiOperation({ summary: "Painel do dia (somente Diretor)" })
   board() {
     return this.queue.getBoard();
+  }
+
+  @Post("distribuir/:leadId")
+  @UseGuards(DiretorGuard)
+  @ApiOperation({ summary: "Joga um lead manual no rodízio de plantão (somente Diretor)" })
+  distribuir(@Param("leadId") leadId: string) {
+    return this.queue.distribuirLeadManual(leadId);
   }
 }
