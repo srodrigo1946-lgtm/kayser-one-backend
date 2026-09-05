@@ -2,7 +2,13 @@ import { LeadQueueService } from "./lead-queue.service";
 
 // `turno` = atendenteIds de plantão AGORA (ou null = fora de plantão).
 // `validUserIds` = quem realmente existe/está ativo (default: todos do turno).
-function make(settings: any, assignments: any[] = [], turno: string[] | null = [], validUserIds?: string[]) {
+function make(
+  settings: any,
+  assignments: any[] = [],
+  turno: string[] | null = [],
+  validUserIds?: string[],
+  rolesById: Record<string, string> = {}
+) {
   const settingsRepo: any = {
     findOne: jest.fn(async () => settings),
     create: jest.fn((v) => v),
@@ -27,7 +33,9 @@ function make(settings: any, assignments: any[] = [], turno: string[] | null = [
   const convRepo: any = { update: jest.fn(async () => ({})) };
   const idsValidos: string[] = validUserIds ?? turno ?? [];
   const usersRepo: any = {
-    find: jest.fn(async () => idsValidos.map((id) => ({ id, active: true, approved: true }))),
+    find: jest.fn(async () =>
+      idsValidos.map((id) => ({ id, active: true, approved: true, role: rolesById[id] ?? "corretor" }))
+    ),
   };
   const leadsRepo: any = { update: jest.fn(async () => ({})) };
   const escala: any = { turnoAtivo: jest.fn(async () => (turno ? { atendenteIds: turno } : null)) };
@@ -81,6 +89,31 @@ describe("LeadQueueService", () => {
     const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], ["fantasma", "B"], ["B"]);
     const a = await svc.enqueueLead({ conversationId: "c1" });
     expect(a?.assignedToId).toBe("B");
+  });
+
+  it("pula gerente no turno — só corretor recebe lead", async () => {
+    // "ger1" está de plantão mas é gerente → ignorado; o corretor "B" recebe.
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [],
+      ["ger1", "B"],
+      ["ger1", "B"],
+      { ger1: "gerente" }
+    );
+    const a = await svc.enqueueLead({ conversationId: "c1" });
+    expect(a?.assignedToId).toBe("B");
+  });
+
+  it("turno só com gerente → aguardando (ninguém corretor de plantão)", async () => {
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [],
+      ["ger1"],
+      ["ger1"],
+      { ger1: "gerente" }
+    );
+    const a = await svc.enqueueLead({ conversationId: "c1" });
+    expect(a?.status).toBe("aguardando");
   });
 
   it("liberarAguardando distribui os represados quando abre o turno", async () => {

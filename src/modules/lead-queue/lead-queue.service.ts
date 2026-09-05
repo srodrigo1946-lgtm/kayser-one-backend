@@ -5,7 +5,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { LeadQueueSettings } from "./lead-queue-settings.entity";
 import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
-import { User } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { Lead } from "../leads/lead.entity";
 import { EscalaService } from "../escala/escala.service";
 
@@ -37,12 +37,24 @@ export class LeadQueueService {
     if (leadId) await this.leadsRepo.update(leadId, { responsavelId: userId });
   }
 
-  /** Filtra ids mantendo só usuários que existem e podem atender (ativo + aprovado). */
+  /**
+   * Filtra ids mantendo só quem pode atender: ativo + aprovado + CORRETOR.
+   * Regra do Rodrigo: gerente pra cima NÃO entra no rodízio, só corretor.
+   * Empresa parceira (corretor + empresaId) também fica de fora.
+   */
   private async filtrarAtivos(ids: string[]): Promise<string[]> {
     if (!ids || ids.length === 0) return [];
     const users = await this.usersRepo.find({ where: { id: In(ids) } });
     const validos = new Set(
-      users.filter((u) => u.active !== false && u.approved !== false).map((u) => u.id)
+      users
+        .filter(
+          (u) =>
+            u.active !== false &&
+            u.approved !== false &&
+            u.role === UserRole.CORRETOR &&
+            !u.empresaId
+        )
+        .map((u) => u.id)
     );
     return ids.filter((id) => validos.has(id));
   }
