@@ -27,30 +27,39 @@ function svc(rows: EscalaTurno[]) {
 }
 
 describe("EscalaService.turnoAtivo", () => {
+  // Datas com -03:00 explícito: o turno é calculado em horário de Brasília,
+  // então o teste tem que ser determinístico independente do TZ da máquina.
   it("acha o turno da tarde numa segunda 14h", async () => {
     const { s } = svc(grade());
-    const seg14 = new Date("2026-08-17T14:00:00"); // 2026-08-17 é segunda
+    const seg14 = new Date("2026-08-17T14:00:00-03:00"); // 2026-08-17 é segunda
     const t = await s.turnoAtivo(seg14);
     expect(t?.atendenteIds).toEqual(["B"]);
   });
 
   it("retorna null de madrugada (03h)", async () => {
     const { s } = svc(grade());
-    expect(await s.turnoAtivo(new Date("2026-08-17T03:00:00"))).toBeNull();
+    expect(await s.turnoAtivo(new Date("2026-08-17T03:00:00-03:00"))).toBeNull();
   });
 
   it("borda: 13:00 cai no turno da tarde, não no da manhã", async () => {
     const { s } = svc(grade());
-    const t = await s.turnoAtivo(new Date("2026-08-17T13:00:00"));
+    const t = await s.turnoAtivo(new Date("2026-08-17T13:00:00-03:00"));
     expect(t?.turno).toBe(1);
   });
 
   it("fim de semana usa a faixa de sábado (até 12h)", async () => {
     const { s } = svc(grade());
-    const sab10 = new Date("2026-08-22T10:00:00"); // 2026-08-22 é sábado
+    const sab10 = new Date("2026-08-22T10:00:00-03:00"); // 2026-08-22 é sábado
     expect((await s.turnoAtivo(sab10))?.atendenteIds).toEqual(["C"]);
-    const sab13 = new Date("2026-08-22T13:00:00"); // fora do turno da manhã do sábado
+    const sab13 = new Date("2026-08-22T13:00:00-03:00"); // fora do turno da manhã do sábado
     expect(await s.turnoAtivo(sab13)).toBeNull();
+  });
+
+  it("blindagem de fuso: 9h de Brasília cai no turno da manhã, mesmo com o servidor em UTC", async () => {
+    const { s } = svc(grade());
+    // 09:30 em Brasília = 12:30 UTC. Antes (getHours no servidor UTC) daria turno errado.
+    const seg9 = new Date("2026-08-17T09:30:00-03:00");
+    expect((await s.turnoAtivo(seg9))?.atendenteIds).toEqual(["A"]);
   });
 });
 

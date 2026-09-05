@@ -41,14 +41,31 @@ export class EscalaService implements OnModuleInit {
     return this.repo.find({ order: { diaSemana: "ASC", turno: "ASC" } });
   }
 
+  // Dia/hora do plantão são SEMPRE em horário de Brasília — não podem depender do
+  // TZ do servidor (Railway roda em UTC), senão os turnos rodam 3h adiantados.
+  private static readonly DIAS: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  private static readonly FMT = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
   /**
    * Turno de plantão ativo no instante `now` (ou null se ninguém está de plantão).
    * A comparação de "HH:MM" é lexicográfica — funciona porque é zero-padded.
    * O fim é exclusivo: 13:00 já pertence ao turno da tarde, não ao da manhã.
    */
   async turnoAtivo(now: Date): Promise<EscalaTurno | null> {
-    const dia = now.getDay();
-    const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const p = Object.fromEntries(
+      EscalaService.FMT.formatToParts(now).map((x) => [x.type, x.value])
+    );
+    const dia = EscalaService.DIAS[p.weekday];
+    const hh = p.hour === "24" ? "00" : p.hour; // Intl pode devolver "24" à meia-noite
+    const hhmm = `${hh}:${p.minute}`;
     const turnos = await this.repo.find({ where: { diaSemana: dia } });
     return turnos.find((t) => t.horaInicio <= hhmm && hhmm < t.horaFim) ?? null;
   }
