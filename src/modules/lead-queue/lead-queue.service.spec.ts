@@ -140,6 +140,27 @@ describe("LeadQueueService", () => {
     expect(venc.assignedToId).toBe("");
   });
 
+  it("SLA vencido NÃO repassa se o corretor moveu o lead p/ Primeiro Contato", async () => {
+    const venc = { conversationId: "c1", leadId: "L1", assignedToId: "A", status: "pendente", dueAt: new Date(Date.now() - 1000), attempts: 1 };
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [venc], ["A", "B"], undefined, {}, { id: "L1", status: "primeiro_contato" }
+    );
+    await svc.reassignExpired();
+    expect(venc.status).toBe("atendido");
+  });
+
+  it("SLA vencido repassa pro próximo se o lead continua Novo Lead", async () => {
+    const venc = { conversationId: "c1", leadId: "L1", assignedToId: "A", status: "pendente", dueAt: new Date(Date.now() - 1000), attempts: 1 };
+    const { svc, assignments } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [venc], ["A", "B"], undefined, {}, { id: "L1", status: "novo_lead" }
+    );
+    await svc.reassignExpired();
+    expect(venc.status).toBe("expirado");
+    expect(assignments.some((x) => x.status === "pendente" && x.assignedToId === "B")).toBe(true);
+  });
+
   it("markAttended encerra o SLA quando o cargo atribuído responde", async () => {
     const pending = { conversationId: "c1", assignedToId: "A", status: "pendente" };
     const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [pending], ["A", "B"]);

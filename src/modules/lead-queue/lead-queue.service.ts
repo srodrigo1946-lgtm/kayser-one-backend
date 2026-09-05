@@ -6,7 +6,7 @@ import { LeadQueueSettings } from "./lead-queue-settings.entity";
 import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { User, UserRole } from "../users/user.entity";
-import { Lead } from "../leads/lead.entity";
+import { Lead, LeadStatus } from "../leads/lead.entity";
 import { EscalaService } from "../escala/escala.service";
 import { ConversationsService } from "../conversations/conversations.service";
 
@@ -231,6 +231,16 @@ export class LeadQueueService {
     const membros = await this.atendentesDoTurno();
     let count = 0;
     for (const a of expired) {
+      // Se o corretor JÁ AGIU (moveu do "Novo Lead" p/ Primeiro Contato ou além),
+      // o timer encerra e o lead NÃO passa pro próximo — só anda se ficou "Novo Lead".
+      if (a.leadId) {
+        const lead = await this.leadsRepo.findOne({ where: { id: a.leadId } });
+        if (lead && lead.status !== LeadStatus.NOVO_LEAD) {
+          a.status = "atendido";
+          await this.assignRepo.save(a);
+          continue;
+        }
+      }
       // Turno fechou: volta a aguardar o próximo (não se perde nem gira sozinho).
       if (membros.length === 0) {
         a.status = "aguardando";
