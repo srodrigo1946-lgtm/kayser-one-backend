@@ -1,6 +1,6 @@
-import { Controller, Get, Put, Query, Body, UseGuards } from "@nestjs/common";
+import { Controller, Get, Put, Post, Query, Body, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsInt, IsNumber, Min, Max } from "class-validator";
+import { IsInt, IsNumber, Min, Max, IsArray, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { InvestimentoService } from "./investimento.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -19,24 +19,65 @@ class SetInvestimentoDto {
   valor: number;
 }
 
+class DiaValorDto {
+  @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  dia: number;
+
+  @Type(() => Number) @IsNumber() @Min(0)
+  valor: number;
+}
+
+class SetDiasDto {
+  @Type(() => Number) @IsInt()
+  ano: number;
+
+  @Type(() => Number) @IsInt() @Min(1) @Max(12)
+  mes: number;
+
+  @IsArray() @ValidateNested({ each: true }) @Type(() => DiaValorDto)
+  dias: DiaValorDto[];
+}
+
 @ApiTags("Investimento")
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller("investimento")
 export class InvestimentoController {
   constructor(private readonly service: InvestimentoService) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Investimento do período (mês, ou soma do ano)" })
   get(@Query("year") year: string, @Query("month") month?: string) {
     return this.service.get(Number(year), month ? Number(month) : undefined);
   }
 
   @Put()
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
-  @ApiOperation({ summary: "Definir investimento de um mês (somente Diretor)" })
+  @ApiOperation({ summary: "Definir investimento mensal (somente Diretor)" })
   set(@Body() dto: SetInvestimentoDto) {
     return this.service.set(dto.ano, dto.mes, dto.valor);
+  }
+
+  @Get("dias")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "Gasto por dia do mês" })
+  getDias(@Query("year") year: string, @Query("month") month: string) {
+    return this.service.getDays(Number(year), Number(month));
+  }
+
+  @Put("dias")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Salvar gasto por dia (somente Diretor)" })
+  setDias(@Body() dto: SetDiasDto) {
+    return this.service.setDays(dto.ano, dto.mes, dto.dias);
+  }
+
+  // Entrada automática (FiqOn/Make empurra o gasto do FB). Público, protegido por token.
+  @Post("dia-direct")
+  @ApiOperation({ summary: "Recebe o gasto de um dia de uma ferramenta parceira (token)" })
+  diaDireto(@Query("token") token: string, @Body() body: any) {
+    return this.service.setDayDireto(token, body);
   }
 }

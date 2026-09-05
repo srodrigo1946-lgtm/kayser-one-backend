@@ -34,6 +34,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
       ["ensureAdInvestmentTable", () => this.ensureAdInvestmentTable()],
+      ["ensureAdInvestmentDayTable", () => this.ensureAdInvestmentDayTable()],
       ["ensureFeedbackTable", () => this.ensureFeedbackTable()],
     ];
     for (const [name, run] of steps) {
@@ -228,6 +229,20 @@ export class SchemaBootstrapService implements OnModuleInit {
         valor numeric DEFAULT 0,
         fonte varchar DEFAULT 'manual',
         UNIQUE (ano, mes)
+      )`);
+  }
+
+  /** Gasto em anúncio por DIA (manual do Diretor ou empurrado por integração). */
+  private async ensureAdInvestmentDayTable() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS ad_investment_days (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        ano int NOT NULL,
+        mes int NOT NULL,
+        dia int NOT NULL,
+        valor numeric DEFAULT 0,
+        fonte varchar DEFAULT 'manual',
+        UNIQUE (ano, mes, dia)
       )`);
   }
 
