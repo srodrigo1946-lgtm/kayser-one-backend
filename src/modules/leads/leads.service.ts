@@ -4,6 +4,7 @@ import { Repository, Like, In, FindOptionsWhere } from "typeorm";
 import * as XLSX from "xlsx";
 import { Lead, LeadStatus, LeadSource } from "./lead.entity";
 import { Conversation } from "../conversations/conversation.entity";
+import { LeadQueueAssignment } from "../lead-queue/lead-queue-assignment.entity";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { User, UserRole } from "../users/user.entity";
@@ -18,6 +19,8 @@ export class LeadsService {
     private readonly leadsRepo: Repository<Lead>,
     @InjectRepository(Conversation)
     private readonly convRepo: Repository<Conversation>,
+    @InjectRepository(LeadQueueAssignment)
+    private readonly assignRepo: Repository<LeadQueueAssignment>,
     private readonly history: LeadHistoryService,
     private readonly users: UsersService
   ) {}
@@ -173,6 +176,13 @@ export class LeadsService {
         toStatus: saved.status,
         userId: user?.id,
       });
+      // Saiu de "Novo Lead" (ex.: foi pra Primeiro Contato) = corretor atendeu:
+      // encerra a atribuição pendente NA HORA (para o relógio do card e não repassa).
+      if (saved.status !== LeadStatus.NOVO_LEAD) {
+        await this.assignRepo
+          .update({ leadId: saved.id, status: "pendente" }, { status: "atendido" })
+          .catch(() => {});
+      }
     }
     return saved;
   }

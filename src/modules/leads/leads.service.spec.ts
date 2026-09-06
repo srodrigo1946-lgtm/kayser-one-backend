@@ -5,6 +5,7 @@ import { UserRole } from "../users/user.entity";
 describe("LeadsService", () => {
   let leadsRepo: any;
   let convRepo: any;
+  let assignRepo: any;
   let history: any;
   let users: any;
   let service: LeadsService;
@@ -20,9 +21,10 @@ describe("LeadsService", () => {
     };
     // Repositório de conversas: usado para sincronizar responsável do lead ↔ atendente.
     convRepo = { update: jest.fn(), find: jest.fn().mockResolvedValue([]), findOne: jest.fn() };
+    assignRepo = { update: jest.fn().mockResolvedValue({}) };
     history = { log: jest.fn(), findByLead: jest.fn() };
     users = { getScopeIds: jest.fn().mockResolvedValue(null) };
-    service = new LeadsService(leadsRepo, convRepo, history, users);
+    service = new LeadsService(leadsRepo, convRepo, assignRepo, history, users);
   });
 
   it("registra histórico de criação ao criar um lead", async () => {
