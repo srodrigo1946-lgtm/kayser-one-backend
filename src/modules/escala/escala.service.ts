@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { EscalaTurno } from "./escala-turno.entity";
@@ -74,6 +74,16 @@ export class EscalaService implements OnModuleInit {
     const turno = await this.repo.findOne({ where: { id } });
     if (!turno) throw new NotFoundException("Turno não encontrado.");
     turno.atendenteIds = atendenteIds;
+    return this.repo.save(turno);
+  }
+
+  /** Edita o horário de um turno (HH:MM). Início tem que ser antes do fim. */
+  async setHorario(id: string, horaInicio: string, horaFim: string): Promise<EscalaTurno> {
+    const turno = await this.repo.findOne({ where: { id } });
+    if (!turno) throw new NotFoundException("Turno não encontrado.");
+    if (horaInicio >= horaFim) throw new BadRequestException("A hora de início deve ser antes da hora de fim.");
+    turno.horaInicio = horaInicio;
+    turno.horaFim = horaFim;
     return this.repo.save(turno);
   }
 }
