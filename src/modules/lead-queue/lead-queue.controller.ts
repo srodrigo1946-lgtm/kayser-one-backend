@@ -44,6 +44,12 @@ export class LeadQueueController {
     return this.queue.getPendentes();
   }
 
+  @Get("ordem")
+  @ApiOperation({ summary: "Ordem da fila agora (todos os cargos VEEM, só leitura)" })
+  ordem() {
+    return this.queue.getOrdem();
+  }
+
   @Post("distribuir/:leadId")
   @UseGuards(DiretorGuard)
   @ApiOperation({ summary: "Joga um lead manual no rodízio de plantão (somente Diretor)" })

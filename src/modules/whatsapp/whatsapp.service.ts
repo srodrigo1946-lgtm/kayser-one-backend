@@ -1,6 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
+
+const EVOLUTION_FORA =
+  "WhatsApp (Evolution API) indisponível no momento. Verifique/reinicie o serviço da Evolution no Railway e tente de novo.";
 
 @Injectable()
 export class WhatsappService {
@@ -45,7 +48,8 @@ export class WhatsappService {
         this.logger.log(`Instância ${instanceName} já existe; reutilizando.`);
         result = { instanceName, alreadyExists: true };
       } else {
-        throw err;
+        this.logger.error(`Evolution /instance/create falhou: ${err?.message}`);
+        throw new ServiceUnavailableException(EVOLUTION_FORA);
       }
     }
     // Cada cargo tem o seu WhatsApp; sem isto a ENTRADA de mensagens não chega no
@@ -58,11 +62,16 @@ export class WhatsappService {
   async getQrCode(instanceName: string) {
     // Reforço: garante o webhook também no fluxo de reconexão (buscar QR).
     await this.ensureWebhook(instanceName);
-    const { data } = await axios.get(
-      `${this.apiUrl}/instance/connect/${instanceName}`,
-      { headers: this.headers }
-    );
-    return data;
+    try {
+      const { data } = await axios.get(
+        `${this.apiUrl}/instance/connect/${instanceName}`,
+        { headers: this.headers }
+      );
+      return data;
+    } catch (err: any) {
+      this.logger.error(`Evolution /instance/connect falhou: ${err?.message}`);
+      throw new ServiceUnavailableException(EVOLUTION_FORA);
+    }
   }
 
   /**

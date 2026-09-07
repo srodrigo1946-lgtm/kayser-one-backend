@@ -291,6 +291,34 @@ export class LeadQueueService {
     const expirados = list.filter((a) => a.status === "expirado").length;
     const porCargo: Record<string, number> = {};
     for (const a of list) porCargo[a.assignedToId] = (porCargo[a.assignedToId] || 0) + 1;
-    return { recebidos, atendidos, expirados, porCargo };
+    // Leads segurados esperando abrir o turno (não limita por dia — persistem até distribuir).
+    const aguardando = await this.assignRepo.count({ where: { status: "aguardando" } });
+    return { recebidos, atendidos, expirados, aguardando, porCargo };
+  }
+
+  /**
+   * Ordem da fila AGORA (todos os cargos veem): corretores de plantão na ordem do
+   * rodízio + quem é o próximo (ponteiro). Sem dados sensíveis. Também traz quantos
+   * leads estão aguardando o turno abrir.
+   */
+  async getOrdem(): Promise<{
+    turnoAtivo: boolean;
+    ordem: { userId: string; nome: string; proximo: boolean }[];
+    aguardando: number;
+  }> {
+    const membros = await this.atendentesDoTurno(); // já na ordem do rodízio (escala)
+    const s = await this.getSettings();
+    const aguardando = await this.assignRepo.count({ where: { status: "aguardando" } });
+    if (membros.length === 0) return { turnoAtivo: false, ordem: [], aguardando };
+
+    const users = await this.usersRepo.find({ where: { id: In(membros) } });
+    const nomePorId = new Map(users.map((u) => [u.id, u.name]));
+    const nextIdx = ((s.pointer % membros.length) + membros.length) % membros.length;
+    const ordem = membros.map((id, i) => ({
+      userId: id,
+      nome: nomePorId.get(id) ?? "—",
+      proximo: i === nextIdx,
+    }));
+    return { turnoAtivo: true, ordem, aguardando };
   }
 }
