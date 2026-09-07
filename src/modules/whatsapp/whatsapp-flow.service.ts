@@ -97,9 +97,16 @@ export class WhatsappFlowService {
         conv.fromAd = true;
         const queue = await this.leadQueue.getSettings();
         if (queue.enabled) {
-          await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId ?? undefined });
+          const assignment = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId ?? undefined });
+          // A IA NÃO responde leads do número central — quem atende é o ESPECIALISTA
+          // (corretor do rodízio). Avisa o cliente e cita o nome do especialista.
+          await this.avisarEspecialista(conv, instanceName, remoteJidFull, assignment?.assignedToId);
         }
       }
+
+      // Lead do número central (anúncio): a IA NÃO responde. O especialista humano
+      // assume a conversa. Isso vale para TODAS as mensagens do lead, não só a 1ª.
+      if (conv.fromAd) return { persisted: true, autoReply: false, central: true };
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
       if (mediaType) return { persisted: true, autoReply: false, media: mediaType };
@@ -148,6 +155,34 @@ export class WhatsappFlowService {
     } catch (err) {
       this.logger.error("Erro no fluxo de entrada do WhatsApp", err as any);
       return { error: true };
+    }
+  }
+
+  /**
+   * Avisa o cliente (do número CENTRAL) que será atendido por um especialista — o
+   * corretor do rodízio da fila — citando o nome. Fora de plantão (sem especialista
+   * ainda) manda um aviso genérico. Essa é a ÚNICA resposta automática do central:
+   * a IA não conversa com lead de anúncio. Registra a mensagem no histórico.
+   */
+  private async avisarEspecialista(
+    conv: { id: string },
+    instanceName: string | undefined,
+    remoteJidFull: string,
+    assignedToId?: string | null
+  ) {
+    let nome = "um especialista";
+    if (assignedToId) {
+      const esp = await this.users.findOne(assignedToId).catch(() => null);
+      if (esp?.name) nome = esp.name.split(" ").slice(0, 2).join(" ");
+    }
+    const msg = assignedToId
+      ? `Olá! 👋 Recebemos seu contato e você será atendido pelo nosso especialista *${nome}*, que já vai falar com você. 🏡`
+      : `Olá! 👋 Recebemos seu contato. Em breve um dos nossos especialistas vai falar com você. 🏡`;
+    try {
+      await this.conversations.addMessage(conv.id, msg, "out", false);
+      if (instanceName) await this.whatsapp.sendText(instanceName, remoteJidFull, msg);
+    } catch (err) {
+      this.logger.warn(`Falha ao avisar especialista: ${(err as Error).message}`);
     }
   }
 
