@@ -305,11 +305,23 @@ export class LeadQueueService {
     turnoAtivo: boolean;
     ordem: { userId: string; nome: string; proximo: boolean }[];
     aguardando: number;
+    aguardandoLeads: { nome: string; phone: string }[];
   }> {
     const membros = await this.atendentesDoTurno(); // já na ordem do rodízio (escala)
     const s = await this.getSettings();
-    const aguardando = await this.assignRepo.count({ where: { status: "aguardando" } });
-    if (membros.length === 0) return { turnoAtivo: false, ordem: [], aguardando };
+
+    // Leads segurados esperando abrir o turno — com nome, pra conferência.
+    const espera = await this.assignRepo.find({ where: { status: "aguardando" }, order: { assignedAt: "ASC" } });
+    const leadIds = espera.map((a) => a.leadId).filter((x): x is string => !!x);
+    const leads = leadIds.length ? await this.leadsRepo.find({ where: { id: In(leadIds) } }) : [];
+    const leadById = new Map(leads.map((l) => [l.id, l]));
+    const aguardandoLeads = espera.map((a) => {
+      const l = a.leadId ? leadById.get(a.leadId) : undefined;
+      return { nome: l?.name ?? "Contato", phone: (l?.phone || l?.whatsapp || "") as string };
+    });
+    const aguardando = espera.length;
+
+    if (membros.length === 0) return { turnoAtivo: false, ordem: [], aguardando, aguardandoLeads };
 
     const users = await this.usersRepo.find({ where: { id: In(membros) } });
     const nomePorId = new Map(users.map((u) => [u.id, u.name]));
@@ -319,6 +331,6 @@ export class LeadQueueService {
       nome: nomePorId.get(id) ?? "—",
       proximo: i === nextIdx,
     }));
-    return { turnoAtivo: true, ordem, aguardando };
+    return { turnoAtivo: true, ordem, aguardando, aguardandoLeads };
   }
 }
