@@ -128,6 +128,13 @@ export class UsersController {
     return this.usersService.hardRemove(id, req.user);
   }
 
+  @Post("adotar-orfaos")
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Puxa pro Diretor os leads antigos sem responsável (só Diretor)" })
+  adotarOrfaos(@Request() req: any) {
+    return this.usersService.adotarOrfaos(req.user);
+  }
+
   @Post(":id/reset-password")
   @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
   @ApiOperation({ summary: "Redefinir a senha de um usuário da equipe (volta à padrão + troca forçada)" })

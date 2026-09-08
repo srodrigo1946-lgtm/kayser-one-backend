@@ -198,6 +198,34 @@ export class UsersService {
     }
   }
 
+  /**
+   * Limpeza única: puxa pro DIRETOR os leads/conversas ANTIGOS que ficaram órfãos
+   * (responsável nulo ou apontando pra usuário que não existe mais). Só Diretor.
+   */
+  async adotarOrfaos(requester: User): Promise<{ leads: number }> {
+    if (requester.role !== UserRole.DIRETOR) {
+      throw new ForbiddenException("Apenas o Diretor pode puxar os leads órfãos.");
+    }
+    const diretor = await this.usersRepo.findOne({
+      where: { role: UserRole.DIRETOR },
+      order: { createdAt: "ASC" },
+    });
+    const alvoId = diretor?.id ?? requester.id;
+    const cond = `"responsavelId" IS NULL OR "responsavelId" NOT IN (SELECT id FROM users)`;
+    const rows = await this.usersRepo.query(`SELECT COUNT(*)::int AS n FROM leads WHERE ${cond}`);
+    const n = Number(rows?.[0]?.n) || 0;
+    if (n > 0) {
+      await this.usersRepo.query(`UPDATE leads SET "responsavelId" = $1 WHERE ${cond}`, [alvoId]);
+      await this.usersRepo
+        .query(
+          `UPDATE conversations SET "assignedToId" = $1 WHERE "assignedToId" IS NOT NULL AND "assignedToId" NOT IN (SELECT id FROM users)`,
+          [alvoId]
+        )
+        .catch(() => {});
+    }
+    return { leads: n };
+  }
+
   async deactivate(id: string, requester: User) {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException("Usuário não encontrado.");
