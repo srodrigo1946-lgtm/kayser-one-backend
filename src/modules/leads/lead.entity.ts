@@ -83,6 +83,10 @@ export class Lead {
   @Column({ type: "decimal", nullable: true })
   valorVenda: number;
 
+  // Data em que a venda foi fechada (auto no "Venda Ganha", editável). "YYYY-MM-DD".
+  @Column({ type: "date", nullable: true })
+  dataVenda: string;
+
   // Cadastro completo (financiamento / "Subir Pasta para Análise"). Endereço tem
   // o `cidade` reaproveitado acima.
   @Column({ nullable: true })

@@ -67,9 +67,10 @@ export class SchemaBootstrapService implements OnModuleInit {
     this.logger.log("Coluna leads.source criada e backfill aplicado.");
   }
 
-  /** Valor da venda fechada (base do VGV / campeão do dashboard). */
+  /** Valor + DATA da venda fechada (base do VGV / campeão do dashboard). */
   private async ensureLeadValorVenda() {
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "valorVenda" numeric`);
+    await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "dataVenda" date`);
   }
 
   /** Cadastro completo do cliente (financiamento / Subir Pasta para Análise). */

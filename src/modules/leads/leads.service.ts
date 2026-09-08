@@ -166,6 +166,10 @@ export class LeadsService {
     const fromStatus = lead.status;
     lead.status = status as LeadStatus;
     if (order !== undefined) lead.kanbanOrder = order;
+    // Ao fechar a venda, grava a DATA (só se ainda não tiver — não sobrescreve edição).
+    if (lead.status === LeadStatus.VENDA_GANHA && !lead.dataVenda) {
+      lead.dataVenda = new Date().toISOString().slice(0, 10);
+    }
     const saved = await this.leadsRepo.save(lead);
     if (fromStatus !== saved.status) {
       await this.history.log({

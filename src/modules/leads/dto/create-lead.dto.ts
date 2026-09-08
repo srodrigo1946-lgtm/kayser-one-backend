@@ -67,6 +67,11 @@ export class CreateLeadDto {
   @IsNumber()
   valorVenda?: number;
 
+  @ApiPropertyOptional({ description: "Data da venda (YYYY-MM-DD)." })
+  @IsOptional()
+  @IsString()
+  dataVenda?: string;
+
   // Cadastro completo (financiamento / Subir Pasta para Análise).
   @ApiPropertyOptional() @IsOptional() @IsString() cpf?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() dataNascimento?: string;
