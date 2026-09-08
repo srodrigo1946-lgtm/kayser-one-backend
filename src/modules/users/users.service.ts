@@ -214,7 +214,7 @@ export class UsersService {
     // Leads sem responsável ou apontando pra usuário que não existe mais.
     const condLead = `"responsavelId" IS NULL OR "responsavelId" NOT IN (SELECT id FROM users)`;
     // Conversas DE LEAD (leadId não nulo) sem atendente OU apontando pra removido.
-    const condConv = `"leadId" IS NOT NULL AND ("assignedToId" IS NULL OR "assignedToId" = '' OR "assignedToId" NOT IN (SELECT id FROM users))`;
+    const condConv = `"leadId" IS NOT NULL AND ("assignedToId" IS NULL OR "assignedToId" NOT IN (SELECT id FROM users))`;
 
     const rLeads = await this.usersRepo.query(`SELECT COUNT(*)::int AS n FROM leads WHERE ${condLead}`);
     const rConv = await this.usersRepo.query(`SELECT COUNT(*)::int AS n FROM conversations WHERE ${condConv}`);
