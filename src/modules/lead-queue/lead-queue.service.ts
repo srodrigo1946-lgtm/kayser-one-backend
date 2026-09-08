@@ -314,10 +314,17 @@ export class LeadQueueService {
       .where("a.assignedAt >= :since", { since })
       .getMany();
     const recebidos = new Set(list.map((a) => a.conversationId)).size;
-    const atendidos = list.filter((a) => a.status === "atendido").length;
-    const expirados = list.filter((a) => a.status === "expirado").length;
+    // Atendidos = leads DISTINTOS que foram atendidos (não conta reatribuição 2x).
+    const atendidos = new Set(list.filter((a) => a.status === "atendido").map((a) => a.conversationId)).size;
+    const expirados = new Set(list.filter((a) => a.status === "expirado").map((a) => a.conversationId)).size;
+    // Por corretor: quantos leads REAIS (distintos) cada um ATENDEU.
+    const atendidoSets: Record<string, Set<string>> = {};
+    for (const a of list) {
+      if (a.status !== "atendido" || !a.assignedToId) continue;
+      (atendidoSets[a.assignedToId] ??= new Set()).add(a.conversationId);
+    }
     const porCargo: Record<string, number> = {};
-    for (const a of list) porCargo[a.assignedToId] = (porCargo[a.assignedToId] || 0) + 1;
+    for (const [id, set] of Object.entries(atendidoSets)) porCargo[id] = set.size;
     // Leads segurados esperando abrir o turno (não limita por dia — persistem até distribuir).
     const aguardando = await this.assignRepo.count({ where: { status: "aguardando" } });
     return { recebidos, atendidos, expirados, aguardando, porCargo };
