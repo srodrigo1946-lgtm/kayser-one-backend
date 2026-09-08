@@ -130,7 +130,11 @@ export class WhatsappService {
     file: { base64: string; mimetype: string; fileName: string; caption?: string }
   ) {
     const number = to.includes("@") ? to : to.replace(/\D/g, "");
-    const mediatype = file.mimetype.startsWith("image/") ? "image" : "document";
+    const mediatype = file.mimetype.startsWith("image/")
+      ? "image"
+      : file.mimetype.startsWith("video/")
+        ? "video"
+        : "document";
     // Aceita data URI ("data:...;base64,XXX") ou base64 puro.
     const media = file.base64.includes(",") ? file.base64.split(",")[1] : file.base64;
     const { data } = await axios.post(
