@@ -288,6 +288,9 @@ export class LeadQueueService {
       });
       await this.assignRepo.save(next);
       await this.atribuir(a.conversationId, a.leadId, nextUser);
+      // Passou pro próximo: avisa o cliente com o NOME do novo corretor — sem dizer
+      // que o anterior estava ocupado (não fica estranho).
+      await this.avisarEspecialistaNoTurno(a.conversationId, nextUser);
       count++;
     }
     if (count) this.logger.log(`Fila: ${count} lead(s) reatribuído(s) por SLA (plantão).`);
