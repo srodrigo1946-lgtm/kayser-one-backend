@@ -202,7 +202,7 @@ export class UsersService {
    * Limpeza única: puxa pro DIRETOR os leads/conversas ANTIGOS que ficaram órfãos
    * (responsável nulo ou apontando pra usuário que não existe mais). Só Diretor.
    */
-  async adotarOrfaos(requester: User): Promise<{ leads: number }> {
+  async adotarOrfaos(requester: User): Promise<{ leads: number; conversas: number }> {
     if (requester.role !== UserRole.DIRETOR) {
       throw new ForbiddenException("Apenas o Diretor pode puxar os leads órfãos.");
     }
@@ -211,19 +211,25 @@ export class UsersService {
       order: { createdAt: "ASC" },
     });
     const alvoId = diretor?.id ?? requester.id;
-    const cond = `"responsavelId" IS NULL OR "responsavelId" NOT IN (SELECT id FROM users)`;
-    const rows = await this.usersRepo.query(`SELECT COUNT(*)::int AS n FROM leads WHERE ${cond}`);
-    const n = Number(rows?.[0]?.n) || 0;
-    if (n > 0) {
-      await this.usersRepo.query(`UPDATE leads SET "responsavelId" = $1 WHERE ${cond}`, [alvoId]);
+    // Leads sem responsável ou apontando pra usuário que não existe mais.
+    const condLead = `"responsavelId" IS NULL OR "responsavelId" NOT IN (SELECT id FROM users)`;
+    // Conversas DE LEAD (leadId não nulo) sem atendente OU apontando pra removido.
+    const condConv = `"leadId" IS NOT NULL AND ("assignedToId" IS NULL OR "assignedToId" = '' OR "assignedToId" NOT IN (SELECT id FROM users))`;
+
+    const rLeads = await this.usersRepo.query(`SELECT COUNT(*)::int AS n FROM leads WHERE ${condLead}`);
+    const rConv = await this.usersRepo.query(`SELECT COUNT(*)::int AS n FROM conversations WHERE ${condConv}`);
+    const nLeads = Number(rLeads?.[0]?.n) || 0;
+    const nConv = Number(rConv?.[0]?.n) || 0;
+
+    if (nLeads > 0) {
+      await this.usersRepo.query(`UPDATE leads SET "responsavelId" = $1 WHERE ${condLead}`, [alvoId]);
+    }
+    if (nConv > 0) {
       await this.usersRepo
-        .query(
-          `UPDATE conversations SET "assignedToId" = $1 WHERE "assignedToId" IS NOT NULL AND "assignedToId" NOT IN (SELECT id FROM users)`,
-          [alvoId]
-        )
+        .query(`UPDATE conversations SET "assignedToId" = $1 WHERE ${condConv}`, [alvoId])
         .catch(() => {});
     }
-    return { leads: n };
+    return { leads: nLeads, conversas: nConv };
   }
 
   async deactivate(id: string, requester: User) {
