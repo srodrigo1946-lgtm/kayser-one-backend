@@ -171,6 +171,33 @@ export class UsersService {
     return this.clean(saved);
   }
 
+  /**
+   * Move os leads/conversas/pastas de um usuário para o DIRETOR (o mais antigo).
+   * Usado ao desativar/excluir um corretor — os leads dele não podem ficar órfãos.
+   */
+  private async moverLeadsParaDiretor(userId: string) {
+    const diretor = await this.usersRepo.findOne({
+      where: { role: UserRole.DIRETOR },
+      order: { createdAt: "ASC" },
+    });
+    if (!diretor || diretor.id === userId) return;
+    const moves: [string, string][] = [
+      ["leads", "responsavelId"],
+      ["conversations", "assignedToId"],
+      ["analysis_folders", "responsavelId"],
+    ];
+    for (const [table, col] of moves) {
+      try {
+        await this.usersRepo.query(
+          `UPDATE ${table} SET "${col}" = $1 WHERE "${col}" = $2`,
+          [diretor.id, userId]
+        );
+      } catch {
+        /* best-effort: tabela/coluna pode não existir */
+      }
+    }
+  }
+
   async deactivate(id: string, requester: User) {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException("Usuário não encontrado.");
@@ -178,7 +205,9 @@ export class UsersService {
     await this.assertCanManage(user, requester);
     user.active = false;
     await this.usersRepo.save(user);
-    return { message: "Usuário desativado." };
+    // Leads do corretor desativado passam pro Diretor (não ficam parados com ele).
+    await this.moverLeadsParaDiretor(id);
+    return { message: "Usuário desativado. Os leads dele foram para o Diretor." };
   }
 
   async activate(id: string, requester: User) {
@@ -192,8 +221,8 @@ export class UsersService {
 
   /**
    * Exclui um usuário DE VEZ (só Diretor). Protege: não exclui a si mesmo nem outro
-   * Diretor. Solta as referências (leads/conversas/pastas/gestor) pra não quebrar
-   * FK nem deixar dado travado — os leads ficam "sem responsável".
+   * Diretor. Os leads/conversas/pastas dele vão para o DIRETOR (não ficam órfãos);
+   * as demais referências (instância/gestor) são soltas pra não quebrar FK.
    */
   async hardRemove(id: string, requester: User) {
     if (requester.role !== UserRole.DIRETOR) {
@@ -204,11 +233,11 @@ export class UsersService {
     if (user.id === requester.id) throw new BadRequestException("Você não pode excluir a si mesmo.");
     if (user.role === UserRole.DIRETOR) throw new BadRequestException("Não é possível excluir um Diretor.");
 
+    // Leads/conversas/pastas vão pro Diretor antes de excluir.
+    await this.moverLeadsParaDiretor(id);
+
     const clears: [string, string][] = [
-      ["leads", "responsavelId"],
-      ["conversations", "assignedToId"],
       ["conversations", "instanceOwnerId"],
-      ["analysis_folders", "responsavelId"],
       ["users", "managerId"],
     ];
     for (const [table, col] of clears) {
