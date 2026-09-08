@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { WhatsappController } from "./whatsapp.controller";
 import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
 import { WhatsappService } from "./whatsapp.service";
@@ -10,7 +10,7 @@ import { LeadQueueModule } from "../lead-queue/lead-queue.module";
 import { UsersModule } from "../users/users.module";
 
 @Module({
-  imports: [ConversationsModule, SettingsModule, AiModule, LeadQueueModule, UsersModule],
+  imports: [ConversationsModule, SettingsModule, AiModule, forwardRef(() => LeadQueueModule), UsersModule],
   controllers: [WhatsappController, WhatsappWebhookController],
   providers: [WhatsappService, WhatsappFlowService],
   exports: [WhatsappService, WhatsappFlowService],

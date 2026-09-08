@@ -31,12 +31,13 @@ function make(
       return v;
     }),
   };
-  const convRepo: any = { update: jest.fn(async () => ({})) };
+  const convRepo: any = { update: jest.fn(async () => ({})), findOne: jest.fn(async () => null) };
   const idsValidos: string[] = validUserIds ?? turno ?? [];
   const usersRepo: any = {
     find: jest.fn(async () =>
       idsValidos.map((id) => ({ id, active: true, approved: true, role: rolesById[id] ?? "corretor" }))
     ),
+    findOne: jest.fn(async () => null),
   };
   const leadsRepo: any = {
     update: jest.fn(async () => ({})),
@@ -46,9 +47,11 @@ function make(
   const conversations: any = {
     findOrCreateByPhone: jest.fn(async (phone: string) => ({ id: `conv-${phone}`, leadId: null })),
     setLead: jest.fn(async () => ({})),
+    addMessage: jest.fn(async () => ({})),
   };
+  const whatsapp: any = { sendText: jest.fn(async () => ({})) };
   return {
-    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala, conversations),
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala, conversations, whatsapp),
     settings,
     assignments,
     convRepo,

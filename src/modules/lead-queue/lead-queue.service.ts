@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, Inject, forwardRef } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, LessThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -9,6 +9,7 @@ import { User, UserRole } from "../users/user.entity";
 import { Lead, LeadStatus } from "../leads/lead.entity";
 import { EscalaService } from "../escala/escala.service";
 import { ConversationsService } from "../conversations/conversations.service";
+import { WhatsappService } from "../whatsapp/whatsapp.service";
 
 @Injectable()
 export class LeadQueueService {
@@ -26,8 +27,29 @@ export class LeadQueueService {
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
     private readonly escala: EscalaService,
-    private readonly conversations: ConversationsService
+    private readonly conversations: ConversationsService,
+    @Inject(forwardRef(() => WhatsappService))
+    private readonly whatsapp: WhatsappService
   ) {}
+
+  /**
+   * Avisa o cliente, quando o turno abre e o lead aguardando é distribuído, que
+   * agora será atendido pelo especialista X (nome do corretor). Best-effort:
+   * registra no histórico e envia pelo número central (instanceOwnerId da conversa).
+   */
+  private async avisarEspecialistaNoTurno(conversationId: string, userId: string) {
+    try {
+      const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+      if (!conv?.remoteJid || !conv.instanceOwnerId) return;
+      const u = await this.usersRepo.findOne({ where: { id: userId } });
+      const nome = u?.name ? u.name.split(" ").slice(0, 2).join(" ") : "um especialista";
+      const msg = `Olá! 👋 Você agora será atendido pelo nosso especialista *${nome}*, que já vai falar com você. 🏡`;
+      await this.conversations.addMessage(conv.id, msg, "out", false).catch(() => {});
+      await this.whatsapp.sendText(`user_${conv.instanceOwnerId}`, conv.remoteJid, msg);
+    } catch (err) {
+      this.logger.warn(`Falha ao avisar especialista no turno: ${(err as Error).message}`);
+    }
+  }
 
   /**
    * Atribuir na fila tem que refletir NO LEAD também: antes só a conversa
@@ -202,6 +224,8 @@ export class LeadQueueService {
       a.dueAt = this.prazo(s);
       await this.assignRepo.save(a);
       await this.atribuir(a.conversationId, a.leadId, userId);
+      // Turno abriu: avisa o cliente citando o nome do corretor que pegou o lead.
+      await this.avisarEspecialistaNoTurno(a.conversationId, userId);
       count++;
     }
     await this.settingsRepo.save(s);
