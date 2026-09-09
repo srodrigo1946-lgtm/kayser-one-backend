@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Put, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { LeadQueueService } from "./lead-queue.service";
@@ -48,6 +48,13 @@ export class LeadQueueController {
   @ApiOperation({ summary: "Ordem da fila agora (todos os cargos VEEM, só leitura)" })
   ordem() {
     return this.queue.getOrdem();
+  }
+
+  @Post("testar-email")
+  @UseGuards(DiretorGuard)
+  @ApiOperation({ summary: "Testa o disparo de e-mail de novo lead (envia pro Diretor)" })
+  testarEmail(@Request() req: any) {
+    return this.queue.testarEmail(req.user);
   }
 
   @Post("distribuir/:leadId")

@@ -50,8 +50,9 @@ function make(
     addMessage: jest.fn(async () => ({})),
   };
   const whatsapp: any = { sendText: jest.fn(async () => ({})) };
+  const config: any = { get: jest.fn(() => undefined) };
   return {
-    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala, conversations, whatsapp),
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala, conversations, whatsapp, config),
     settings,
     assignments,
     convRepo,

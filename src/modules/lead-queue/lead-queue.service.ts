@@ -10,6 +10,7 @@ import { Lead, LeadStatus } from "../leads/lead.entity";
 import { EscalaService } from "../escala/escala.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
+import { ConfigService } from "@nestjs/config";
 
 @Injectable()
 export class LeadQueueService {
@@ -29,8 +30,45 @@ export class LeadQueueService {
     private readonly escala: EscalaService,
     private readonly conversations: ConversationsService,
     @Inject(forwardRef(() => WhatsappService))
-    private readonly whatsapp: WhatsappService
+    private readonly whatsapp: WhatsappService,
+    private readonly config: ConfigService
   ) {}
+
+  /**
+   * Dispara e-mail pro CORRETOR só AVISANDO que caiu um lead pra ele — SEM dados do
+   * cliente (nome/telefone ficam só no sistema). Usa nome/e-mail do próprio corretor.
+   * Best-effort via Resend: sem RESEND_API_KEY, é no-op. Nunca quebra a atribuição.
+   */
+  private async notificarLeadPorEmail(userId: string) {
+    try {
+      const apiKey = this.config.get<string>("RESEND_API_KEY");
+      if (!apiKey || !userId) return;
+      const user = await this.usersRepo.findOne({ where: { id: userId } });
+      if (!user?.email) return;
+      const primeiroNome = (user.name || "").split(" ")[0] || "corretor";
+      const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
+      const html = `
+        <div style="font-family:Arial,sans-serif">
+          <h2>📥 Você recebeu um novo lead!</h2>
+          <p>Olá, ${primeiroNome}! Caiu um novo lead pra você no Kayser One.</p>
+          <p>Entre no sistema e atenda o quanto antes — o tempo conta na distribuição da fila.</p>
+          <p><a href="https://www.kayserone.com.br/whatsapp">Abrir o Kayser One</a></p>
+        </div>`;
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from,
+          to: [user.email],
+          subject: "📥 Você recebeu um novo lead — Kayser One",
+          html,
+        }),
+      });
+      if (!res.ok) this.logger.warn(`Resend (lead) falhou (${res.status})`);
+    } catch (err) {
+      this.logger.warn(`Falha ao notificar lead por e-mail: ${(err as Error).message}`);
+    }
+  }
 
   /**
    * Avisa o cliente, quando o turno abre e o lead aguardando é distribuído, que
@@ -59,6 +97,18 @@ export class LeadQueueService {
   private async atribuir(conversationId: string, leadId: string | undefined, userId: string) {
     await this.convRepo.update(conversationId, { assignedToId: userId });
     if (leadId) await this.leadsRepo.update(leadId, { responsavelId: userId });
+    // Avisa o corretor por e-mail que caiu um lead (sem bloquear a atribuição).
+    void this.notificarLeadPorEmail(userId);
+  }
+
+  /** Teste do disparo de e-mail: manda o aviso de "novo lead" pro próprio Diretor. */
+  async testarEmail(requester: User): Promise<{ ok: boolean; to?: string; motivo?: string }> {
+    if (!this.config.get<string>("RESEND_API_KEY")) {
+      return { ok: false, motivo: "RESEND_API_KEY não está configurada no Railway — o e-mail está desligado." };
+    }
+    if (!requester.email) return { ok: false, motivo: "Seu usuário não tem e-mail cadastrado." };
+    await this.notificarLeadPorEmail(requester.id);
+    return { ok: true, to: requester.email };
   }
 
   /**
