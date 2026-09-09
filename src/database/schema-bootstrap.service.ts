@@ -21,6 +21,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     const steps: Array<[string, () => Promise<void>]> = [
       ["ensureLeadSource", () => this.ensureLeadSource()],
       ["ensureLeadValorVenda", () => this.ensureLeadValorVenda()],
+      ["ensureDataVendaBackfill", () => this.ensureDataVendaBackfill()],
       ["ensureLeadCadastroCompleto", () => this.ensureLeadCadastroCompleto()],
       ["ensurePastaTable", () => this.ensurePastaTable()],
       ["ensureEmpresaTable", () => this.ensureEmpresaTable()],
@@ -71,6 +72,29 @@ export class SchemaBootstrapService implements OnModuleInit {
   private async ensureLeadValorVenda() {
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "valorVenda" numeric`);
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "dataVenda" date`);
+  }
+
+  /**
+   * Backfill de dataVenda pras vendas ANTIGAS sem data: usa a data em que virou
+   * "venda_ganha" no histórico (confiável); se não houver histórico, cai no
+   * updatedAt. Só toca em quem está NULL — idempotente.
+   */
+  private async ensureDataVendaBackfill() {
+    await this.dataSource
+      .query(`
+        UPDATE leads l SET "dataVenda" = sub.dt
+        FROM (
+          SELECT lh."leadId", MAX(lh."createdAt")::date AS dt
+          FROM lead_history lh
+          WHERE lh."toStatus" = 'venda_ganha'
+          GROUP BY lh."leadId"
+        ) sub
+        WHERE l.id = sub."leadId" AND l.status = 'venda_ganha' AND l."dataVenda" IS NULL
+      `)
+      .catch(() => {});
+    await this.dataSource
+      .query(`UPDATE leads SET "dataVenda" = "updatedAt"::date WHERE status = 'venda_ganha' AND "dataVenda" IS NULL`)
+      .catch(() => {});
   }
 
   /** Cadastro completo do cliente (financiamento / Subir Pasta para Análise). */

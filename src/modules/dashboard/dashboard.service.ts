@@ -78,7 +78,7 @@ export class DashboardService {
       .addSelect("(user.avatar IS NOT NULL)", "hasAvatar")
       // Números do MÊS VIGENTE (barra de progresso respeita o mês)
       .addSelect(
-        "COUNT(lead.id) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end)",
+        "COUNT(lead.id) FILTER (WHERE lead.status = :venda AND lead.dataVenda BETWEEN :start AND :end)",
         "vendas"
       )
       .addSelect("COUNT(lead.id) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
@@ -166,12 +166,12 @@ export class DashboardService {
       .addSelect("user.name", "nome")
       .addSelect("user.role", "role")
       .addSelect(
-        "COUNT(lead.id) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end)",
+        "COUNT(lead.id) FILTER (WHERE lead.status = :venda AND lead.dataVenda BETWEEN :start AND :end)",
         "vendas"
       )
       .addSelect("COUNT(lead.id) FILTER (WHERE lead.createdAt BETWEEN :start AND :end)", "leads")
       .addSelect(
-        "COALESCE(SUM(lead.valorVenda) FILTER (WHERE lead.status = :venda AND lead.updatedAt BETWEEN :start AND :end), 0)",
+        "COALESCE(SUM(lead.valorVenda) FILTER (WHERE lead.status = :venda AND lead.dataVenda BETWEEN :start AND :end), 0)",
         "vgv"
       )
       .where("user.role IN (:...roles)", { roles })
@@ -230,7 +230,7 @@ export class DashboardService {
 
       const [leads, vendas, visitas] = await Promise.all([
         this.leadsRepo.count({ where: { ...base, createdAt: Between(start, end) } }),
-        this.leadsRepo.count({ where: { ...base, status: LeadStatus.VENDA_GANHA, updatedAt: Between(start, end) } }),
+        this.leadsRepo.count({ where: { ...base, status: LeadStatus.VENDA_GANHA, dataVenda: Between(start, end) as any } }),
         this.leadsRepo.count({ where: { ...base, status: LeadStatus.VISITA_REALIZADA, updatedAt: Between(start, end) } }),
       ]);
 
@@ -261,7 +261,7 @@ export class DashboardService {
       .select("COALESCE(SUM(lead.valorVenda), 0)", "total")
       .addSelect("COUNT(lead.id)", "vendas")
       .where("lead.status = :venda", { venda: LeadStatus.VENDA_GANHA })
-      .andWhere("lead.updatedAt BETWEEN :start AND :end", { start, end });
+      .andWhere("lead.dataVenda BETWEEN :start AND :end", { start, end });
 
     if (scopeIds !== null) {
       qb.andWhere("lead.responsavelId IN (:...ids)", { ids: scopeIds });
@@ -293,7 +293,7 @@ export class DashboardService {
       .addSelect("COALESCE(SUM(lead.valorVenda), 0)", "vgv")
       .addSelect("COUNT(lead.id)", "vendas")
       .where("lead.status = :venda", { venda: LeadStatus.VENDA_GANHA })
-      .andWhere("lead.updatedAt BETWEEN :start AND :end", { start, end })
+      .andWhere("lead.dataVenda BETWEEN :start AND :end", { start, end })
       // Empresa parceira (corretor + empresaId) não entra como campeão.
       .andWhere("user.empresaId IS NULL")
       .groupBy("user.id")

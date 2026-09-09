@@ -73,7 +73,7 @@ export class GoalsService {
     for (const goal of goals) {
       const [achievedSales, achievedVisits] = await Promise.all([
         this.leadsRepo.count({
-          where: { responsavelId: goal.userId, status: LeadStatus.VENDA_GANHA, updatedAt: Between(start, end) },
+          where: { responsavelId: goal.userId, status: LeadStatus.VENDA_GANHA, dataVenda: Between(start, end) as any },
         }),
         this.leadsRepo.count({
           where: { responsavelId: goal.userId, status: LeadStatus.VISITA_REALIZADA, updatedAt: Between(start, end) },
