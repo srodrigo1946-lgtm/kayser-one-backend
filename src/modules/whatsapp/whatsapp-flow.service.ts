@@ -248,12 +248,20 @@ export class WhatsappFlowService {
     ctwaPayload?: string;
   } | null {
     if (!obj || typeof obj !== "object" || depth > 6) return null;
-    if (obj.externalAdReply !== undefined || obj.entryPointConversionSource !== undefined) {
+    // Sinais EXCLUSIVOS de anúncio "Clique para WhatsApp" (Baileys/Meta variam o
+    // lugar e às vezes só mandam um deles) — qualquer um já confirma que veio de ad.
+    if (
+      obj.externalAdReply !== undefined ||
+      obj.entryPointConversionSource !== undefined ||
+      obj.conversionSource !== undefined ||
+      obj.ctwaClid !== undefined ||
+      obj.conversionData !== undefined
+    ) {
       return {
         externalAdReply: obj.externalAdReply,
-        entryPointConversionSource: obj.entryPointConversionSource,
+        entryPointConversionSource: obj.entryPointConversionSource || obj.conversionSource,
         entryPointConversionApp: obj.entryPointConversionApp,
-        ctwaPayload: obj.ctwaPayload,
+        ctwaPayload: obj.ctwaPayload || obj.ctwaClid,
       };
     }
     for (const k of Object.keys(obj)) {
