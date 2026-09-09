@@ -116,6 +116,25 @@ export class ConversationsService {
   }
 
   /**
+   * Marca a conversa como "NÃO é lead" (contato pessoal): remove o lead do CRM,
+   * desvincula e sinaliza pra que futuras mensagens desse número NÃO virem lead.
+   */
+  async marcarNaoLead(conversationId: string, requester: User) {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+    if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    await this.assertConvScope(conv, requester);
+    const leadId = conv.leadId;
+    conv.naoLead = true;
+    conv.leadId = null as any;
+    conv.assignedToId = null as any;
+    await this.convRepo.save(conv);
+    // Tira o lead do CRM (Leads/Kanban). Best-effort: se travar FK, a conversa já
+    // ficou desvinculada e fora das listas.
+    if (leadId) await this.leadsRepo.delete({ id: leadId }).catch(() => {});
+    return { ok: true };
+  }
+
+  /**
    * Define as etiquetas da conversa e integra com Kanban/Agenda:
    * cada etiqueta recém-adicionada move o lead para a coluna correspondente do
    * Kanban; "agendamento" também cria um compromisso na Agenda.

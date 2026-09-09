@@ -42,6 +42,11 @@ export class Conversation {
   @JoinColumn({ name: "leadId" })
   lead: Lead;
 
+  // Marcada como "não é lead" (contato pessoal): não vira lead nem entra na fila,
+  // e some do CRM. Mensagens futuras desse número ficam só no WhatsApp.
+  @Column({ default: false })
+  naoLead: boolean;
+
   // Atendente responsável pela conversa (define a visibilidade por equipe).
   @Column({ nullable: true })
   assignedToId: string;

@@ -289,6 +289,9 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(
       `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS "isGroup" boolean NOT NULL DEFAULT false`
     );
+    await this.dataSource.query(
+      `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS "naoLead" boolean NOT NULL DEFAULT false`
+    );
   }
 
   /** Previsão de entrega do empreendimento (texto livre). */

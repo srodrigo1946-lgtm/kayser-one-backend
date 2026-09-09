@@ -46,6 +46,12 @@ export class WhatsappFlowService {
         return { persisted: true, fromMe: true };
       }
 
+      // Contato marcado como "NÃO é lead" (pessoal): não gera lead/fila/IA. A
+      // mensagem fica só no WhatsApp — nem registra no CRM (conversa já saiu de lá).
+      if ((conv as any).naoLead) {
+        return { persisted: false, naoLead: true };
+      }
+
       // Baixa a mídia (imagem/áudio/vídeo/documento) para exibir no chat.
       let media: { mediaType: string; mediaMime: string; base64: string } | undefined;
       if (mediaType && mediaType !== "location" && mediaType !== "contact" && instanceName) {

@@ -1,4 +1,7 @@
 import { Controller, Get, Patch, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../users/user.entity";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Response } from "express";
 import { ConversationsService } from "./conversations.service";
@@ -39,6 +42,14 @@ export class ConversationsController {
   @ApiOperation({ summary: "Definir as etiquetas da conversa (integra Kanban + Agenda)" })
   etiquetas(@Param("id") id: string, @Body() body: { etiquetas: string[] }, @Request() req: any) {
     return this.conversationsService.setEtiquetas(id, body?.etiquetas ?? [], req.user);
+  }
+
+  @Patch(":id/nao-lead")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
+  @ApiOperation({ summary: 'Marcar a conversa como "não é lead" (contato pessoal — remove do CRM e não volta)' })
+  naoLead(@Param("id") id: string, @Request() req: any) {
+    return this.conversationsService.marcarNaoLead(id, req.user);
   }
 }
 
