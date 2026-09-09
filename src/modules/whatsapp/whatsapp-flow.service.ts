@@ -75,23 +75,17 @@ export class WhatsappFlowService {
         await this.conversations.setContactInfo(conv.id, info.name, info.avatar);
       }
 
-      // REGRA: só o NÚMERO CENTRAL (Diretor) gera lead/rodízio automático. No
-      // WhatsApp de um cargo, quem chega é cliente dele, contato pessoal ou grupo
-      // — nada disso pode virar lead aleatório nem entrar na fila. Grupo nunca.
-      let recebeuNoCentral = false;
-      if (ad && !isGroup && receivingUserId) {
+      // É o NÚMERO CENTRAL (Diretor)? Só ele gera lead/rodízio automático — e no
+      // central a IA NÃO responde ninguém (quem atende é o humano/especialista).
+      let ehCentral = false;
+      if (!isGroup && receivingUserId) {
         const dono = await this.users.findOne(receivingUserId).catch(() => null);
-        recebeuNoCentral = dono?.role === UserRole.DIRETOR;
-        if (!recebeuNoCentral) {
-          this.logger.log(
-            `Anúncio ignorado para a fila: chegou no número de um cargo (${receivingUserId}), não no central.`
-          );
-        }
+        ehCentral = dono?.role === UserRole.DIRETOR;
       }
 
       // Anúncio "Clique para WhatsApp" NO NÚMERO CENTRAL: marca origem/campanha e,
       // se a fila estiver ligada, distribui em rodízio entre os cargos.
-      if (ad && !isGroup && recebeuNoCentral) {
+      if (ad && !isGroup && ehCentral) {
         // Log para diagnóstico: sem isto, um anúncio que chega num formato
         // inesperado não distribui e não deixa rastro nenhum.
         this.logger.log(
@@ -113,6 +107,11 @@ export class WhatsappFlowService {
       // Lead do número central (anúncio): a IA NÃO responde. O especialista humano
       // assume a conversa. Isso vale para TODAS as mensagens do lead, não só a 1ª.
       if (conv.fromAd) return { persisted: true, autoReply: false, central: true };
+
+      // NÚMERO CENTRAL: a IA não responde NINGUÉM (amigos, orgânico, colegas). Só o
+      // lead de anúncio recebe o aviso do especialista (acima). Bloqueia o resto —
+      // era a IA respondendo os contatos pessoais do Rodrigo.
+      if (ehCentral) return { persisted: true, autoReply: false, central: true };
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
       if (mediaType) return { persisted: true, autoReply: false, media: mediaType };
