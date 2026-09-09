@@ -31,7 +31,7 @@ function make(
       return v;
     }),
   };
-  const convRepo: any = { update: jest.fn(async () => ({})), findOne: jest.fn(async () => null) };
+  const convRepo: any = { update: jest.fn(async () => ({})), findOne: jest.fn(async () => ({ id: "c", naoLead: false })) };
   const idsValidos: string[] = validUserIds ?? turno ?? [];
   const usersRepo: any = {
     find: jest.fn(async () =>
@@ -130,7 +130,7 @@ describe("LeadQueueService", () => {
 
   it("liberarAguardando distribui os represados quando abre o turno", async () => {
     const aguardando = { conversationId: "c1", leadId: "l1", status: "aguardando", assignedToId: "" };
-    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [aguardando], ["A"]);
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [aguardando], ["A"], undefined, {}, { id: "l1", status: "novo_lead" });
     await svc.liberarAguardando();
     expect(aguardando.status).toBe("pendente");
     expect(aguardando.assignedToId).toBe("A");
@@ -163,6 +163,18 @@ describe("LeadQueueService", () => {
     await svc.reassignExpired();
     expect(venc.status).toBe("expirado");
     expect(assignments.some((x) => x.status === "pendente" && x.assignedToId === "B")).toBe(true);
+  });
+
+  it("SLA: lead excluído / 'não é lead' encerra a atribuição sem reenviar nem repassar", async () => {
+    const venc = { conversationId: "c1", leadId: "L1", assignedToId: "A", status: "pendente", dueAt: new Date(Date.now() - 1000), attempts: 1 };
+    const { svc, assignments } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [venc], ["A", "B"], undefined, {}, null // lead=null → excluído
+    );
+    await svc.reassignExpired();
+    expect(venc.status).toBe("atendido");
+    // Não cria nova atribuição (não repassa pro próximo).
+    expect(assignments.filter((x) => x.status === "pendente").length).toBe(0);
   });
 
   it("markAttended encerra o SLA quando o cargo atribuído responde", async () => {

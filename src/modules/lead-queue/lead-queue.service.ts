@@ -253,6 +253,21 @@ export class LeadQueueService {
     };
   }
 
+  /**
+   * Atribuição "morta": conversa marcada "não é lead" (contato pessoal) OU o lead
+   * foi excluído. Não deve reatribuir nem reenviar mensagem — senão vira spam
+   * (o timer de 15 min ficava reenviando pra amigo/colega). Encerra a atribuição.
+   */
+  private async assignmentMorto(a: LeadQueueAssignment): Promise<boolean> {
+    const conv = await this.convRepo.findOne({ where: { id: a.conversationId } });
+    if (!conv || conv.naoLead) return true;
+    if (a.leadId) {
+      const lead = await this.leadsRepo.findOne({ where: { id: a.leadId } });
+      if (!lead) return true;
+    }
+    return false;
+  }
+
   /** Distribui os leads `aguardando` quando um turno abre. Roda a cada minuto. */
   @Cron(CronExpression.EVERY_MINUTE)
   async liberarAguardando(): Promise<number> {
@@ -267,6 +282,12 @@ export class LeadQueueService {
     });
     let count = 0;
     for (const a of espera) {
+      // Conversa pessoal ("não é lead") ou lead excluído → encerra, não distribui.
+      if (await this.assignmentMorto(a)) {
+        a.status = "atendido";
+        await this.assignRepo.save(a);
+        continue;
+      }
       const userId = this.proximo(s, membros);
       a.status = "pendente";
       a.assignedToId = userId;
@@ -305,6 +326,13 @@ export class LeadQueueService {
     const membros = await this.atendentesDoTurno();
     let count = 0;
     for (const a of expired) {
+      // Conversa pessoal ("não é lead") ou lead excluído → encerra, NÃO reenvia
+      // mensagem nem reatribui (era isso que virava spam de 15 em 15 min).
+      if (await this.assignmentMorto(a)) {
+        a.status = "atendido";
+        await this.assignRepo.save(a);
+        continue;
+      }
       // Se o corretor JÁ AGIU (moveu do "Novo Lead" p/ Primeiro Contato ou além),
       // o timer encerra e o lead NÃO passa pro próximo — só anda se ficou "Novo Lead".
       if (a.leadId) {
