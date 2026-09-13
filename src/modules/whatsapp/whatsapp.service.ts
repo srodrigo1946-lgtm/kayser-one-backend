@@ -137,20 +137,25 @@ export class WhatsappService {
         : "document";
     // Aceita data URI ("data:...;base64,XXX") ou base64 puro.
     const media = file.base64.includes(",") ? file.base64.split(",")[1] : file.base64;
-    const { data } = await axios.post(
-      `${this.apiUrl}/message/sendMedia/${instanceName}`,
-      {
-        number,
-        mediatype,
-        mimetype: file.mimetype,
-        media,
-        fileName: file.fileName,
-        ...(file.caption ? { caption: file.caption } : {}),
-      },
-      { headers: this.headers }
-    );
-    this.logger.log(`Mídia (${mediatype}) enviada para ${number} via ${instanceName}`);
-    return data;
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/message/sendMedia/${instanceName}`,
+        {
+          number,
+          mediatype,
+          mimetype: file.mimetype,
+          media,
+          fileName: file.fileName,
+          ...(file.caption ? { caption: file.caption } : {}),
+        },
+        { headers: this.headers }
+      );
+      this.logger.log(`Mídia (${mediatype}) enviada para ${number} via ${instanceName}`);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`Evolution /sendMedia falhou: ${err?.message}`);
+      throw new ServiceUnavailableException(EVOLUTION_FORA);
+    }
   }
 
   async sendText(instanceName: string, to: string, text: string) {
@@ -158,13 +163,18 @@ export class WhatsappService {
     // (grupo @g.us ou contato @s.whatsapp.net) usamos como está; senão
     // mandamos só os dígitos e a Evolution resolve o destino.
     const number = to.includes("@") ? to : to.replace(/\D/g, "");
-    const { data } = await axios.post(
-      `${this.apiUrl}/message/sendText/${instanceName}`,
-      { number, text },
-      { headers: this.headers }
-    );
-    this.logger.log(`Mensagem enviada para ${number} via ${instanceName}`);
-    return data;
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/message/sendText/${instanceName}`,
+        { number, text },
+        { headers: this.headers }
+      );
+      this.logger.log(`Mensagem enviada para ${number} via ${instanceName}`);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`Evolution /sendText falhou: ${err?.message}`);
+      throw new ServiceUnavailableException(EVOLUTION_FORA);
+    }
   }
 
   /** Busca a URL da foto de perfil de um contato. Retorna null se não houver/for privada. */
