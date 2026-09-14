@@ -25,6 +25,11 @@ export class LeadQueueAssignment {
   @Column()
   dueAt: Date;
 
+  // Lead AGENDADO: se preenchido, só entra no rodízio a partir deste horário
+  // (fica "aguardando" até lá, mesmo com plantão aberto). Null = entra normal.
+  @Column({ type: "timestamp", nullable: true })
+  agendadoPara: Date | null;
+
   @Column({ default: "pendente" })
   status: AssignmentStatus;
 

@@ -37,6 +37,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureAdInvestmentTable", () => this.ensureAdInvestmentTable()],
       ["ensureAdInvestmentDayTable", () => this.ensureAdInvestmentDayTable()],
       ["ensureFeedbackTable", () => this.ensureFeedbackTable()],
+      ["ensureAssignmentAgendado", () => this.ensureAssignmentAgendado()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -242,6 +243,13 @@ export class SchemaBootstrapService implements OnModuleInit {
         texto text NOT NULL,
         "createdAt" timestamp DEFAULT now()
       )`);
+  }
+
+  /** Lead agendado: horário a partir do qual a atribuição "aguardando" entra no rodízio. */
+  private async ensureAssignmentAgendado() {
+    await this.dataSource.query(
+      `ALTER TABLE lead_queue_assignments ADD COLUMN IF NOT EXISTS "agendadoPara" timestamp`
+    );
   }
 
   /** Investimento em anúncio por mês (custo por lead). */

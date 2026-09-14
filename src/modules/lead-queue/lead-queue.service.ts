@@ -254,6 +254,53 @@ export class LeadQueueService {
   }
 
   /**
+   * Agenda um lead pra um horário FUTURO: cria/acha a conversa e deixa a atribuição
+   * "aguardando" com `agendadoPara`. O cron `liberarAguardando` só a distribui a
+   * partir desse horário (e havendo plantão) — cai no rodízio dos corretores da vez.
+   */
+  async agendarLead(
+    leadId: string,
+    quando: Date
+  ): Promise<{ status: "agendado" | "ja_na_fila" | "sem_telefone" | "fila_desligada" | "horario_invalido"; agendadoPara?: Date }> {
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
+    if (!lead) throw new NotFoundException("Lead não encontrado.");
+    if (!(quando instanceof Date) || isNaN(quando.getTime()) || quando.getTime() <= Date.now()) {
+      return { status: "horario_invalido" };
+    }
+
+    const s = await this.getSettings();
+    if (!s.enabled) return { status: "fila_desligada" };
+
+    const phone = (lead.phone || lead.whatsapp || "").replace(/\D/g, "");
+    if (!phone) return { status: "sem_telefone" };
+
+    const conv = await this.conversations.findOrCreateByPhone(phone);
+    if (!conv.leadId) await this.conversations.setLead(conv.id, lead.id, lead.name);
+
+    // Já tem atribuição em aberto? Não duplica (clique repetido / lead já na fila).
+    const aberta = await this.assignRepo.findOne({
+      where: [
+        { conversationId: conv.id, status: "pendente" },
+        { conversationId: conv.id, status: "aguardando" },
+      ],
+    });
+    if (aberta) return { status: "ja_na_fila" };
+
+    await this.assignRepo.save(
+      this.assignRepo.create({
+        conversationId: conv.id,
+        leadId: lead.id,
+        assignedToId: "",
+        dueAt: quando,
+        agendadoPara: quando,
+        status: "aguardando",
+        attempts: 0,
+      })
+    );
+    return { status: "agendado", agendadoPara: quando };
+  }
+
+  /**
    * Atribuição "morta": conversa marcada "não é lead" (contato pessoal) OU o lead
    * foi excluído. Não deve reatribuir nem reenviar mensagem — senão vira spam
    * (o timer de 15 min ficava reenviando pra amigo/colega). Encerra a atribuição.
@@ -280,8 +327,11 @@ export class LeadQueueService {
       where: { status: "aguardando" },
       order: { assignedAt: "ASC" },
     });
+    const agora = Date.now();
     let count = 0;
     for (const a of espera) {
+      // Lead AGENDADO pra mais tarde: segura até o horário marcado.
+      if (a.agendadoPara && new Date(a.agendadoPara).getTime() > agora) continue;
       // Conversa pessoal ("não é lead") ou lead excluído → encerra, não distribui.
       if (await this.assignmentMorto(a)) {
         a.status = "atendido";
@@ -417,7 +467,7 @@ export class LeadQueueService {
     turnoAtivo: boolean;
     ordem: { userId: string; nome: string; proximo: boolean }[];
     aguardando: number;
-    aguardandoLeads: { nome: string; phone: string }[];
+    aguardandoLeads: { nome: string; phone: string; agendadoPara?: Date }[];
   }> {
     const membros = await this.atendentesDoTurno(); // já na ordem do rodízio (escala)
     const s = await this.getSettings();
@@ -429,7 +479,11 @@ export class LeadQueueService {
     const leadById = new Map(leads.map((l) => [l.id, l]));
     const aguardandoLeads = espera.map((a) => {
       const l = a.leadId ? leadById.get(a.leadId) : undefined;
-      return { nome: l?.name ?? "Contato", phone: (l?.phone || l?.whatsapp || "") as string };
+      return {
+        nome: l?.name ?? "Contato",
+        phone: (l?.phone || l?.whatsapp || "") as string,
+        ...(a.agendadoPara ? { agendadoPara: a.agendadoPara } : {}),
+      };
     });
     const aguardando = espera.length;
 

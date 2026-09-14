@@ -209,6 +209,38 @@ describe("LeadQueueService", () => {
     expect((await svc.distribuirLeadManual("L1")).status).toBe("aguardando");
   });
 
+  it("agendarLead deixa o lead aguardando com o horário marcado", async () => {
+    const { svc, assignments } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [], ["A"], undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    const daqui2h = new Date(Date.now() + 2 * 3600_000);
+    const r = await svc.agendarLead("L1", daqui2h);
+    expect(r.status).toBe("agendado");
+    expect(assignments[0].status).toBe("aguardando");
+    expect(assignments[0].agendadoPara).toBe(daqui2h);
+  });
+
+  it("agendarLead recusa horário no passado", async () => {
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [], ["A"], undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    expect((await svc.agendarLead("L1", new Date(Date.now() - 1000))).status).toBe("horario_invalido");
+  });
+
+  it("liberarAguardando segura o lead agendado até o horário e solta depois", async () => {
+    const futuro = { conversationId: "c1", leadId: "l1", status: "aguardando", assignedToId: "", agendadoPara: new Date(Date.now() + 3600_000) };
+    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [futuro], ["A"], undefined, {}, { id: "l1", status: "novo_lead" });
+    await svc.liberarAguardando();
+    expect(futuro.status).toBe("aguardando"); // ainda não chegou a hora
+
+    futuro.agendadoPara = new Date(Date.now() - 1000); // horário passou
+    await svc.liberarAguardando();
+    expect(futuro.status).toBe("pendente");
+    expect(futuro.assignedToId).toBe("A");
+  });
+
   it("distribuirLeadManual com a fila desligada não distribui", async () => {
     const { svc } = make(
       { enabled: false, slaMinutes: 5, pointer: 0 },

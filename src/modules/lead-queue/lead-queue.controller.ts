@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsArray, IsBoolean, IsInt, IsISO8601, IsOptional, IsString, Min } from "class-validator";
 import { LeadQueueService } from "./lead-queue.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { DiretorGuard } from "../auth/guards/diretor.guard";
@@ -9,6 +9,11 @@ class UpdateQueueDto {
   @IsOptional() @IsBoolean() enabled?: boolean;
   @IsOptional() @IsInt() @Min(1) slaMinutes?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) memberIds?: string[];
+}
+
+class AgendarDto {
+  // Horário futuro em ISO (o front manda o datetime-local convertido pra ISO).
+  @IsISO8601() quando!: string;
 }
 
 @ApiTags("Fila de Leads")
@@ -62,5 +67,12 @@ export class LeadQueueController {
   @ApiOperation({ summary: "Joga um lead manual no rodízio de plantão (somente Diretor)" })
   distribuir(@Param("leadId") leadId: string) {
     return this.queue.distribuirLeadManual(leadId);
+  }
+
+  @Post("agendar/:leadId")
+  @UseGuards(DiretorGuard)
+  @ApiOperation({ summary: "Agenda um lead pra cair no rodízio num horário futuro (somente Diretor)" })
+  agendar(@Param("leadId") leadId: string, @Body() dto: AgendarDto) {
+    return this.queue.agendarLead(leadId, new Date(dto.quando));
   }
 }
