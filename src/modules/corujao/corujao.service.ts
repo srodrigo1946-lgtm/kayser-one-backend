@@ -107,6 +107,22 @@ export class CorujaoService {
     return { released, ...c };
   }
 
+  /** Diretor tira do pool os leads liberados (voltam pra fila; corretor deixa de ver). */
+  async removerDoPool(): Promise<{ removidos: number; noPool: number; naoLiberados: number }> {
+    const s = await this.settings.get();
+    const where = await this.eligibleWhere(s, true);
+    let removidos = 0;
+    if (where.length) {
+      const cur = await this.leadsRepo.find({ where, take: 1000 });
+      if (cur.length) {
+        await this.leadsRepo.update({ id: In(cur.map((c) => c.id)) }, { corujaoLiberado: false });
+        removidos = cur.length;
+      }
+    }
+    const c = await this.contagens();
+    return { removidos, ...c };
+  }
+
   /** Só corretor ATIVADO no Corujão pode PEGAR (aceitar) os leads do repique. */
   private podePegar(user: User): boolean {
     return user.role === UserRole.CORRETOR && user.corujao === true;

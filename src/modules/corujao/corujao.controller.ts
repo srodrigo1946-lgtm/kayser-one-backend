@@ -75,4 +75,11 @@ export class CorujaoController {
   liberar(@Body() dto: LiberarDto) {
     return this.corujao.liberar(dto.qtd);
   }
+
+  @Post("remover-pool")
+  @UseGuards(DiretorGuard)
+  @ApiOperation({ summary: "Tira do pool os leads liberados (voltam pra fila) (somente Diretor)" })
+  removerPool() {
+    return this.corujao.removerDoPool();
+  }
 }
