@@ -69,34 +69,36 @@ export class CorujaoService {
     });
   }
 
-  /** Só Diretor ou corretor ATIVADO no Corujão enxerga/pega o pool. */
-  private podeCorujao(user: User): boolean {
-    return user.role === UserRole.DIRETOR || user.corujao === true;
+  /** Só corretor ATIVADO no Corujão pode PEGAR (aceitar) os leads do repique. */
+  private podePegar(user: User): boolean {
+    return user.role === UserRole.CORRETOR && user.corujao === true;
   }
 
-  /** Lista do repique para a aba Corujão (sem dados sensíveis do responsável). */
+  /**
+   * Lista do repique para a aba Corujão. TODOS os cargos VEEM (monitoramento);
+   * só corretor ativado PEGA (`podePegar`). O dono atual só o Diretor vê.
+   */
   async getPool(user: User) {
-    if (!this.podeCorujao(user)) {
-      throw new ForbiddenException("Você não está ativado no Corujão. Peça ao Diretor para ativar.");
-    }
     const leads = await this.poolLeads();
-    // Só o Diretor vê o dono atual do lead; corretor não (privacidade).
     const ehDiretor = user.role === UserRole.DIRETOR;
-    return leads.map((l) => ({
-      id: l.id,
-      name: l.name,
-      phone: l.phone || l.whatsapp || "",
-      empreendimento: l.empreendimento || "",
-      origem: l.origem || "",
-      status: l.status,
-      ...(ehDiretor ? { responsavel: l.responsavel?.name || "—" } : {}),
-    }));
+    return {
+      podePegar: this.podePegar(user),
+      leads: leads.map((l) => ({
+        id: l.id,
+        name: l.name,
+        phone: l.phone || l.whatsapp || "",
+        empreendimento: l.empreendimento || "",
+        origem: l.origem || "",
+        status: l.status,
+        ...(ehDiretor ? { responsavel: l.responsavel?.name || "—" } : {}),
+      })),
+    };
   }
 
-  /** Corretor aceita a sugestão: o lead vira dele e volta para "Novo Lead". */
+  /** Corretor ativado aceita a sugestão: o lead vira dele e volta para "Novo Lead". */
   async aceitar(leadId: string, user: User) {
-    if (!this.podeCorujao(user)) {
-      throw new ForbiddenException("Você não está ativado no Corujão.");
+    if (!this.podePegar(user)) {
+      throw new ForbiddenException("Só corretores ativados no Corujão podem pegar leads.");
     }
     const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
     if (!lead) throw new NotFoundException("Lead não encontrado.");

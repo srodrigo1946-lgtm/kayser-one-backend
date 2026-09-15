@@ -30,11 +30,23 @@ function make(lead: any = { id: "L1", name: "Ney", status: "cliente_sem_interess
 }
 
 describe("CorujaoService", () => {
-  it("corretor NÃO ativado não vê o pool", async () => {
+  it("todos veem o pool, mas só corretor ativado pode pegar", async () => {
+    const { svc } = make();
+    const gerente = await svc.getPool({ id: "g1", role: UserRole.GERENTE, corujao: false } as any);
+    expect(gerente.podePegar).toBe(false);
+    expect(gerente.leads.length).toBe(1);
+    const corretor = await svc.getPool({ id: "c1", role: UserRole.CORRETOR, corujao: true } as any);
+    expect(corretor.podePegar).toBe(true);
+  });
+
+  it("não-corretor (ou corretor não ativado) NÃO pode aceitar", async () => {
     const { svc } = make();
     await expect(
-      svc.getPool({ id: "c1", role: UserRole.CORRETOR, corujao: false } as any)
-    ).rejects.toThrow(/não está ativado/i);
+      svc.aceitar("L1", { id: "g1", role: UserRole.GERENTE, corujao: false } as any)
+    ).rejects.toThrow(/corretores ativados/i);
+    await expect(
+      svc.aceitar("L1", { id: "c2", role: UserRole.CORRETOR, corujao: false } as any)
+    ).rejects.toThrow(/corretores ativados/i);
   });
 
   it("corretor ativado aceita: lead vira dele e volta pra Novo Lead", async () => {
