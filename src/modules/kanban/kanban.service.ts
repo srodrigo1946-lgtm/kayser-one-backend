@@ -62,13 +62,36 @@ export class KanbanService {
       order: { kanbanOrder: "ASC", updatedAt: "DESC" },
     });
 
+    // Data em que cada lead ENTROU na coluna atual (última mudança para o status
+    // atual, do histórico). Serve pro feedback: "há quanto tempo está nesta etapa".
+    // Best-effort: em sqlite/sem histórico cai no updatedAt.
+    const ids = leads.map((l) => l.id);
+    const sinceMap = new Map<string, Date>();
+    if (ids.length) {
+      try {
+        const rows: { id: string; dt: Date }[] = await this.leadsRepo.manager.query(
+          `SELECT lh."leadId" AS id, MAX(lh."createdAt") AS dt
+             FROM lead_history lh
+             JOIN leads l ON l.id = lh."leadId" AND lh."toStatus" = l.status
+            WHERE lh."leadId" = ANY($1)
+            GROUP BY lh."leadId"`,
+          [ids]
+        );
+        for (const r of rows) sinceMap.set(r.id, r.dt);
+      } catch {
+        /* sem histórico/sqlite — usa updatedAt no fallback abaixo */
+      }
+    }
+
     return columns.map((col) => ({
       id: col.key, // o front usa como status (drag & drop)
       columnId: col.id, // id no banco (para editar/remover)
       title: col.title,
       emoji: col.emoji,
       color: col.color,
-      leads: leads.filter((l) => l.status === col.key),
+      leads: leads
+        .filter((l) => l.status === col.key)
+        .map((l) => ({ ...l, stageSince: sinceMap.get(l.id) ?? l.updatedAt })),
     }));
   }
 
