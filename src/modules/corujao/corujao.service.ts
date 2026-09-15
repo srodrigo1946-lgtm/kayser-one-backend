@@ -45,21 +45,33 @@ export class CorujaoService {
     return cols.filter((c) => /sem\s*interesse/i.test(c.title || "")).map((c) => c.key);
   }
 
-  /** Leads elegíveis ao repique agora (coluna sem interesse + leads do Diretor). */
-  private async poolLeads(): Promise<Lead[]> {
-    const s = await this.settings.get();
+  /**
+   * WHERE dos leads elegíveis ao repique (coluna sem interesse + leads do Diretor).
+   * `liberado` filtra pelo flag corujaoLiberado (true = já no pool; false = na fila
+   * esperando o Diretor liberar; undefined = todos os elegíveis).
+   */
+  private async eligibleWhere(s: Settings, liberado?: boolean): Promise<any[]> {
     const statuses = await this.statusesAlvo(s);
+    const extra = liberado === undefined ? {} : { corujaoLiberado: liberado };
     const where: any[] = [];
-    if (statuses.length) where.push({ status: In(statuses) });
+    if (statuses.length) where.push({ status: In(statuses), ...extra });
     if (s.corujaoIncluirDiretor) {
       const did = await this.diretorId();
       if (did) {
         where.push({
           responsavelId: did,
           status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
+          ...extra,
         });
       }
     }
+    return where;
+  }
+
+  /** Leads JÁ liberados no pool (o que os corretores veem/pegam). */
+  private async poolLeads(): Promise<Lead[]> {
+    const s = await this.settings.get();
+    const where = await this.eligibleWhere(s, true);
     if (!where.length) return [];
     return this.leadsRepo.find({
       where,
@@ -67,6 +79,32 @@ export class CorujaoService {
       order: { updatedAt: "ASC" },
       take: 300,
     });
+  }
+
+  /** Contagens: quantos já estão no pool e quantos ainda faltam liberar. */
+  private async contagens(): Promise<{ noPool: number; naoLiberados: number }> {
+    const s = await this.settings.get();
+    const [wLib, wNao] = [await this.eligibleWhere(s, true), await this.eligibleWhere(s, false)];
+    const noPool = wLib.length ? await this.leadsRepo.count({ where: wLib }) : 0;
+    const naoLiberados = wNao.length ? await this.leadsRepo.count({ where: wNao }) : 0;
+    return { noPool, naoLiberados };
+  }
+
+  /** Diretor libera N leads (os mais antigos) da fila pro pool do repique. */
+  async liberar(qtd: number): Promise<{ released: number; noPool: number; naoLiberados: number }> {
+    const s = await this.settings.get();
+    const n = Math.max(1, Math.min(200, Math.floor(Number(qtd) || 0)));
+    const where = await this.eligibleWhere(s, false);
+    let released = 0;
+    if (where.length) {
+      const cand = await this.leadsRepo.find({ where, order: { updatedAt: "ASC" }, take: n });
+      if (cand.length) {
+        await this.leadsRepo.update({ id: In(cand.map((c) => c.id)) }, { corujaoLiberado: true });
+        released = cand.length;
+      }
+    }
+    const c = await this.contagens();
+    return { released, ...c };
   }
 
   /** Só corretor ATIVADO no Corujão pode PEGAR (aceitar) os leads do repique. */
@@ -166,10 +204,10 @@ export class CorujaoService {
   /** Config + estado para a aba (Diretor). */
   async getConfig() {
     const s = await this.settings.get();
-    const [cols, corretores, pool] = await Promise.all([
+    const [cols, corretores, cont] = await Promise.all([
       this.columnsRepo.find({ order: { position: "ASC" } }),
       this.usersRepo.find({ where: { role: UserRole.CORRETOR, active: true }, order: { name: "ASC" } }),
-      this.poolLeads(),
+      this.contagens(),
     ]);
     return {
       enabled: s.corujaoEnabled,
@@ -180,16 +218,25 @@ export class CorujaoService {
       corretores: corretores
         .filter((c) => !c.empresaId)
         .map((c) => ({ id: c.id, name: c.name, corujao: !!c.corujao })),
-      poolCount: pool.length,
+      poolCount: cont.noPool,
+      naoLiberados: cont.naoLiberados,
+      autoQtd: s.corujaoAutoQtd ?? 0,
     };
   }
 
-  async setConfig(dto: { enabled?: boolean; hora?: string; status?: string; incluirDiretor?: boolean }) {
+  async setConfig(dto: {
+    enabled?: boolean;
+    hora?: string;
+    status?: string;
+    incluirDiretor?: boolean;
+    autoQtd?: number;
+  }) {
     const patch: Partial<Settings> = {};
     if (dto.enabled !== undefined) patch.corujaoEnabled = dto.enabled;
     if (dto.hora !== undefined && /^\d{1,2}:\d{2}$/.test(dto.hora)) patch.corujaoHora = dto.hora;
     if (dto.status !== undefined) patch.corujaoStatus = dto.status;
     if (dto.incluirDiretor !== undefined) patch.corujaoIncluirDiretor = dto.incluirDiretor;
+    if (dto.autoQtd !== undefined) patch.corujaoAutoQtd = Math.max(0, Math.min(200, Math.floor(dto.autoQtd)));
     await this.settings.update(patch);
     return this.getConfig();
   }
@@ -222,7 +269,14 @@ export class CorujaoService {
     if (s.corujaoLastRun === hoje) return; // já rodou hoje
     if (this.horaBrasilia() !== (s.corujaoHora || "14:00")) return;
     await this.settings.update({ corujaoLastRun: hoje } as any);
+    // Libera automaticamente a cota do dia (se o Diretor configurou > 0).
+    let liberados = 0;
+    if ((s.corujaoAutoQtd ?? 0) > 0) {
+      liberados = (await this.liberar(s.corujaoAutoQtd)).released;
+    }
     const r = await this.puxarEnviar();
-    this.logger.log(`Corujão automático (${hoje} ${s.corujaoHora}): ${r.leads} lead(s), ${r.notificados} avisado(s).`);
+    this.logger.log(
+      `Corujão automático (${hoje} ${s.corujaoHora}): liberou ${liberados}, pool ${r.leads}, ${r.notificados} avisado(s).`
+    );
   }
 }

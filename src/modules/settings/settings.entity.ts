@@ -103,6 +103,10 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   corujaoLastRun: string;
 
+  // Quantos leads liberar automaticamente por dia no horário (0 = só manual).
+  @Column({ type: "int", default: 0 })
+  corujaoAutoQtd: number;
+
   // Links dos relatórios Looker da aba Grupo Direcional (o Diretor edita pela UI).
   @Column({ type: "text", nullable: true })
   direcionalUrl: string;

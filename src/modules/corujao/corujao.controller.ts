@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsBoolean, IsOptional, IsString } from "class-validator";
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 import { CorujaoService } from "./corujao.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { DiretorGuard } from "../auth/guards/diretor.guard";
@@ -10,10 +10,15 @@ class ConfigDto {
   @IsOptional() @IsString() hora?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsBoolean() incluirDiretor?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(200) autoQtd?: number;
 }
 
 class AtivarDto {
   @IsBoolean() ativo!: boolean;
+}
+
+class LiberarDto {
+  @IsInt() @Min(1) @Max(200) qtd!: number;
 }
 
 @ApiTags("Corujão")
@@ -61,5 +66,12 @@ export class CorujaoController {
   @ApiOperation({ summary: "Puxar o repique e avisar os corretores ativados (somente Diretor)" })
   puxar() {
     return this.corujao.puxarEnviar();
+  }
+
+  @Post("liberar")
+  @UseGuards(DiretorGuard)
+  @ApiOperation({ summary: "Libera N leads da fila pro pool do repique (somente Diretor)" })
+  liberar(@Body() dto: LiberarDto) {
+    return this.corujao.liberar(dto.qtd);
   }
 }

@@ -87,6 +87,10 @@ export class Lead {
   @Column({ type: "date", nullable: true })
   dataVenda: string;
 
+  // Corujão: lead liberado pelo Diretor pro pool do repique (aparece pros corretores).
+  @Column({ default: false })
+  corujaoLiberado: boolean;
+
   // Cadastro completo (financiamento / "Subir Pasta para Análise"). Endereço tem
   // o `cidade` reaproveitado acima.
   @Column({ nullable: true })
