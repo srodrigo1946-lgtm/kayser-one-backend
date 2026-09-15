@@ -8,6 +8,7 @@ describe("LeadsService", () => {
   let assignRepo: any;
   let history: any;
   let users: any;
+  let config: any;
   let service: LeadsService;
 
   const diretor = { id: "u1", name: "Rodrigo", role: UserRole.DIRETOR } as any;
@@ -17,6 +18,7 @@ describe("LeadsService", () => {
       create: jest.fn((x) => x),
       save: jest.fn(async (x) => ({ id: "l1", ...x })),
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       findAndCount: jest.fn().mockResolvedValue([[], 0]),
     };
     // Repositório de conversas: usado para sincronizar responsável do lead ↔ atendente.
@@ -24,13 +26,29 @@ describe("LeadsService", () => {
     assignRepo = { update: jest.fn().mockResolvedValue({}) };
     history = { log: jest.fn(), findByLead: jest.fn() };
     users = { getScopeIds: jest.fn().mockResolvedValue(null) };
-    service = new LeadsService(leadsRepo, convRepo, assignRepo, history, users);
+    config = { get: jest.fn(() => undefined) };
+    service = new LeadsService(leadsRepo, convRepo, assignRepo, history, users, config);
   });
 
   it("registra histórico de criação ao criar um lead", async () => {
     await service.create({ name: "Maria", phone: "11999990000" } as any, diretor);
     expect(history.log).toHaveBeenCalledWith(
       expect.objectContaining({ type: LeadHistoryType.CRIACAO, userId: "u1", leadId: "l1" })
+    );
+  });
+
+  it("bloqueia lead duplicado (mesmo telefone) e avisa no histórico", async () => {
+    leadsRepo.find.mockResolvedValue([
+      { id: "l0", name: "Maria", phone: "(11) 99999-0000", responsavel: { name: "Ney", email: "ney@x.com" } },
+    ]);
+    await expect(
+      service.create({ name: "Maria 2", phone: "11999990000" } as any, diretor)
+    ).rejects.toThrow(/já existe um lead/i);
+    // Não cria o duplicado…
+    expect(leadsRepo.save).not.toHaveBeenCalled();
+    // …e registra a tentativa no histórico do lead existente.
+    expect(history.log).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: "l0", type: LeadHistoryType.SISTEMA })
     );
   });
 

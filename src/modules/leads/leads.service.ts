@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { ConfigService } from "@nestjs/config";
 import { Repository, Like, In, FindOptionsWhere } from "typeorm";
 import * as XLSX from "xlsx";
 import { Lead, LeadStatus, LeadSource } from "./lead.entity";
@@ -14,6 +15,8 @@ import { LeadHistoryType } from "../lead-history/lead-history.entity";
 
 @Injectable()
 export class LeadsService {
+  private readonly logger = new Logger(LeadsService.name);
+
   constructor(
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
@@ -22,7 +25,8 @@ export class LeadsService {
     @InjectRepository(LeadQueueAssignment)
     private readonly assignRepo: Repository<LeadQueueAssignment>,
     private readonly history: LeadHistoryService,
-    private readonly users: UsersService
+    private readonly users: UsersService,
+    private readonly config: ConfigService
   ) {}
 
   async findHistory(leadId: string, user?: User) {
@@ -108,7 +112,79 @@ export class LeadsService {
     }
   }
 
+  /** Só dígitos, pra comparar telefone independente de formatação/máscara. */
+  private soDigitos(v?: string | null): string {
+    return (v || "").replace(/\D/g, "");
+  }
+
+  /**
+   * Barra cadastro de lead DUPLICADO (mesmo telefone). Se já existe, avisa quem
+   * tentou (mensagem), registra no histórico do lead existente e avisa o corretor
+   * responsável + o gerente dele por e-mail (best-effort). Só vale no cadastro
+   * MANUAL — os fluxos automáticos (anúncio/WhatsApp) passam source próprio.
+   */
+  private async assertNaoDuplicado(dto: CreateLeadDto) {
+    const digits = this.soDigitos(dto.phone) || this.soDigitos(dto.whatsapp);
+    if (!digits) return;
+    // Casa pelos últimos 8 dígitos (portável Postgres/sqlite) e confirma no JS.
+    const tail = digits.slice(-8);
+    const candidatos = await this.leadsRepo.find({
+      where: [{ phone: Like(`%${tail}`) }, { whatsapp: Like(`%${tail}`) }],
+      relations: ["responsavel", "responsavel.manager"],
+    });
+    const dup = candidatos.find(
+      (c) => this.soDigitos(c.phone) === digits || this.soDigitos(c.whatsapp) === digits
+    );
+    if (!dup) return;
+
+    const dono = dup.responsavel?.name || "sem responsável";
+    await this.avisarDuplicidade(dup).catch(() => {});
+    throw new ConflictException(
+      `Já existe um lead com esse telefone: "${dup.name}" — responsável: ${dono}. Não foi cadastrado de novo.`
+    );
+  }
+
+  /** Registra no histórico do lead existente e avisa corretor + gerente por e-mail. */
+  private async avisarDuplicidade(dup: Lead) {
+    await this.history
+      .log({
+        leadId: dup.id,
+        type: LeadHistoryType.SISTEMA,
+        description: "Tentativa de cadastrar este cliente de novo (telefone já existe). Cadastro bloqueado.",
+      })
+      .catch(() => {});
+
+    const destinos = [dup.responsavel?.email, dup.responsavel?.manager?.email].filter(
+      (e): e is string => !!e
+    );
+    const apiKey = this.config.get<string>("RESEND_API_KEY");
+    if (!apiKey || destinos.length === 0) return;
+    const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
+    const html = `
+      <div style="font-family:Arial,sans-serif">
+        <h2>⚠️ Cliente já cadastrado</h2>
+        <p>Alguém tentou cadastrar de novo um cliente que já está no Kayser One:</p>
+        <p><b>${dup.name}</b>${dup.phone ? ` — ${dup.phone}` : ""}</p>
+        <p>Responsável atual: <b>${dup.responsavel?.name || "—"}</b>. O cadastro duplicado foi bloqueado.</p>
+        <p><a href="https://www.kayserone.com.br/leads">Abrir no Kayser One</a></p>
+      </div>`;
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from,
+        to: destinos,
+        subject: "⚠️ Cliente já cadastrado — Kayser One",
+        html,
+      }),
+    }).then((r) => {
+      if (!r.ok) this.logger.warn(`Resend (duplicidade) falhou (${r.status})`);
+    });
+  }
+
   async create(dto: CreateLeadDto, user: User, source: LeadSource = LeadSource.MANUAL) {
+    // Só o cadastro manual barra duplicado — anúncio/WhatsApp entram por source próprio.
+    if (source === LeadSource.MANUAL) await this.assertNaoDuplicado(dto);
     const lead = this.leadsRepo.create({
       ...dto,
       source,
