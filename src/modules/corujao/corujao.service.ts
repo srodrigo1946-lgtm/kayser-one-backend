@@ -85,13 +85,15 @@ export class CorujaoService {
       podePegar: this.podePegar(user),
       leads: leads.map((l) => ({
         id: l.id,
-        name: l.name,
         empreendimento: l.empreendimento || "",
         origem: l.origem || "",
         status: l.status,
-        // Telefone e dono atual só pro Diretor; corretor/gerente só veem o número
-        // depois de ACEITAR (aí o lead vira dele e aparece normal no CRM).
-        ...(ehDiretor ? { phone: l.phone || l.whatsapp || "", responsavel: l.responsavel?.name || "—" } : {}),
+        // Nome, telefone e dono atual só pro Diretor. Corretor/gerente veem só que
+        // HÁ lead disponível (empreendimento/origem) e só descobrem quem é depois
+        // de ACEITAR — aí o lead vira dele e aparece normal no CRM.
+        ...(ehDiretor
+          ? { name: l.name, phone: l.phone || l.whatsapp || "", responsavel: l.responsavel?.name || "—" }
+          : {}),
       })),
     };
   }
