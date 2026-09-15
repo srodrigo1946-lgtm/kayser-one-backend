@@ -221,6 +221,7 @@ export class CorujaoService {
       poolCount: cont.noPool,
       naoLiberados: cont.naoLiberados,
       autoQtd: s.corujaoAutoQtd ?? 0,
+      agendadoPara: s.corujaoAgendadoPara ?? null,
     };
   }
 
@@ -230,6 +231,7 @@ export class CorujaoService {
     status?: string;
     incluirDiretor?: boolean;
     autoQtd?: number;
+    agendadoPara?: string | null;
   }) {
     const patch: Partial<Settings> = {};
     if (dto.enabled !== undefined) patch.corujaoEnabled = dto.enabled;
@@ -237,6 +239,10 @@ export class CorujaoService {
     if (dto.status !== undefined) patch.corujaoStatus = dto.status;
     if (dto.incluirDiretor !== undefined) patch.corujaoIncluirDiretor = dto.incluirDiretor;
     if (dto.autoQtd !== undefined) patch.corujaoAutoQtd = Math.max(0, Math.min(200, Math.floor(dto.autoQtd)));
+    if (dto.agendadoPara !== undefined) {
+      const d = dto.agendadoPara ? new Date(dto.agendadoPara) : null;
+      patch.corujaoAgendadoPara = d && !isNaN(d.getTime()) ? d : null;
+    }
     await this.settings.update(patch);
     return this.getConfig();
   }
@@ -260,10 +266,22 @@ export class CorujaoService {
     });
   }
 
-  /** Dispara o repique automático no horário configurado (1x/dia). */
+  /** Dispara o repique automático: agendamento único (data+hora) e/ou diário no horário. */
   @Cron(CronExpression.EVERY_MINUTE)
   async cronRepique() {
     const s = await this.settings.get();
+
+    // 1) Agendamento ÚNICO (data+hora marcada). Independe do "ligado" — foi agendado
+    // de propósito. Consome o campo ANTES de liberar pra não repetir.
+    if (s.corujaoAgendadoPara && new Date(s.corujaoAgendadoPara).getTime() <= Date.now()) {
+      await this.settings.update({ corujaoAgendadoPara: null } as any);
+      const qtd = (s.corujaoAutoQtd ?? 0) > 0 ? s.corujaoAutoQtd : 200;
+      const rel = await this.liberar(qtd);
+      const r = await this.puxarEnviar();
+      this.logger.log(`Corujão agendado disparou: liberou ${rel.released}, pool ${r.leads}, ${r.notificados} avisado(s).`);
+    }
+
+    // 2) Diário no horário (precisa estar ligado).
     if (!s.corujaoEnabled) return;
     const hoje = this.hojeBrasilia();
     if (s.corujaoLastRun === hoje) return; // já rodou hoje

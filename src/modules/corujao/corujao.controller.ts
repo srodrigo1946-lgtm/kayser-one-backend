@@ -11,6 +11,7 @@ class ConfigDto {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsBoolean() incluirDiretor?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(200) autoQtd?: number;
+  @IsOptional() @IsString() agendadoPara?: string; // ISO ("" limpa o agendamento)
 }
 
 class AtivarDto {

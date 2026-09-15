@@ -107,6 +107,11 @@ export class Settings {
   @Column({ type: "int", default: 0 })
   corujaoAutoQtd: number;
 
+  // Agendamento ÚNICO: data+hora pra liberar o Corujão automaticamente uma vez.
+  // Ao disparar, o cron limpa este campo. Null = sem agendamento.
+  @Column({ type: "timestamp", nullable: true })
+  corujaoAgendadoPara: Date | null;
+
   // Links dos relatórios Looker da aba Grupo Direcional (o Diretor edita pela UI).
   @Column({ type: "text", nullable: true })
   direcionalUrl: string;
