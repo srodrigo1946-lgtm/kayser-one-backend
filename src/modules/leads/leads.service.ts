@@ -202,10 +202,15 @@ export class LeadsService {
 
   async update(id: string, dto: UpdateLeadDto, user?: User) {
     const lead = await this.findOne(id, user);
-    // Origem (source) decide se o lead conta no Custo por Lead — SÓ o Diretor mexe.
-    // Corretor/gerente que mandar `source` no body é ignorado (não altera a contagem).
+    // Origem PAGA (anúncio/formulário Meta) mexe no Custo por Lead — só o Diretor
+    // marca. Corretor/gerente pode marcar origem NÃO-paga (ex.: "Time X" = manual)
+    // pra identificar o time, MAS não pode criar nem TIRAR uma origem paga (não
+    // rebaixa um lead de anúncio pra manual e some do custo).
+    const SOURCE_PAGO = ["anuncio", "formulario_meta"];
     if (dto.source !== undefined && user && user.role !== UserRole.DIRETOR) {
-      delete (dto as any).source;
+      if (SOURCE_PAGO.includes(dto.source) || SOURCE_PAGO.includes(lead.source)) {
+        delete (dto as any).source;
+      }
     }
     // Reatribuição só dentro da equipe do usuário.
     if (dto.responsavelId && user) {

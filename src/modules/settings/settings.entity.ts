@@ -76,6 +76,12 @@ export class Settings {
   @Column({ default: false })
   custoLeadVisivel: boolean;
 
+  // Origens extras de lead (times/captação) que o Diretor cadastra pela UI. Aparecem
+  // no seletor "Origem do lead" para todos os cargos. Não contam no Custo por Lead
+  // (entram como source "manual"). simple-array = texto separado por vírgula.
+  @Column({ type: "simple-array", default: "Time Tati,Time Helen,Time Allan,Time Marisa,Time Isabelle,Time Isaac,Time Andre,Time Edjane" })
+  leadOrigens: string[];
+
   // Links dos relatórios Looker da aba Grupo Direcional (o Diretor edita pela UI).
   @Column({ type: "text", nullable: true })
   direcionalUrl: string;

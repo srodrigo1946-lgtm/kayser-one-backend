@@ -230,6 +230,9 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);
+    await this.dataSource.query(
+      `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "leadOrigens" text DEFAULT 'Time Tati,Time Helen,Time Allan,Time Marisa,Time Isabelle,Time Isaac,Time Andre,Time Edjane'`
+    );
   }
 
   /** Anotações de 1-on-1 / feedback (individual ou de time). */

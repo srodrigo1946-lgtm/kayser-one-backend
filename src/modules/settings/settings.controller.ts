@@ -71,6 +71,9 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsBoolean()
   custoLeadVisivel?: boolean;
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  leadOrigens?: string[];
 }
 
 @ApiTags("Configurações")
