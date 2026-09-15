@@ -86,11 +86,12 @@ export class CorujaoService {
       leads: leads.map((l) => ({
         id: l.id,
         name: l.name,
-        phone: l.phone || l.whatsapp || "",
         empreendimento: l.empreendimento || "",
         origem: l.origem || "",
         status: l.status,
-        ...(ehDiretor ? { responsavel: l.responsavel?.name || "—" } : {}),
+        // Telefone e dono atual só pro Diretor; corretor/gerente só veem o número
+        // depois de ACEITAR (aí o lead vira dele e aparece normal no CRM).
+        ...(ehDiretor ? { phone: l.phone || l.whatsapp || "", responsavel: l.responsavel?.name || "—" } : {}),
       })),
     };
   }
