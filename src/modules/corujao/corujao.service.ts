@@ -80,14 +80,16 @@ export class CorujaoService {
       throw new ForbiddenException("Você não está ativado no Corujão. Peça ao Diretor para ativar.");
     }
     const leads = await this.poolLeads();
+    // Só o Diretor vê o dono atual do lead; corretor não (privacidade).
+    const ehDiretor = user.role === UserRole.DIRETOR;
     return leads.map((l) => ({
       id: l.id,
       name: l.name,
       phone: l.phone || l.whatsapp || "",
       empreendimento: l.empreendimento || "",
       origem: l.origem || "",
-      responsavel: l.responsavel?.name || "—",
       status: l.status,
+      ...(ehDiretor ? { responsavel: l.responsavel?.name || "—" } : {}),
     }));
   }
 
