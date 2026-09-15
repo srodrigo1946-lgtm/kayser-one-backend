@@ -82,6 +82,27 @@ export class Settings {
   @Column({ type: "simple-array", default: "Time Tati,Time Helen,Time Allan,Time Marisa,Time Isabelle,Time Isaac,Time Andre,Time Edjane" })
   leadOrigens: string[];
 
+  // ===== Corujão (repique de leads sem interesse) =====
+  // Liga o repique automático diário.
+  @Column({ default: false })
+  corujaoEnabled: boolean;
+
+  // Horário do repique automático (Brasília), "HH:MM". Diretor edita.
+  @Column({ default: "14:00" })
+  corujaoHora: string;
+
+  // Chave da coluna do Kanban usada como fonte (vazio = resolve por título "sem interesse").
+  @Column({ type: "text", nullable: true })
+  corujaoStatus: string;
+
+  // Inclui no repique os leads que estão com o Diretor.
+  @Column({ default: true })
+  corujaoIncluirDiretor: boolean;
+
+  // Último dia (YYYY-MM-DD, Brasília) em que o repique automático rodou (anti-duplicidade).
+  @Column({ type: "text", nullable: true })
+  corujaoLastRun: string;
+
   // Links dos relatórios Looker da aba Grupo Direcional (o Diretor edita pela UI).
   @Column({ type: "text", nullable: true })
   direcionalUrl: string;

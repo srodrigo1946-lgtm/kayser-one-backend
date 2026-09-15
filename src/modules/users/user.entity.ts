@@ -81,6 +81,11 @@ export class User {
   @Column({ default: true })
   approved: boolean;
 
+  // Corretor ativado para a fila do Corujão (repique de leads sem interesse).
+  // O Diretor liga/desliga; só quem está ligado recebe/pega os leads do repique.
+  @Column({ default: false })
+  corujao: boolean;
+
   @Column({ nullable: true })
   managerId: string;
 

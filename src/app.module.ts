@@ -23,6 +23,7 @@ import { DocumentsModule } from "./modules/documents/documents.module";
 import { BackupModule } from "./modules/backup/backup.module";
 import { LeadQueueModule } from "./modules/lead-queue/lead-queue.module";
 import { EscalaModule } from "./modules/escala/escala.module";
+import { CorujaoModule } from "./modules/corujao/corujao.module";
 import { MetaFormsModule } from "./modules/meta-forms/meta-forms.module";
 import { InvestimentoModule } from "./modules/investimento/investimento.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
@@ -85,6 +86,7 @@ import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
     BackupModule,
     LeadQueueModule,
     EscalaModule,
+    CorujaoModule,
     MetaFormsModule,
     InvestimentoModule,
     FeedbackModule,

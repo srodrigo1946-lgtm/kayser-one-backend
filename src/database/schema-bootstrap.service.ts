@@ -233,6 +233,13 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(
       `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "leadOrigens" text DEFAULT 'Time Tati,Time Helen,Time Allan,Time Marisa,Time Isabelle,Time Isaac,Time Andre,Time Edjane'`
     );
+    // Corujão (repique)
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoEnabled" boolean NOT NULL DEFAULT false`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoHora" varchar NOT NULL DEFAULT '14:00'`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoStatus" text`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoIncluirDiretor" boolean NOT NULL DEFAULT true`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoLastRun" text`);
+    await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "corujao" boolean NOT NULL DEFAULT false`);
   }
 
   /** Anotações de 1-on-1 / feedback (individual ou de time). */
