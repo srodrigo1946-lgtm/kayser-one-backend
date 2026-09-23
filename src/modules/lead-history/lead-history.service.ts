@@ -25,4 +25,10 @@ export class LeadHistoryService {
   findByLead(leadId: string) {
     return this.repo.find({ where: { leadId }, order: { createdAt: "DESC" } });
   }
+
+  /** Apaga um item (ou todos, sem historyId) do histórico do lead. Devolve quantos saíram. */
+  async remove(leadId: string, historyId?: string) {
+    const r = await this.repo.delete(historyId ? { id: historyId, leadId } : { leadId });
+    return { removidos: r.affected ?? 0 };
+  }
 }

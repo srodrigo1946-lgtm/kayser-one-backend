@@ -35,6 +35,14 @@ export class LeadsService {
     return this.history.findByLead(leadId);
   }
 
+  /** Apaga item do histórico (ou tudo, sem historyId). Só Diretor — guard no controller. */
+  async removeHistory(leadId: string, user: User, historyId?: string) {
+    await this.findOne(leadId, user);
+    const r = await this.history.remove(leadId, historyId);
+    if (historyId && r.removidos === 0) throw new NotFoundException("Item do histórico não encontrado.");
+    return r;
+  }
+
   async findAll(params: {
     status?: string;
     responsavelId?: string;

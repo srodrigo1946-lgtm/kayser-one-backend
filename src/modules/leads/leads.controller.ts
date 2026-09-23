@@ -56,6 +56,22 @@ export class LeadsController {
     return this.leadsService.findHistory(id, req.user);
   }
 
+  @Delete(":id/history")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Limpar todo o histórico do lead — só o Diretor" })
+  clearHistory(@Param("id") id: string, @Request() req: any) {
+    return this.leadsService.removeHistory(id, req.user);
+  }
+
+  @Delete(":id/history/:historyId")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Apagar um item do histórico do lead — só o Diretor" })
+  removeHistoryItem(@Param("id") id: string, @Param("historyId") historyId: string, @Request() req: any) {
+    return this.leadsService.removeHistory(id, req.user, historyId);
+  }
+
   @Post()
   @ApiOperation({ summary: "Criar novo lead" })
   create(@Body() dto: CreateLeadDto, @Request() req: any) {
