@@ -51,8 +51,8 @@ export class LeadQueueController {
 
   @Get("ordem")
   @ApiOperation({ summary: "Ordem da fila agora (todos os cargos VEEM, só leitura)" })
-  ordem() {
-    return this.queue.getOrdem();
+  ordem(@Request() req: any) {
+    return this.queue.getOrdem(req.user);
   }
 
   @Post("testar-email")

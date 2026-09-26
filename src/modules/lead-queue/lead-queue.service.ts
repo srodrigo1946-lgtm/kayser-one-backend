@@ -463,7 +463,7 @@ export class LeadQueueService {
    * rodízio + quem é o próximo (ponteiro). Sem dados sensíveis. Também traz quantos
    * leads estão aguardando o turno abrir.
    */
-  async getOrdem(): Promise<{
+  async getOrdem(user?: User): Promise<{
     turnoAtivo: boolean;
     ordem: { userId: string; nome: string; proximo: boolean }[];
     aguardando: number;
@@ -481,7 +481,8 @@ export class LeadQueueService {
       const l = a.leadId ? leadById.get(a.leadId) : undefined;
       return {
         nome: l?.name ?? "Contato",
-        phone: (l?.phone || l?.whatsapp || "") as string,
+        // Telefone do lead só pro Diretor (gerente/corretor veem só o nome).
+        phone: user?.role === UserRole.DIRETOR ? ((l?.phone || l?.whatsapp || "") as string) : "",
         ...(a.agendadoPara ? { agendadoPara: a.agendadoPara } : {}),
       };
     });
