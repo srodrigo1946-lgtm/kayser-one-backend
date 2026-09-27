@@ -336,6 +336,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["%villa sant%", "R. Lopo Saraiva, 179, Loja A – Pechincha, Rio de Janeiro – RJ"],
       ["%marine%", "Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro – RJ"],
       ["%ilha stay%", "Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro/RJ"],
+      ["%sky%", "Av. Mário Guimarães, 517 – Centro, Nova Iguaçu – RJ"],
     ];
     for (const [nome, endereco] of stands) {
       await this.dataSource.query(
