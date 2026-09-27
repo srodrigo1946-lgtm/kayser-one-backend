@@ -31,6 +31,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureSettingsColumns", () => this.ensureSettingsColumns()],
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
       ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
+      ["ensurePropertyStandAddress", () => this.ensurePropertyStandAddress()],
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
@@ -318,6 +319,11 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Previsão de entrega do empreendimento (texto livre). */
   private async ensurePropertyDeliveryDate() {
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "deliveryDate" varchar`);
+  }
+
+  /** Endereço do stand de vendas do empreendimento (cartão da visita pro cliente). */
+  private async ensurePropertyStandAddress() {
+    await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standAddress" varchar`);
   }
 
   /** Reuniões em vídeo (aba Reuniões). */

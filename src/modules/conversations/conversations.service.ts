@@ -455,11 +455,15 @@ export class ConversationsService {
 
   /** Histórico recente formatado para enviar à IA. */
   async getHistoryForAi(conversationId: string, limit = 20) {
-    const messages = await this.msgRepo.find({
-      where: { conversationId },
-      order: { createdAt: "ASC" },
-      take: limit,
-    });
+    // As ÚLTIMAS `limit` mensagens (antes pegava as 20 mais ANTIGAS — em conversa
+    // longa a IA não via o que o cliente acabou de dizer), em ordem cronológica.
+    const messages = (
+      await this.msgRepo.find({
+        where: { conversationId },
+        order: { createdAt: "DESC" },
+        take: limit,
+      })
+    ).reverse();
     return messages.map((m) => ({
       role: m.direction === "in" ? ("user" as const) : ("assistant" as const),
       content: m.content,

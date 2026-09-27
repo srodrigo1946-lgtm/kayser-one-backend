@@ -25,6 +25,7 @@ class UpsertPropertyDto {
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsNumber() vgv?: number;
   @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() standAddress?: string;
   @IsOptional() @IsString() bairro?: string;
   @IsOptional() @IsString() cidade?: string;
   @IsOptional() @IsString() estado?: string;

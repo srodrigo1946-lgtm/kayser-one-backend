@@ -43,6 +43,7 @@ function make(
     update: jest.fn(async () => ({})),
     findOne: jest.fn(async () => lead),
   };
+  const apptRepo: any = { update: jest.fn(async () => ({})), findOne: jest.fn(async () => null) };
   const escala: any = { turnoAtivo: jest.fn(async () => (turno ? { atendenteIds: turno } : null)) };
   const conversations: any = {
     findOrCreateByPhone: jest.fn(async (phone: string) => ({ id: `conv-${phone}`, leadId: null })),
@@ -52,7 +53,7 @@ function make(
   const whatsapp: any = { sendText: jest.fn(async () => ({})) };
   const config: any = { get: jest.fn(() => undefined) };
   return {
-    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, escala, conversations, whatsapp, config),
+    svc: new LeadQueueService(settingsRepo, assignRepo, convRepo, usersRepo, leadsRepo, apptRepo, escala, conversations, whatsapp, config),
     settings,
     assignments,
     convRepo,

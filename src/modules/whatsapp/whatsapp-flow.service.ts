@@ -7,6 +7,18 @@ import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
 
+/** Instrução extra da IA quando atende lead de anúncio FORA do plantão. */
+function promptForaDoPlantao(): string {
+  const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return `=== ATENDIMENTO FORA DO PLANTÃO ===
+Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora — VOCÊ atende este cliente que veio de um anúncio.
+- Seja cordial e breve (mensagens curtas de WhatsApp). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
+- Qualifique com naturalidade (nome, empreendimento de interesse, renda, FGTS, entrada), sem interrogatório.
+- Seu objetivo principal é AGENDAR UMA VISITA: pergunte o melhor dia e horário para o cliente.
+- Quando o cliente escolher dia E horário, confirme repetindo a data completa (ex.: "sábado, 28/09 às 10h") e diga que um especialista vai entrar em contato para confirmar.
+- Nunca diga que é um robô de forma fria; você é a assistente da equipe. Não prometa preço/condição que não esteja na base.`;
+}
+
 @Injectable()
 export class WhatsappFlowService {
   private readonly logger = new Logger(WhatsappFlowService.name);
@@ -98,15 +110,24 @@ export class WhatsappFlowService {
         const queue = await this.leadQueue.getSettings();
         if (queue.enabled) {
           const assignment = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId ?? undefined });
-          // A IA NÃO responde leads do número central — quem atende é o ESPECIALISTA
-          // (corretor do rodízio). Avisa o cliente e cita o nome do especialista.
-          await this.avisarEspecialista(conv, instanceName, remoteJidFull, assignment?.assignedToId);
+          // Em plantão: avisa o cliente com o nome do especialista (corretor do rodízio).
+          // Fora do plantão ("aguardando"): quem responde é a IA (abaixo), que atende e agenda visita.
+          const foraDoPlantao = assignment?.status === "aguardando" && (await this.settings.get()).aiAutoReply;
+          if (!foraDoPlantao) {
+            await this.avisarEspecialista(conv, instanceName, remoteJidFull, assignment?.assignedToId);
+          }
         }
       }
 
-      // Lead do número central (anúncio): a IA NÃO responde. O especialista humano
-      // assume a conversa. Isso vale para TODAS as mensagens do lead, não só a 1ª.
-      if (conv.fromAd) return { persisted: true, autoReply: false, central: true };
+      // Lead do número central (anúncio): em plantão a IA NÃO responde — o especialista
+      // humano assume. FORA do plantão (conversa aguardando o turno abrir), a IA atende,
+      // qualifica e tenta agendar a visita; quando o turno abre, o corretor assume.
+      if (conv.fromAd) {
+        if (mediaType || !(await this.leadQueue.estaAguardando(conv.id))) {
+          return { persisted: true, autoReply: false, central: true };
+        }
+        return this.responderForaDoPlantao(conv, instanceName, remoteJidFull);
+      }
 
       // NÚMERO CENTRAL: a IA não responde NINGUÉM (amigos, orgânico, colegas). Só o
       // lead de anúncio recebe o aviso do especialista (acima). Bloqueia o resto —
@@ -161,6 +182,53 @@ export class WhatsappFlowService {
       this.logger.error("Erro no fluxo de entrada do WhatsApp", err as any);
       return { error: true };
     }
+  }
+
+  /**
+   * IA atende o lead de anúncio FORA do plantão: responde, qualifica e, se o cliente
+   * confirmou dia/horário, grava a visita na Agenda (vai pro corretor quando o turno abrir).
+   */
+  private async responderForaDoPlantao(
+    conv: { id: string; leadId?: string | null },
+    instanceName: string | undefined,
+    remoteJidFull: string
+  ) {
+    const settings = await this.settings.get();
+    if (!settings.aiAutoReply) return { persisted: true, autoReply: false, central: true };
+
+    const history = await this.conversations.getHistoryForAi(conv.id);
+    let reply: string;
+    try {
+      reply = await this.ai.generateReply(history, undefined, promptForaDoPlantao());
+    } catch (err) {
+      this.logger.warn(`IA (fora do plantão) não respondeu: ${(err as Error).message}`);
+      return { persisted: true, autoReply: false, central: true };
+    }
+    if (!reply) return { persisted: true, autoReply: false, central: true };
+
+    await this.conversations.addMessage(conv.id, reply, "out", true);
+    if (instanceName) {
+      await this.whatsapp
+        .sendText(instanceName, remoteJidFull, reply)
+        .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
+    }
+
+    // Em segundo plano: score do lead + visita combinada → Agenda. Falha em silêncio.
+    if (conv.leadId) {
+      const leadId = conv.leadId;
+      const texto = [...history, { role: "assistant", content: reply }].map((m) => `${m.role}: ${m.content}`).join("\n");
+      this.ai.qualifyLead(leadId, texto).catch(() => {});
+      this.ai
+        .extrairVisita(texto)
+        .then(async (v) => {
+          if (!v.confirmada || !v.dataHora) return;
+          // dataHora vem no horário de Brasília (UTC-3, sem horário de verão).
+          const quando = new Date(`${v.dataHora.slice(0, 16)}:00-03:00`);
+          await this.leadQueue.agendarVisitaIA(leadId, quando, v.local);
+        })
+        .catch((err) => this.logger.warn(`Falha ao extrair visita: ${(err as Error).message}`));
+    }
+    return { persisted: true, autoReply: true, central: true, foraDoPlantao: true };
   }
 
   /**

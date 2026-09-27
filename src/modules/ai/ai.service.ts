@@ -126,11 +126,14 @@ export class AiService {
     return { provider, model, apiKey };
   }
 
-  async chat(messages: ChatMessage[], userAi?: UserAiConfig) {
+  async chat(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string) {
     const { provider, model, apiKey } = await this.resolveConfig(userAi);
     // Usa a última mensagem do usuário como consulta para o RAG.
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    const system = await this.buildSystemPrompt(lastUser?.content || "");
+    const base = await this.buildSystemPrompt(lastUser?.content || "");
+    const system = extraSystem ? `${base}
+
+${extraSystem}` : base;
 
     switch (provider) {
       case AiProvider.ANTHROPIC:
@@ -174,9 +177,38 @@ export class AiService {
   }
 
   /** Gera apenas o texto de resposta (usado pelo fluxo automático de WhatsApp). */
-  async generateReply(messages: ChatMessage[], userAi?: UserAiConfig): Promise<string> {
-    const { content } = await this.chat(messages, userAi);
+  async generateReply(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string): Promise<string> {
+    const { content } = await this.chat(messages, userAi, extraSystem);
     return content;
+  }
+
+  /**
+   * Lê a conversa e diz se o cliente CONFIRMOU uma visita com dia e horário.
+   * Devolve a data/hora no horário de Brasília ("YYYY-MM-DDTHH:mm") ou null.
+   */
+  async extrairVisita(
+    conversation: string,
+    userAi?: UserAiConfig
+  ): Promise<{ confirmada: boolean; dataHora: string | null; local: string | null }> {
+    const { provider, model, apiKey } = await this.resolveConfig(userAi);
+    const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    const system = `Hoje é ${hoje} (horário de Brasília).
+Analise a conversa e responda se o CLIENTE CONFIRMOU uma visita com DIA e HORÁRIO definidos.
+Só conta como confirmada se o cliente aceitou/combinou um dia E um horário (não basta "quero visitar").
+Retorne APENAS um JSON:
+{"confirmada": true|false, "dataHora": "YYYY-MM-DDTHH:mm" (horário de Brasília) ou null, "local": "empreendimento/endereço citado" ou null}`;
+    const userMsg: ChatMessage = { role: "user", content: `Conversa:
+${conversation}` };
+    let raw: string;
+    if (provider === AiProvider.ANTHROPIC) raw = (await this.chatAnthropic(apiKey, model, system, [userMsg])).content;
+    else if (provider === AiProvider.OPENAI) raw = (await this.chatOpenAI(apiKey, model, system, [userMsg])).content;
+    else raw = (await this.chatGemini(apiKey, model, system, [userMsg])).content;
+    try {
+      const d = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      return { confirmada: !!d.confirmada && !!d.dataHora, dataHora: d.dataHora || null, local: d.local || null };
+    } catch {
+      return { confirmada: false, dataHora: null, local: null };
+    }
   }
 
   async qualifyLead(leadId: string, conversation: string, userAi?: UserAiConfig) {

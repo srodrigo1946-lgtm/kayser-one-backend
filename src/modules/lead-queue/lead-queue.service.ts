@@ -1,12 +1,25 @@
 import { Injectable, Logger, NotFoundException, Inject, forwardRef } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, LessThan, Repository } from "typeorm";
+import { In, LessThan, Like, MoreThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { LeadQueueSettings } from "./lead-queue-settings.entity";
 import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { User, UserRole } from "../users/user.entity";
 import { Lead, LeadStatus } from "../leads/lead.entity";
+import { Appointment, AppointmentStatus, AppointmentType } from "../appointments/appointment.entity";
+import { LeadHistory, LeadHistoryType } from "../lead-history/lead-history.entity";
+import { Property } from "../properties/property.entity";
+
+/** Marca nas notas do agendamento criado pela IA (fora do plantão). */
+export const MARCA_VISITA_IA = "🤖 Agendado pela IA (fora do plantão)";
+
+/** "sáb., 28/09 às 10:00" no horário de Brasília. */
+export function formatarVisita(d: Date): string {
+  const dia = d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short", day: "2-digit", month: "2-digit" });
+  const hora = d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+  return `${dia} às ${hora}`;
+}
 import { EscalaService } from "../escala/escala.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
@@ -27,6 +40,8 @@ export class LeadQueueService {
     private readonly usersRepo: Repository<User>,
     @InjectRepository(Lead)
     private readonly leadsRepo: Repository<Lead>,
+    @InjectRepository(Appointment)
+    private readonly apptRepo: Repository<Appointment>,
     private readonly escala: EscalaService,
     private readonly conversations: ConversationsService,
     @Inject(forwardRef(() => WhatsappService))
@@ -81,7 +96,24 @@ export class LeadQueueService {
       if (!conv?.remoteJid || !conv.instanceOwnerId) return;
       const u = await this.usersRepo.findOne({ where: { id: userId } });
       const nome = u?.name ? u.name.split(" ").slice(0, 2).join(" ") : "um especialista";
-      const msg = `Olá! 👋 Você agora será atendido pelo nosso especialista *${nome}*, que já vai falar com você. 🏡`;
+      // A IA já marcou visita fora do plantão? Manda o CARTÃO da visita: corretor,
+      // data e o stand de vendas onde ele vai receber o cliente.
+      const visita = conv.leadId ? await this.visitaIAdoLead(conv.leadId) : null;
+      let msg = `Olá! 👋 Você agora será atendido pelo nosso especialista *${nome}*, que já vai falar com você. 🏡`;
+      if (visita) {
+        const stand = await this.standDaVisita(visita);
+        msg = [
+          `📋 *Sua visita está marcada!*`,
+          ``,
+          `👤 Especialista: *${nome}*`,
+          `📅 Data: *${formatarVisita(new Date(visita.scheduledAt))}*`,
+          stand ? `📍 Stand de vendas${stand.nome ? ` — ${stand.nome}` : ""}: ${stand.endereco}` : "",
+          ``,
+          `O(a) ${nome.split(" ")[0]} vai te receber no stand de vendas. Qualquer dúvida é só chamar aqui! 🏡`,
+        ]
+          .filter((l, i, arr) => l !== "" || (arr[i - 1] ?? "") !== "")
+          .join("\n");
+      }
       await this.conversations.addMessage(conv.id, msg, "out", false).catch(() => {});
       await this.whatsapp.sendText(`user_${conv.instanceOwnerId}`, conv.remoteJid, msg);
     } catch (err) {
@@ -97,6 +129,15 @@ export class LeadQueueService {
   private async atribuir(conversationId: string, leadId: string | undefined, userId: string) {
     await this.convRepo.update(conversationId, { assignedToId: userId });
     if (leadId) await this.leadsRepo.update(leadId, { responsavelId: userId });
+    // Visita marcada pela IA fora do plantão vai junto pra agenda do corretor.
+    if (leadId) {
+      await this.apptRepo
+        .update(
+          { leadId, status: AppointmentStatus.AGENDADO, scheduledAt: MoreThan(new Date()), notes: Like(`%${MARCA_VISITA_IA}%`) },
+          { userId }
+        )
+        .catch((err) => this.logger.warn(`Falha ao passar visita da IA: ${(err as Error).message}`));
+    }
     // Avisa o corretor por e-mail que caiu um lead (sem bloquear a atribuição).
     void this.notificarLeadPorEmail(userId);
   }
@@ -183,6 +224,16 @@ export class LeadQueueService {
   }): Promise<LeadQueueAssignment | null> {
     const s = await this.getSettings();
     if (!s.enabled) return null;
+
+    // Já tem atribuição em aberto pra esta conversa? Não duplica (várias mensagens
+    // do mesmo cliente de anúncio não podem virar vários leads na fila).
+    const aberta = await this.assignRepo.findOne({
+      where: [
+        { conversationId: input.conversationId, status: "pendente" },
+        { conversationId: input.conversationId, status: "aguardando" },
+      ],
+    });
+    if (aberta) return aberta;
 
     const membros = await this.atendentesDoTurno();
     if (membros.length === 0) {
@@ -352,6 +403,91 @@ export class LeadQueueService {
     await this.settingsRepo.save(s);
     if (count) this.logger.log(`Fila: ${count} lead(s) aguardando distribuído(s) no início do turno.`);
     return count;
+  }
+
+  /**
+   * Stand de vendas da visita: imóvel vinculado ao lead (propertyId) ou pelo nome do
+   * empreendimento/local. Usa o "Endereço do stand" do imóvel; vazio = endereço do imóvel.
+   */
+  private async standDaVisita(visita: Appointment): Promise<{ nome: string; endereco: string } | null> {
+    try {
+      const props = this.leadsRepo.manager.getRepository(Property);
+      const lead = visita.leadId ? await this.leadsRepo.findOne({ where: { id: visita.leadId } }) : null;
+      let p: Property | null = lead?.propertyId ? await props.findOne({ where: { id: lead.propertyId } }) : null;
+      if (!p) {
+        const alvo = (lead?.empreendimento || visita.location || "").toLowerCase().trim();
+        if (alvo) {
+          const todos = await props.find({ where: { active: true } });
+          p = todos.find((x) => alvo.includes((x.name || "").toLowerCase()) || (x.name || "").toLowerCase().includes(alvo)) ?? null;
+        }
+      }
+      if (!p) return visita.location ? { nome: "", endereco: visita.location } : null;
+      const endereco =
+        p.standAddress?.trim() || [p.address, p.bairro, p.cidade].filter(Boolean).join(", ") || visita.location || "";
+      return endereco ? { nome: p.name, endereco } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A conversa está esperando o plantão abrir (ninguém atendendo ainda)? */
+  async estaAguardando(conversationId: string): Promise<boolean> {
+    return (await this.assignRepo.count({ where: { conversationId, status: "aguardando" } })) > 0;
+  }
+
+  /** Visita futura marcada pela IA pra este lead (se houver). */
+  async visitaIAdoLead(leadId: string): Promise<Appointment | null> {
+    return this.apptRepo.findOne({
+      where: { leadId, status: AppointmentStatus.AGENDADO, scheduledAt: MoreThan(new Date()), notes: Like(`%${MARCA_VISITA_IA}%`) },
+      order: { scheduledAt: "ASC" },
+    });
+  }
+
+  /**
+   * IA atendendo fora do plantão combinou uma visita: grava na Agenda (sem dono
+   * ainda — vai pro corretor quando o turno abrir, em atribuir), move o lead pra
+   * "Agendamento" e registra no histórico. Não duplica: se já existe, só atualiza a data.
+   */
+  async agendarVisitaIA(leadId: string, quando: Date, local?: string | null): Promise<Appointment | null> {
+    if (isNaN(quando.getTime()) || quando.getTime() <= Date.now()) return null;
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
+    if (!lead) return null;
+    const existente = await this.visitaIAdoLead(leadId);
+    if (existente) {
+      if (Math.abs(new Date(existente.scheduledAt).getTime() - quando.getTime()) < 60_000) return existente;
+      existente.scheduledAt = quando;
+      if (local) existente.location = local;
+      return this.apptRepo.save(existente);
+    }
+    const appt = await this.apptRepo.save(
+      this.apptRepo.create({
+        title: `Visita — ${lead.name}`,
+        type: AppointmentType.VISITA,
+        status: AppointmentStatus.AGENDADO,
+        scheduledAt: quando,
+        location: local || lead.empreendimento || undefined,
+        notes: `${MARCA_VISITA_IA}. Cliente: ${lead.name} — ${lead.phone || lead.whatsapp || "sem telefone"}`,
+        leadId,
+        userId: lead.responsavelId || undefined,
+      })
+    );
+    const novoStatus =
+      lead.status === LeadStatus.NOVO_LEAD || lead.status === LeadStatus.PRIMEIRO_CONTATO
+        ? LeadStatus.AGENDAMENTO
+        : lead.status;
+    if (novoStatus !== lead.status) await this.leadsRepo.update(leadId, { status: novoStatus });
+    await this.leadsRepo.manager
+      .getRepository(LeadHistory)
+      .save({
+        leadId,
+        type: LeadHistoryType.SISTEMA,
+        description: `IA agendou visita (fora do plantão) para ${formatarVisita(quando)}.`,
+        fromStatus: lead.status,
+        toStatus: novoStatus,
+      } as any)
+      .catch(() => {});
+    this.logger.log(`IA agendou visita do lead ${leadId} para ${quando.toISOString()}.`);
+    return appt;
   }
 
   /** Marca a atribuição pendente como atendida quando o cargo atribuído responde. */

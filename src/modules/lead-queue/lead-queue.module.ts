@@ -5,6 +5,7 @@ import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { User } from "../users/user.entity";
 import { Lead } from "../leads/lead.entity";
+import { Appointment } from "../appointments/appointment.entity";
 import { LeadQueueService } from "./lead-queue.service";
 import { LeadQueueController } from "./lead-queue.controller";
 import { EscalaModule } from "../escala/escala.module";
@@ -13,7 +14,7 @@ import { WhatsappModule } from "../whatsapp/whatsapp.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([LeadQueueSettings, LeadQueueAssignment, Conversation, User, Lead]),
+    TypeOrmModule.forFeature([LeadQueueSettings, LeadQueueAssignment, Conversation, User, Lead, Appointment]),
     EscalaModule,
     ConversationsModule,
     forwardRef(() => WhatsappModule),

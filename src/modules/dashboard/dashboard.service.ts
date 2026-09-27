@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between, IsNull, LessThan, In, Not } from "typeorm";
+import { Repository, Between, IsNull, LessThan, In, Not, Like, MoreThan } from "typeorm";
+import { Appointment, AppointmentStatus } from "../appointments/appointment.entity";
+import { MARCA_VISITA_IA } from "../lead-queue/lead-queue.service";
 import { Lead, LeadStatus } from "../leads/lead.entity";
 import { User, UserRole } from "../users/user.entity";
 import { Goal } from "../goals/goal.entity";
@@ -399,7 +401,42 @@ export class DashboardService {
       console.warn(`Alertas (responderam) falhou: ${(err as Error).message}`);
       return { itens: [], total: 0 } as Awaited<ReturnType<DashboardService["getClientesResponderam"]>>;
     });
-    return { semAtendimento, semContato, semContatoTotal, responderam, responderamTotal };
+    const visitasIA = await this.getVisitasIA(user).catch((err) => {
+      console.warn(`Alertas (visitas IA) falhou: ${(err as Error).message}`);
+      return [] as Awaited<ReturnType<DashboardService["getVisitasIA"]>>;
+    });
+    return { semAtendimento, semContato, semContatoTotal, responderam, responderamTotal, visitasIA };
+  }
+
+  /**
+   * "Cartão" das visitas que a IA agendou FORA do plantão (ainda por acontecer):
+   * nome, telefone e data. Corretor vê as dele; gestor, as da equipe; Diretor, todas
+   * (inclusive as que ainda não têm corretor — esperando o plantão abrir).
+   */
+  private async getVisitasIA(user: User) {
+    const ids = await this.users.getScopeIds(user);
+    if (ids !== null && ids.length === 0) return [];
+    const where: any = {
+      status: AppointmentStatus.AGENDADO,
+      scheduledAt: MoreThan(new Date()),
+      notes: Like(`%${MARCA_VISITA_IA}%`),
+    };
+    if (ids !== null) where.userId = In(ids);
+    const appts = await this.leadsRepo.manager.getRepository(Appointment).find({
+      where,
+      relations: ["lead", "user"],
+      order: { scheduledAt: "ASC" },
+      take: 50,
+    });
+    return appts.map((a) => ({
+      id: a.id,
+      leadId: a.leadId,
+      nome: a.lead?.name ?? a.title.replace(/^Visita — /, ""),
+      phone: a.lead?.phone || a.lead?.whatsapp || "",
+      scheduledAt: a.scheduledAt,
+      local: a.location || "",
+      corretor: a.user?.name ?? null,
+    }));
   }
 
   /**
