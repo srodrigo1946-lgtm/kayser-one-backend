@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between, IsNull, LessThan, In } from "typeorm";
+import { Repository, Between, IsNull, LessThan, In, Not } from "typeorm";
 import { Lead, LeadStatus } from "../leads/lead.entity";
 import { User, UserRole } from "../users/user.entity";
 import { Goal } from "../goals/goal.entity";
@@ -381,13 +381,64 @@ export class DashboardService {
         take: 20,
       }),
       this.leadsRepo.find({
-        where: { ...base, lastContactAt: LessThan(threeDaysAgo) },
+        where: {
+          ...base,
+          lastContactAt: LessThan(threeDaysAgo),
+          // Venda ganha/perdida não precisa de contato — não entra no alerta.
+          status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
+        },
         relations: ["responsavel"],
         order: { lastContactAt: "ASC" },
         take: 20,
       }),
     ]);
 
-    return { semAtendimento, semContato };
+    // Best-effort: se a consulta falhar, o sino segue com os outros avisos.
+    const responderam = await this.getClientesResponderam(user).catch((err) => {
+      console.warn(`Alertas (responderam) falhou: ${(err as Error).message}`);
+      return [] as Awaited<ReturnType<DashboardService["getClientesResponderam"]>>;
+    });
+    return { semAtendimento, semContato, responderam };
+  }
+
+  /**
+   * Clientes que RESPONDERAM e ainda estão sem resposta de gente (ex.: responderam
+   * o follow-up automático). A última mensagem "humana" da conversa (ignora a IA)
+   * é do cliente, nos últimos 7 dias. Traz o texto que o cliente mandou. Escopo por equipe.
+   */
+  private async getClientesResponderam(user: User) {
+    const ids = await this.users.getScopeIds(user);
+    const params: any[] = [subDays(new Date(), 7)];
+    let escopo = "";
+    if (ids !== null) {
+      if (ids.length === 0) return [];
+      params.push(ids);
+      escopo = `AND l."responsavelId" = ANY($2)`;
+    }
+    const rows: any[] = await this.leadsRepo.manager.query(
+      `SELECT l.id AS "leadId", l.name AS nome, m.content AS mensagem, m."mediaType" AS "mediaType", m."createdAt" AS at
+         FROM conversations c
+         JOIN leads l ON l.id = c."leadId"
+         JOIN LATERAL (
+           SELECT mm.content, mm.direction, mm."mediaType", mm."createdAt"
+             FROM messages mm
+            WHERE mm."conversationId" = c.id AND NOT (mm.direction = 'out' AND mm."isAI" = true)
+            ORDER BY mm."createdAt" DESC
+            LIMIT 1
+         ) m ON true
+        WHERE c."naoLead" = false AND c."isGroup" = false
+          AND m.direction = 'in' AND m."createdAt" > $1
+          AND l.status NOT IN ('venda_ganha', 'venda_perdida')
+          ${escopo}
+        ORDER BY m."createdAt" DESC
+        LIMIT 20`,
+      params
+    );
+    return rows.map((r) => ({
+      leadId: r.leadId as string,
+      nome: r.nome as string,
+      mensagem: ((r.mensagem as string) || (r.mediaType ? `[${r.mediaType}]` : "")).slice(0, 120),
+      at: r.at as Date,
+    }));
   }
 }
