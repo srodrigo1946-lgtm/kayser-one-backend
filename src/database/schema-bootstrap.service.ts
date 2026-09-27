@@ -324,6 +324,26 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Endereço do stand de vendas do empreendimento (cartão da visita pro cliente). */
   private async ensurePropertyStandAddress() {
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standAddress" varchar`);
+
+    // Endereços dos stands passados pelo Rodrigo (27/09/2026). Casa pelo nome do
+    // imóvel e SÓ preenche se estiver vazio — edição feita na tela de Imóveis vence.
+    const stands: [string, string][] = [
+      ["%renascen%", "Rua Barão de São Francisco, 177 – Andaraí, Rio de Janeiro/RJ"],
+      ["%ilhamar%", "Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro – RJ, 22783-116"],
+      ["%oceanside%", "Av. das Américas, 18500 – Recreio dos Bandeirantes, Rio de Janeiro – RJ, 22790-704"],
+      ["%vibe%", "Av. Salvador Allende, 5500 – Recreio dos Bandeirantes, Rio de Janeiro – RJ, 22780-160"],
+      ["%beon%", "R. São Cristóvão, 356 – São Cristóvão, Rio de Janeiro – RJ"],
+      ["%villa sant%", "R. Lopo Saraiva, 179, Loja A – Pechincha, Rio de Janeiro – RJ"],
+      ["%marine%", "Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro – RJ"],
+      ["%ilha stay%", "Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro/RJ"],
+    ];
+    for (const [nome, endereco] of stands) {
+      await this.dataSource.query(
+        `UPDATE properties SET "standAddress" = $1
+          WHERE lower(name) LIKE $2 AND ("standAddress" IS NULL OR "standAddress" = '')`,
+        [endereco, nome]
+      );
+    }
   }
 
   /** Reuniões em vídeo (aba Reuniões). */
