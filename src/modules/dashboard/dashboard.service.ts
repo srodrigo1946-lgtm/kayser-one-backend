@@ -373,14 +373,15 @@ export class DashboardService {
     const base = await this.scopeWhere(user);
     const threeDaysAgo = subDays(new Date(), 3);
 
-    const [semAtendimento, semContato] = await Promise.all([
+    const [semAtendimento, [semContato, semContatoTotal]] = await Promise.all([
       this.leadsRepo.find({
         where: { ...base, status: LeadStatus.NOVO_LEAD, lastContactAt: IsNull() },
         relations: ["responsavel"],
         order: { createdAt: "ASC" },
         take: 20,
       }),
-      this.leadsRepo.find({
+      // findAndCount: lista os 20 mais antigos + o TOTAL verdadeiro.
+      this.leadsRepo.findAndCount({
         where: {
           ...base,
           lastContactAt: LessThan(threeDaysAgo),
@@ -394,11 +395,11 @@ export class DashboardService {
     ]);
 
     // Best-effort: se a consulta falhar, o sino segue com os outros avisos.
-    const responderam = await this.getClientesResponderam(user).catch((err) => {
+    const { itens: responderam, total: responderamTotal } = await this.getClientesResponderam(user).catch((err) => {
       console.warn(`Alertas (responderam) falhou: ${(err as Error).message}`);
-      return [] as Awaited<ReturnType<DashboardService["getClientesResponderam"]>>;
+      return { itens: [], total: 0 } as Awaited<ReturnType<DashboardService["getClientesResponderam"]>>;
     });
-    return { semAtendimento, semContato, responderam };
+    return { semAtendimento, semContato, semContatoTotal, responderam, responderamTotal };
   }
 
   /**
@@ -411,12 +412,13 @@ export class DashboardService {
     const params: any[] = [subDays(new Date(), 7)];
     let escopo = "";
     if (ids !== null) {
-      if (ids.length === 0) return [];
+      if (ids.length === 0) return { itens: [], total: 0 };
       params.push(ids);
       escopo = `AND l."responsavelId" = ANY($2)`;
     }
     const rows: any[] = await this.leadsRepo.manager.query(
-      `SELECT l.id AS "leadId", l.name AS nome, m.content AS mensagem, m."mediaType" AS "mediaType", m."createdAt" AS at
+      `SELECT l.id AS "leadId", l.name AS nome, m.content AS mensagem, m."mediaType" AS "mediaType", m."createdAt" AS at,
+              COUNT(*) OVER() AS total
          FROM conversations c
          JOIN leads l ON l.id = c."leadId"
          JOIN LATERAL (
@@ -431,14 +433,17 @@ export class DashboardService {
           AND l.status NOT IN ('venda_ganha', 'venda_perdida')
           ${escopo}
         ORDER BY m."createdAt" DESC
-        LIMIT 20`,
+        LIMIT 200`,
       params
     );
-    return rows.map((r) => ({
+    // Lista até 200 (o selo verde do card do Kanban usa essa lista) + total verdadeiro.
+    const total = rows.length ? Number(rows[0].total) : 0;
+    const itens = rows.map((r) => ({
       leadId: r.leadId as string,
       nome: r.nome as string,
       mensagem: ((r.mensagem as string) || (r.mediaType ? `[${r.mediaType}]` : "")).slice(0, 120),
       at: r.at as Date,
     }));
+    return { itens, total };
   }
 }
