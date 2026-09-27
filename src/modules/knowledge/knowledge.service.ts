@@ -51,7 +51,7 @@ export class KnowledgeService {
     if (!apiKey) {
       throw new BadRequestException("Para ler imagens, configure a chave da IA (Anthropic) na página IA Agente.");
     }
-    const model = (empresaAnthropic && s.aiModel) || "claude-sonnet-4-6";
+    const model = (empresaAnthropic && s.aiModel) || "claude-sonnet-5";
     const client = new Anthropic({ apiKey });
     const resp = await client.messages.create({
       model,

@@ -49,7 +49,7 @@ Nunca faça perguntas que já foram respondidas.
 Se houver dúvida fora da base de conhecimento, encaminhe para um corretor humano.`;
 
 const DEFAULT_MODELS: Record<AiProvider, string> = {
-  [AiProvider.ANTHROPIC]: "claude-sonnet-4-6",
+  [AiProvider.ANTHROPIC]: "claude-sonnet-5",
   [AiProvider.OPENAI]: "gpt-4o-mini",
   [AiProvider.GEMINI]: "gemini-1.5-flash",
 };
