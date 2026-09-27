@@ -7,6 +7,21 @@ import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
 
+/**
+ * A IA escreve em Markdown (**negrito**, ### título, ---), mas o WhatsApp usa
+ * *negrito* e não tem título/linha: sem isso o cliente via as estrelas e traços.
+ */
+export function paraWhatsapp(texto: string): string {
+  return texto
+    .replace(/\*\*(.+?)\*\*/g, "*$1*") // **negrito** → *negrito*
+    .replace(/__(.+?)__/g, "_$1_")
+    .replace(/^#{1,6}\s*(.+)$/gm, "*$1*") // ### Título → *Título*
+    .replace(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/gm, "") // linhas --- somem
+    .replace(/^(\s*)[-*]\s+/gm, "$1• ") // lista com - ou * → •
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Instrução extra da IA quando atende lead de anúncio FORA do plantão. */
 function promptForaDoPlantao(): string {
   const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -16,7 +31,7 @@ Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora
   "Olá! 👋 Eu sou o *Kayser*, assistente de inteligência artificial da equipe. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"
   Nas respostas seguintes não precisa se apresentar de novo.
 - Se o cliente mandou ÁUDIO, a mensagem aparece como 🎤 Áudio: "transcrição" — responda ao conteúdo normalmente.
-- Seja cordial e breve (mensagens curtas de WhatsApp). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
+- Formato WhatsApp: negrito com UMA estrela (*assim*), sem títulos (#), sem linhas "---", sem tabelas. Seja cordial e breve (mensagens curtas). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
 - Qualifique com naturalidade (nome, empreendimento de interesse, renda, FGTS, entrada), sem interrogatório.
 - Seu objetivo principal é AGENDAR UMA VISITA: pergunte o melhor dia e horário para o cliente.
 - Quando o cliente escolher dia E horário, confirme repetindo a data completa (ex.: "sábado, 28/09 às 10h") e diga que um especialista vai entrar em contato para confirmar.
@@ -168,7 +183,7 @@ export class WhatsappFlowService {
       const userAi = await this.ai.getUserAiConfig(conv.assignedToId ?? undefined);
       let reply: string;
       try {
-        reply = await this.ai.generateReply(history, userAi);
+        reply = paraWhatsapp(await this.ai.generateReply(history, userAi));
       } catch (err) {
         this.logger.warn(`IA não respondeu (chave/config?): ${(err as Error).message}`);
         return { persisted: true, autoReply: false };
@@ -216,7 +231,7 @@ export class WhatsappFlowService {
     const history = await this.conversations.getHistoryForAi(conv.id);
     let reply: string;
     try {
-      reply = await this.ai.generateReply(history, undefined, promptForaDoPlantao());
+      reply = paraWhatsapp(await this.ai.generateReply(history, undefined, promptForaDoPlantao()));
     } catch (err) {
       this.logger.warn(`IA (fora do plantão) não respondeu: ${(err as Error).message}`);
       return { persisted: true, autoReply: false, central: true };
