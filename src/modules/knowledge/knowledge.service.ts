@@ -9,6 +9,7 @@ import { EmbeddingService } from "./embedding.service";
 import { StorageService } from "../storage/storage.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiProvider } from "../settings/settings.entity";
+import { Property } from "../properties/property.entity";
 import Anthropic from "@anthropic-ai/sdk";
 
 const IMAGEM_MIME: Record<string, "image/jpeg" | "image/png" | "image/webp" | "image/gif"> = {
@@ -78,7 +79,7 @@ export class KnowledgeService {
   /** Extrai o texto de um arquivo e salva como item (indexado) da base. */
   async extractAndStore(
     file: Express.Multer.File,
-    opts: { title?: string; type?: KnowledgeType } = {}
+    opts: { title?: string; type?: KnowledgeType; propertyId?: string } = {}
   ) {
     if (!file) throw new BadRequestException("Nenhum arquivo enviado.");
     const name = file.originalname || "documento";
@@ -117,18 +118,34 @@ export class KnowledgeService {
     text = (text || "").trim().slice(0, MAX_CONTENT);
     if (!text) throw new BadRequestException("Não foi possível extrair texto do arquivo.");
 
-    // Guarda o arquivo original no MinIO (opcional).
+    // Guarda o arquivo original no MinIO/R2 (opcional). IMAGEM sem storage fica como
+    // data URI — o Kayser precisa do arquivo pra ENVIAR a foto pro cliente.
     let fileKey: string | undefined;
     if (this.storage.isEnabled) {
       const key = `knowledge/${Date.now()}-${name}`;
       fileKey = (await this.storage.upload(key, file.buffer, file.mimetype)) || undefined;
     }
+    if (!fileKey && IMAGEM_MIME[ext]) {
+      fileKey = `data:${IMAGEM_MIME[ext]};base64,${file.buffer.toString("base64")}`;
+    }
+
+    // Empreendimento: o nome entra no título (a busca do Kayser acha pelo nome).
+    let propertyId: string | undefined;
+    let titulo = opts.title || name;
+    if (opts.propertyId) {
+      const p = await this.repo.manager.getRepository(Property).findOne({ where: { id: opts.propertyId } });
+      if (p) {
+        propertyId = p.id;
+        titulo = `${p.name} — ${titulo}`;
+      }
+    }
 
     return this.create({
-      title: opts.title || name,
+      title: titulo,
       content: text,
       type: opts.type || KnowledgeType.OUTRO,
       fileKey,
+      propertyId,
     });
   }
 
@@ -148,8 +165,74 @@ export class KnowledgeService {
       .join("\n\n");
   }
 
-  findAll() {
-    return this.repo.find({ order: { updatedAt: "DESC" } });
+  async findAll() {
+    const items = await this.repo.find({ order: { updatedAt: "DESC" } });
+    // Imagem guardada como data URI é pesada: a lista só diz que é imagem.
+    return items.map((i) => (i.fileKey?.startsWith("data:") ? { ...i, fileKey: "imagem" } : i));
+  }
+
+  /** Empreendimentos ativos com o resumo do cadastro (preço, área, entrega, stand...). */
+  async catalogoEmpreendimentos(): Promise<string> {
+    const props = await this.repo.manager.getRepository(Property).find({ where: { active: true }, order: { name: "ASC" } });
+    const moeda = (v?: number) => (v ? `R$ ${Number(v).toLocaleString("pt-BR")}` : "");
+    return props
+      .map((p) => {
+        const partes = [
+          p.type,
+          [p.bairro, p.cidade].filter(Boolean).join(", "),
+          p.priceMin || p.priceMax ? `preço ${[moeda(p.priceMin), moeda(p.priceMax)].filter(Boolean).join(" a ")}` : "",
+          p.areaMin || p.areaMax ? `área ${[p.areaMin, p.areaMax].filter(Boolean).join(" a ")} m²` : "",
+          p.bedrooms ? `${p.bedrooms} quarto(s)` : "",
+          p.parkingSpots ? `${p.parkingSpots} vaga(s)` : "",
+          p.deliveryDate ? `entrega ${p.deliveryDate}` : "",
+          p.standAddress ? `stand: ${p.standAddress}` : p.address ? `endereço: ${p.address}` : "",
+          p.amenities?.length ? `lazer: ${p.amenities.slice(0, 8).join(", ")}` : "",
+          p.description ? p.description.replace(/\s+/g, " ").slice(0, 300) : "",
+        ].filter(Boolean);
+        return `- ${p.name}: ${partes.join(" · ")}`;
+      })
+      .join("\n");
+  }
+
+  /**
+   * Fotos de um empreendimento pra ENVIAR no WhatsApp: as do cadastro (Imóveis) +
+   * as imagens subidas no Conhecimento do Kayser. Acha pelo nome (aproximado).
+   */
+  async fotosDoEmpreendimento(
+    nome: string,
+    max = 5
+  ): Promise<{ nome: string; fotos: { base64: string; mimetype: string; fileName: string }[] } | null> {
+    const alvo = nome.toLowerCase().trim();
+    if (!alvo) return null;
+    const props = await this.repo.manager.getRepository(Property).find({ where: { active: true } });
+    const p =
+      props.find((x) => (x.name || "").toLowerCase() === alvo) ||
+      props.find((x) => alvo.includes((x.name || "").toLowerCase()) || (x.name || "").toLowerCase().includes(alvo));
+    if (!p) return null;
+
+    const fotos: { base64: string; mimetype: string; fileName: string }[] = [];
+    const deDataUri = (uri: string, i: number) => {
+      const m = /^data:([^;]+);base64,(.+)$/.exec(uri);
+      if (m && m[1].startsWith("image/")) fotos.push({ mimetype: m[1], base64: m[2], fileName: `${p.name}-${i + 1}.jpg` });
+    };
+    // 1) Imagens subidas no Conhecimento do Kayser para este empreendimento.
+    const itens = await this.repo.find({ where: { propertyId: p.id, active: true }, order: { createdAt: "ASC" } });
+    for (const it of itens) {
+      if (fotos.length >= max || !it.fileKey) continue;
+      if (it.fileKey.startsWith("data:")) deDataUri(it.fileKey, fotos.length);
+      else if (/\.(jpe?g|png|webp|gif)$/i.test(it.fileKey)) {
+        const obj = await this.storage.getObject(it.fileKey);
+        if (obj?.contentType.startsWith("image/")) {
+          fotos.push({ base64: obj.buffer.toString("base64"), mimetype: obj.contentType, fileName: it.fileKey.split("/").pop() || "foto.jpg" });
+        }
+      }
+    }
+    // 2) Fotos do cadastro do imóvel.
+    for (const ph of [...(p.photos ?? []), ...(p.imageUrl ? [p.imageUrl] : [])]) {
+      if (fotos.length >= max) break;
+      if (ph?.startsWith("data:")) deDataUri(ph, fotos.length);
+    }
+    return { nome: p.name, fotos };
   }
 
   async create(dto: Partial<KnowledgeItem>) {
@@ -181,7 +264,9 @@ export class KnowledgeService {
     await this.chunkRepo.delete({ knowledgeItemId: item.id });
     if (!item.active) return;
 
-    const chunks = this.chunkText(`${item.title}\n${item.content}`);
+    // Cada pedaço leva o título (ex.: "Ilha Stay — tabela.pdf") — assim a busca acha
+    // o trecho certo quando o cliente cita o empreendimento.
+    const chunks = this.chunkText(item.content).map((c) => `[${item.title}]\n${c}`);
     for (const content of chunks) {
       const embedding = await this.embeddings.embed(content);
       await this.chunkRepo.save(this.chunkRepo.create({ knowledgeItemId: item.id, content, embedding }));

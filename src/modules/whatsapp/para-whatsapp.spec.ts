@@ -26,3 +26,17 @@ describe("paraWhatsapp", () => {
     expect(paraWhatsapp("Olá! Tudo bem?")).toBe("Olá! Tudo bem?");
   });
 });
+
+describe("tag de fotos da IA", () => {
+  const svc: any = new (require("./whatsapp-flow.service").WhatsappFlowService)(
+    {}, {}, {}, {}, {}, {}, {}
+  );
+  it("tira [FOTOS: X] do texto e devolve o empreendimento pedido", () => {
+    const r = svc.separarFotos("Olha só o Ilha Stay! 😍\n[FOTOS: Ilha Stay Home Resort]\n\nQuer agendar uma visita?");
+    expect(r.pedidos).toEqual(["Ilha Stay Home Resort"]);
+    expect(r.texto).toBe("Olha só o Ilha Stay! 😍\n\nQuer agendar uma visita?");
+  });
+  it("sem tag, não pede foto", () => {
+    expect(svc.separarFotos("Oi!").pedidos).toEqual([]);
+  });
+});

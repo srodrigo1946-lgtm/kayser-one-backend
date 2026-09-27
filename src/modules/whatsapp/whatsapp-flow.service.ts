@@ -6,6 +6,21 @@ import { WhatsappService } from "./whatsapp.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
+import { KnowledgeService } from "../knowledge/knowledge.service";
+
+/** Tag que a IA escreve para o sistema enviar as fotos: [FOTOS: Nome do empreendimento]. */
+const TAG_FOTOS = /\[FOTOS:\s*([^\]]+)\]/gi;
+
+/** Instrução dos empreendimentos (catálogo + como pedir fotos) — vale pra toda resposta da IA. */
+function promptEmpreendimentos(catalogo: string): string {
+  if (!catalogo.trim()) return "";
+  return `=== EMPREENDIMENTOS DA EMPRESA (dados do cadastro) ===
+${catalogo}
+
+FOTOS: quando o cliente pedir fotos/imagens OU demonstrar interesse num empreendimento, você pode ENVIAR as fotos.
+Para isso escreva, numa linha separada, exatamente: [FOTOS: Nome do empreendimento] (use o nome da lista acima).
+O sistema tira essa linha do texto e envia as imagens logo depois da sua mensagem. Use no máximo uma vez por empreendimento na conversa.`;
+}
 
 /**
  * A IA escreve em Markdown (**negrito**, ### título, ---), mas o WhatsApp usa
@@ -49,8 +64,50 @@ export class WhatsappFlowService {
     private readonly ai: AiService,
     private readonly whatsapp: WhatsappService,
     private readonly leadQueue: LeadQueueService,
-    private readonly users: UsersService
+    private readonly users: UsersService,
+    private readonly knowledge: KnowledgeService
   ) {}
+
+  /** Catálogo dos empreendimentos pro prompt (não derruba a resposta se falhar). */
+  private async extraEmpreendimentos(): Promise<string> {
+    const cat = await this.knowledge.catalogoEmpreendimentos().catch(() => "");
+    return promptEmpreendimentos(cat);
+  }
+
+  /** Tira as tags [FOTOS: X] do texto e devolve os nomes pedidos. */
+  private separarFotos(reply: string): { texto: string; pedidos: string[] } {
+    const pedidos: string[] = [];
+    const texto = reply.replace(TAG_FOTOS, (_m, nome: string) => {
+      pedidos.push(nome.trim());
+      return "";
+    });
+    return { texto: texto.replace(/\n{3,}/g, "\n\n").trim(), pedidos };
+  }
+
+  /** Envia as fotos dos empreendimentos pedidos pela IA (registra na conversa). */
+  private async enviarFotos(convId: string, instanceName: string | undefined, remoteJidFull: string, pedidos: string[]) {
+    if (!instanceName || !pedidos.length) return;
+    for (const nome of [...new Set(pedidos)].slice(0, 2)) {
+      const r = await this.knowledge.fotosDoEmpreendimento(nome).catch(() => null);
+      if (!r?.fotos.length) {
+        this.logger.warn(`IA pediu fotos de "${nome}", mas não há imagens cadastradas.`);
+        continue;
+      }
+      for (const [i, f] of r.fotos.entries()) {
+        const caption = i === 0 ? `📸 ${r.nome}` : undefined;
+        try {
+          await this.whatsapp.sendMedia(instanceName, remoteJidFull, { ...f, caption });
+          await this.conversations.addMessage(convId, caption || `📷 ${r.nome}`, "out", true, {
+            mediaType: "image",
+            mediaMime: f.mimetype,
+            base64: f.base64,
+          });
+        } catch (err) {
+          this.logger.warn(`Falha ao enviar foto de ${r.nome}: ${(err as Error).message}`);
+        }
+      }
+    }
+  }
 
   /**
    * Processa um evento de mensagem recebida da Evolution API.
@@ -183,14 +240,18 @@ export class WhatsappFlowService {
       const userAi = await this.ai.getUserAiConfig(conv.assignedToId ?? undefined);
       let reply: string;
       try {
-        reply = paraWhatsapp(await this.ai.generateReply(history, userAi));
+        reply = paraWhatsapp(await this.ai.generateReply(history, userAi, await this.extraEmpreendimentos()));
       } catch (err) {
         this.logger.warn(`IA não respondeu (chave/config?): ${(err as Error).message}`);
         return { persisted: true, autoReply: false };
       }
 
-      if (reply) {
-        await this.conversations.addMessage(conv.id, reply, "out", true);
+      // A IA pode pedir fotos com [FOTOS: X]: tira a tag do texto e envia depois.
+      const { texto: textoIa, pedidos: fotosPedidas } = this.separarFotos(reply);
+      reply = textoIa;
+
+      if (reply || fotosPedidas.length) {
+        if (reply) await this.conversations.addMessage(conv.id, reply, "out", true);
 
         // Score do lead: a IA qualifica sozinha a partir da conversa. Roda em
         // segundo plano (não segura a resposta ao cliente) e falha em silêncio —
@@ -201,13 +262,14 @@ export class WhatsappFlowService {
             .qualifyLead(conv.leadId, texto, userAi)
             .catch((err) => this.logger.warn(`Não foi possível qualificar o lead: ${err?.message}`));
         }
-        if (instanceName) {
+        if (instanceName && reply) {
           try {
             await this.whatsapp.sendText(instanceName, remoteJidFull, reply);
           } catch (err) {
             this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`);
           }
         }
+        await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
       }
       return { persisted: true, autoReply: true };
     } catch (err) {
@@ -231,19 +293,27 @@ export class WhatsappFlowService {
     const history = await this.conversations.getHistoryForAi(conv.id);
     let reply: string;
     try {
-      reply = paraWhatsapp(await this.ai.generateReply(history, undefined, promptForaDoPlantao()));
+      reply = paraWhatsapp(
+        await this.ai.generateReply(history, undefined, `${promptForaDoPlantao()}\n\n${await this.extraEmpreendimentos()}`)
+      );
     } catch (err) {
       this.logger.warn(`IA (fora do plantão) não respondeu: ${(err as Error).message}`);
       return { persisted: true, autoReply: false, central: true };
     }
-    if (!reply) return { persisted: true, autoReply: false, central: true };
+    // A IA pode pedir fotos com [FOTOS: X]: tira a tag do texto e envia depois.
+    const { texto: textoIa, pedidos: fotosPedidas } = this.separarFotos(reply);
+    reply = textoIa;
+    if (!reply && !fotosPedidas.length) return { persisted: true, autoReply: false, central: true };
 
-    await this.conversations.addMessage(conv.id, reply, "out", true);
-    if (instanceName) {
-      await this.whatsapp
-        .sendText(instanceName, remoteJidFull, reply)
-        .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
+    if (reply) {
+      await this.conversations.addMessage(conv.id, reply, "out", true);
+      if (instanceName) {
+        await this.whatsapp
+          .sendText(instanceName, remoteJidFull, reply)
+          .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
+      }
     }
+    await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
 
     // Em segundo plano: score do lead + visita combinada → Agenda. Falha em silêncio.
     if (conv.leadId) {

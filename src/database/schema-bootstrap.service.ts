@@ -32,6 +32,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureUserAiColumns", () => this.ensureUserAiColumns()],
       ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
       ["ensurePropertyStandAddress", () => this.ensurePropertyStandAddress()],
+      ["ensureKnowledgePropertyId", () => this.ensureKnowledgePropertyId()],
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
@@ -319,6 +320,11 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Previsão de entrega do empreendimento (texto livre). */
   private async ensurePropertyDeliveryDate() {
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "deliveryDate" varchar`);
+  }
+
+  /** Conhecimento do Kayser separado por empreendimento. */
+  private async ensureKnowledgePropertyId() {
+    await this.dataSource.query(`ALTER TABLE knowledge_items ADD COLUMN IF NOT EXISTS "propertyId" varchar`);
   }
 
   /** Endereço do stand de vendas do empreendimento (cartão da visita pro cliente). */

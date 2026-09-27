@@ -41,6 +41,10 @@ export class KnowledgeItem {
   @Column({ nullable: true })
   fileKey: string;
 
+  // Empreendimento (imóvel) a que o conhecimento pertence. Null = geral da empresa.
+  @Column({ nullable: true })
+  propertyId: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

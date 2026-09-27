@@ -65,9 +65,13 @@ export class KnowledgeController {
   @UseInterceptors(FileInterceptor("file"))
   upload(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { title?: string; type?: KnowledgeType }
+    @Body() body: { title?: string; type?: KnowledgeType; propertyId?: string }
   ) {
-    return this.knowledgeService.extractAndStore(file, { title: body?.title, type: body?.type });
+    return this.knowledgeService.extractAndStore(file, {
+      title: body?.title,
+      type: body?.type,
+      propertyId: body?.propertyId || undefined,
+    });
   }
 
   @Put(":id")
