@@ -149,8 +149,24 @@ ${extraSystem}` : base;
 
   private async chatAnthropic(apiKey: string, model: string, system: string, messages: ChatMessage[]) {
     const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({ model, max_tokens: 1024, system, messages });
-    return { content: (response.content[0] as any).text as string, usage: response.usage };
+    // Modelos novos (Sonnet 5, Opus 4.6+, Fable) pensam antes de responder: o 1º bloco
+    // é "thinking" e o texto vem depois — ler só content[0] dava "(sem resposta)".
+    // O raciocínio conta no max_tokens, então há folga; effort "low" = resposta rápida
+    // (WhatsApp/qualificação não precisam de raciocínio longo).
+    const modeloNovo = /claude-(sonnet-5|opus-(5|4-[678])|fable|mythos)/.test(model);
+    const response = await client.messages.create({
+      model,
+      max_tokens: modeloNovo ? 4096 : 1024,
+      system,
+      messages,
+      ...(modeloNovo ? { output_config: { effort: "low" } } : {}),
+    } as any);
+    const content = (response.content as any[])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text as string)
+      .join("")
+      .trim();
+    return { content, usage: response.usage };
   }
 
   private async chatOpenAI(apiKey: string, model: string, system: string, messages: ChatMessage[]) {
