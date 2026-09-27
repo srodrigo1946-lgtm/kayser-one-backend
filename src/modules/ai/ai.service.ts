@@ -211,6 +211,60 @@ ${conversation}` };
     }
   }
 
+  /**
+   * Transcreve o ÁUDIO (mensagem de voz) do cliente. A Claude não ouve áudio, então usa
+   * OpenAI (Whisper) se houver chave, senão Google (Gemini). Null se não conseguir.
+   */
+  async transcreverAudio(base64: string, mime: string): Promise<string | null> {
+    const s = await this.settingsService.get();
+    const openaiKey = (s.aiProvider === AiProvider.OPENAI && s.aiApiKey) || this.config.get<string>("OPENAI_API_KEY");
+    const geminiKey = (s.aiProvider === AiProvider.GEMINI && s.aiApiKey) || this.config.get<string>("GOOGLE_AI_API_KEY");
+    const tipo = (mime || "audio/ogg").split(";")[0];
+    try {
+      if (openaiKey) {
+        const form = new FormData();
+        const ext = tipo.includes("mpeg") ? "mp3" : tipo.includes("mp4") ? "m4a" : "ogg";
+        form.append("file", new Blob([Buffer.from(base64, "base64")], { type: tipo }), `audio.${ext}`);
+        form.append("model", "whisper-1");
+        form.append("language", "pt");
+        const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openaiKey}` },
+          body: form,
+        });
+        if (r.ok) {
+          const t = ((await r.json()) as any)?.text?.trim();
+          if (t) return t;
+        } else {
+          this.logger.warn(`Whisper falhou (${r.status})`);
+        }
+      }
+      if (geminiKey) {
+        const model = this.config.get<string>("GEMINI_AUDIO_MODEL") || "gemini-2.5-flash";
+        const { data } = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { inline_data: { mime_type: tipo, data: base64 } },
+                  { text: "Transcreva fielmente este áudio em português do Brasil. Responda SÓ com a transcrição." },
+                ],
+              },
+            ],
+          },
+          { headers: { "Content-Type": "application/json" }, timeout: 60_000 }
+        );
+        const t = (data?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text || "").join(" ").trim();
+        if (t) return t;
+      }
+    } catch (err) {
+      this.logger.warn(`Falha ao transcrever áudio: ${(err as Error).message}`);
+    }
+    return null;
+  }
+
   async qualifyLead(leadId: string, conversation: string, userAi?: UserAiConfig) {
     const lead = await this.leadsRepo.findOneOrFail({ where: { id: leadId } });
     const { provider, model, apiKey } = await this.resolveConfig(userAi);

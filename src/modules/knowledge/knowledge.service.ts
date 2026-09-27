@@ -7,6 +7,17 @@ import { KnowledgeItem, KnowledgeType } from "./knowledge.entity";
 import { KnowledgeChunk } from "./knowledge-chunk.entity";
 import { EmbeddingService } from "./embedding.service";
 import { StorageService } from "../storage/storage.service";
+import { SettingsService } from "../settings/settings.service";
+import { AiProvider } from "../settings/settings.entity";
+import Anthropic from "@anthropic-ai/sdk";
+
+const IMAGEM_MIME: Record<string, "image/jpeg" | "image/png" | "image/webp" | "image/gif"> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
 
 // Limite de caracteres por documento para manter a indexação gerenciável.
 const MAX_CONTENT = 50000;
@@ -21,8 +32,48 @@ export class KnowledgeService {
     @InjectRepository(KnowledgeChunk)
     private readonly chunkRepo: Repository<KnowledgeChunk>,
     private readonly embeddings: EmbeddingService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly settings: SettingsService
   ) {}
+
+  /**
+   * Imagem (tabela de preços, folder, planta, print) → texto, lido pela IA (Claude
+   * com visão). Usa a chave Anthropic da empresa (Configurações) ou a do servidor.
+   */
+  private async lerImagem(buffer: Buffer, mediaType: (typeof IMAGEM_MIME)[string]): Promise<string> {
+    if (buffer.length > 5 * 1024 * 1024) {
+      throw new BadRequestException("Imagem muito grande (máx. 5 MB). Reduza e envie de novo.");
+    }
+    const s = await this.settings.get();
+    const empresaAnthropic = !s.aiProvider || s.aiProvider === AiProvider.ANTHROPIC;
+    const apiKey = (empresaAnthropic && s.aiApiKey) || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new BadRequestException("Para ler imagens, configure a chave da IA (Anthropic) na página IA Agente.");
+    }
+    const model = (empresaAnthropic && s.aiModel) || "claude-sonnet-4-6";
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model,
+      max_tokens: 4096,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") } },
+            {
+              type: "text",
+              text:
+                "Esta imagem vai para a base de conhecimento de um assistente de vendas de imóveis. " +
+                "Transcreva TODO o texto e números visíveis (preços, metragens, plantas, condições, endereços, datas), " +
+                "organizando tabelas linha a linha. Depois, em 2-3 linhas, descreva o que a imagem mostra. " +
+                "Não invente nada que não esteja na imagem. Responda em português.",
+            },
+          ],
+        },
+      ],
+    });
+    return resp.content.map((c: any) => (c.type === "text" ? c.text : "")).join("\n").trim();
+  }
 
   /** Extrai o texto de um arquivo e salva como item (indexado) da base. */
   async extractAndStore(
@@ -51,9 +102,11 @@ export class KnowledgeService {
         }).join("\n\n");
       } else if (ext === "txt" || ext === "md") {
         text = file.buffer.toString("utf-8");
+      } else if (IMAGEM_MIME[ext]) {
+        text = await this.lerImagem(file.buffer, IMAGEM_MIME[ext]);
       } else {
         throw new BadRequestException(
-          `Formato .${ext} não suportado. Use PDF, DOCX, PPTX, XLSX, CSV ou TXT.`
+          `Formato .${ext} não suportado. Use PDF, imagem (JPG/PNG/WEBP), DOCX, PPTX, XLSX, CSV ou TXT.`
         );
       }
     } catch (err) {

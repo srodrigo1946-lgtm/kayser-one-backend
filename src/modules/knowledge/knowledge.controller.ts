@@ -61,7 +61,7 @@ export class KnowledgeController {
   @Post("upload")
   @UseGuards(RolesGuard)
   @Roles(...GESTORES)
-  @ApiOperation({ summary: "Treinar a IA enviando um arquivo (PDF, DOCX, XLSX, CSV, TXT)" })
+  @ApiOperation({ summary: "Treinar a IA enviando um arquivo (PDF, imagem, DOCX, XLSX, CSV, TXT)" })
   @UseInterceptors(FileInterceptor("file"))
   upload(
     @UploadedFile() file: Express.Multer.File,

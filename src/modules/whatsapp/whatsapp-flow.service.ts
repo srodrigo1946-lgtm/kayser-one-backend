@@ -10,13 +10,18 @@ import { UserRole } from "../users/user.entity";
 /** Instrução extra da IA quando atende lead de anúncio FORA do plantão. */
 function promptForaDoPlantao(): string {
   const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  return `=== ATENDIMENTO FORA DO PLANTÃO ===
+  return `=== ATENDIMENTO FORA DO PLANTÃO — VOCÊ É O KAYSER ===
 Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora — VOCÊ atende este cliente que veio de um anúncio.
+- Seu nome é *Kayser*, o assistente de INTELIGÊNCIA ARTIFICIAL da equipe. Seja transparente: na sua PRIMEIRA resposta da conversa, apresente-se assim (adapte a saudação ao horário):
+  "Olá! 👋 Eu sou o *Kayser*, assistente de inteligência artificial da equipe. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"
+  Nas respostas seguintes não precisa se apresentar de novo.
+- Se o cliente mandou ÁUDIO, a mensagem aparece como 🎤 Áudio: "transcrição" — responda ao conteúdo normalmente.
 - Seja cordial e breve (mensagens curtas de WhatsApp). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
 - Qualifique com naturalidade (nome, empreendimento de interesse, renda, FGTS, entrada), sem interrogatório.
 - Seu objetivo principal é AGENDAR UMA VISITA: pergunte o melhor dia e horário para o cliente.
 - Quando o cliente escolher dia E horário, confirme repetindo a data completa (ex.: "sábado, 28/09 às 10h") e diga que um especialista vai entrar em contato para confirmar.
-- Nunca diga que é um robô de forma fria; você é a assistente da equipe. Não prometa preço/condição que não esteja na base.`;
+- Se o cliente pedir para falar com uma pessoa, diga que já está transferindo e que um especialista vai falar com ele assim que o atendimento abrir.
+- Não prometa preço/condição que não esteja na base de conhecimento.`;
 }
 
 @Injectable()
@@ -71,7 +76,18 @@ export class WhatsappFlowService {
         const dl = await this.whatsapp.getMediaBase64(instanceName, rawMsg);
         if (dl) media = { mediaType, mediaMime: dl.mimetype, base64: dl.base64 };
       }
-      await this.conversations.addMessage(conv.id, text, "in", false, media);
+      const salva = await this.conversations.addMessage(conv.id, text, "in", false, media);
+
+      // ÁUDIO do cliente: transcreve e grava o texto na conversa — assim a IA
+      // (Kayser) responde a mensagem de voz e o corretor lê sem precisar ouvir.
+      let audioTranscrito = false;
+      if (mediaType === "audio" && media?.base64 && !isGroup) {
+        const t = await this.ai.transcreverAudio(media.base64, media.mediaMime).catch(() => null);
+        if (t) {
+          await this.conversations.updateMessageContent(salva.id, `🎤 Áudio: "${t}"`).catch(() => {});
+          audioTranscrito = true;
+        }
+      }
 
       // Nome + foto do contato/grupo (busca a foto só quando ainda não temos).
       if (!isGroup) {
@@ -123,7 +139,7 @@ export class WhatsappFlowService {
       // humano assume. FORA do plantão (conversa aguardando o turno abrir), a IA atende,
       // qualifica e tenta agendar a visita; quando o turno abre, o corretor assume.
       if (conv.fromAd) {
-        if (mediaType || !(await this.leadQueue.estaAguardando(conv.id))) {
+        if ((mediaType && !audioTranscrito) || !(await this.leadQueue.estaAguardando(conv.id))) {
           return { persisted: true, autoReply: false, central: true };
         }
         return this.responderForaDoPlantao(conv, instanceName, remoteJidFull);
@@ -135,7 +151,8 @@ export class WhatsappFlowService {
       if (ehCentral) return { persisted: true, autoReply: false, central: true };
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
-      if (mediaType) return { persisted: true, autoReply: false, media: mediaType };
+      // (Áudio transcrito passa: a IA responde o texto da mensagem de voz.)
+      if (mediaType && !audioTranscrito) return { persisted: true, autoReply: false, media: mediaType };
 
       const settings = await this.settings.get();
       if (!settings.aiAutoReply) return { persisted: true, autoReply: false };

@@ -387,6 +387,17 @@ export class ConversationsService {
     return this.addMessage(conversationId, content, "out", false);
   }
 
+  /** Troca o texto de uma mensagem (ex.: "🎤 Áudio" → transcrição) e a prévia da conversa. */
+  async updateMessageContent(messageId: string, content: string) {
+    const msg = await this.msgRepo.findOne({ where: { id: messageId } });
+    if (!msg) return;
+    await this.msgRepo.update(messageId, { content });
+    const conv = await this.convRepo.findOne({ where: { id: msg.conversationId } });
+    if (conv && conv.lastMessageAt && new Date(conv.lastMessageAt).getTime() === new Date(msg.createdAt).getTime()) {
+      await this.convRepo.update(conv.id, { lastMessage: content });
+    }
+  }
+
   async addMessage(
     conversationId: string,
     content: string,

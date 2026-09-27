@@ -12,7 +12,7 @@ describe("KnowledgeService (RAG)", () => {
     chunkRepo = { find: jest.fn(), delete: jest.fn(), create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
     embeddings = { embed: jest.fn() };
     storage = { isEnabled: false };
-    service = new KnowledgeService(repo, chunkRepo, embeddings, storage);
+    service = new KnowledgeService(repo, chunkRepo, embeddings, storage, {} as any);
   });
 
   it("quebra o texto em chunks de tamanho limitado", () => {
