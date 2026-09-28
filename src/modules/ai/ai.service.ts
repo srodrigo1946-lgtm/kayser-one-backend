@@ -49,10 +49,12 @@ Nunca faça perguntas que já foram respondidas.
 Se houver dúvida fora da base de conhecimento, encaminhe para um corretor humano.`;
 
 /** Como a voz do Kayser deve soar (OpenAI gpt-4o-mini-tts). */
-const INSTRUCAO_VOZ = `Idioma: português do Brasil, sotaque carioca leve e natural. Você é um consultor imobiliário brasileiro gravando um áudio de WhatsApp para um cliente.
-Tom: simpático, próximo e confiante — como quem conversa, não como locutor nem atendente de telemarketing.
-Ritmo: natural, com pequenas pausas entre as ideias, sem pressa e sem arrastar. Entonação viva, variando como numa conversa real; sorria na voz ao cumprimentar.
-Evite: voz robótica, leitura monótona, ênfase exagerada.`;
+const INSTRUCAO_VOZ = `Idioma: português do Brasil, sotaque carioca natural. Você é um corretor de imóveis brasileiro, jovem e muito animado, gravando um áudio de WhatsApp para um cliente que acabou de chamar.
+Energia: ALTA e contagiante — empolgado de verdade com o imóvel, sorrindo o tempo todo na voz. Soa como alguém que ama o que faz.
+Entonação: bem expressiva e variada, subindo nas boas notícias ("olha que legal!"), com ênfase nas palavras importantes (preço, lazer, localização). Nada de voz reta.
+Ritmo: dinâmico e fluido, um pouco acelerado como numa conversa animada, com micro pausas naturais entre as ideias.
+Estilo: caloroso e próximo, como falar com um amigo — humano, espontâneo, com leve informalidade carioca.
+Evite: voz robótica, monótona, cansada, tom de locutor de rádio ou de telemarketing.`;
 
 const DEFAULT_MODELS: Record<AiProvider, string> = {
   [AiProvider.ANTHROPIC]: "claude-sonnet-5",

@@ -14,10 +14,17 @@ import { KnowledgeService } from "../knowledge/knowledge.service";
  */
 const PROMPT_RESPOSTA_FALADA = `=== ESTA RESPOSTA VAI SER ENVIADA EM ÁUDIO (voz) ===
 O cliente mandou áudio, então sua resposta será convertida em voz. Escreva como uma pessoa FALA num áudio de WhatsApp, em português do Brasil:
-- Frases curtas e naturais, tom de conversa ("olha", "então", "show", "perfeito" com moderação). Nada de listas, tópicos, asteriscos ou emojis.
+- Tom ANIMADO e humano, de corretor empolgado: comece com energia ("Opa, tudo bem?", "Olha só que legal!", "Show de bola!"), use exclamações nas boas notícias e expressões naturais ("olha", "então", "sabe?"). Nada de listas, tópicos, asteriscos ou emojis.
 - Valores e números como se fala: "a partir de trezentos e oito mil reais", "entrega em dezembro de 2030", "de vinte e oito a setenta metros quadrados".
 - No máximo 3 ou 4 frases (uns 20 segundos de áudio). Termine com UMA pergunta simples pra continuar a conversa.
 - Se for mandar fotos, a linha [FOTOS: ...] continua valendo (ela não é falada).`;
+
+/** Lead ainda sem e-mail no cadastro → a IA tem que pedir (regra do Rodrigo: SEMPRE pedir). */
+const PROMPT_PEDIR_EMAIL = `=== E-MAIL DO CLIENTE: AINDA NÃO TEMOS ===
+O cadastro deste cliente está SEM e-mail. Peça o e-mail dele de forma simpática (ex.: "me passa seu e-mail que eu te mando o material completo e as condições?").
+- Se você NÃO pediu o e-mail nas suas 2 últimas mensagens, peça nesta.
+- Se já pediu e ele não respondeu, continue a conversa e peça de novo mais pra frente, com outra frase (sem insistir em toda mensagem).
+- Se ele disser que não quer passar, respeite e não peça mais.`;
 
 /** Tag que a IA escreve para o sistema enviar as fotos: [FOTOS: Nome do empreendimento]. */
 const TAG_FOTOS = /\[FOTOS:\s*([^\]]+)\]/gi;
@@ -59,7 +66,7 @@ Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora
 - Se o cliente mandou ÁUDIO, a mensagem aparece como 🎤 Áudio: "transcrição" — responda ao conteúdo normalmente.
 - Formato WhatsApp: negrito com UMA estrela (*assim*), sem títulos (#), sem linhas "---", sem tabelas. Seja cordial e breve (mensagens curtas). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
 - Qualifique com naturalidade (nome, empreendimento de interesse, renda, FGTS, entrada), sem interrogatório.
-- Peça também o *nome* e o *e-mail* do cliente (ex.: "pra eu te enviar o material e a confirmação da visita"), uma coisa por vez. Se ele não quiser passar o e-mail, siga normalmente.
+- Peça também o *nome* e o *e-mail* do cliente (ex.: "pra eu te enviar o material e a confirmação da visita"), uma coisa por vez.
 - Seu objetivo principal é AGENDAR UMA VISITA: pergunte o melhor dia e horário para o cliente.
 - Quando o cliente escolher dia E horário, confirme repetindo a data completa (ex.: "sábado, 28/09 às 10h") e diga que um especialista vai entrar em contato para confirmar.
 - Se o cliente pedir para falar com uma pessoa, diga que já está transferindo e que um especialista vai falar com ele assim que o atendimento abrir.
@@ -319,7 +326,14 @@ export class WhatsappFlowService {
       const userAi = await this.ai.getUserAiConfig(conv.assignedToId ?? undefined);
       let reply: string;
       try {
-        const extra = [await this.extraEmpreendimentos(), audioTranscrito ? PROMPT_RESPOSTA_FALADA : ""].filter(Boolean).join("\n\n");
+        const semEmail = conv.leadId ? !(await this.conversations.leadTemEmail(conv.leadId)) : false;
+        const extra = [
+          await this.extraEmpreendimentos(),
+          semEmail ? PROMPT_PEDIR_EMAIL : "",
+          audioTranscrito ? PROMPT_RESPOSTA_FALADA : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
         reply = paraWhatsapp(await this.ai.generateReply(history, userAi, extra));
       } catch (err) {
         this.logger.warn(`IA não respondeu (chave/config?): ${(err as Error).message}`);
@@ -365,13 +379,19 @@ export class WhatsappFlowService {
     if (!settings.aiAutoReply) return { persisted: true, autoReply: false, central: true };
 
     const history = await this.conversations.getHistoryForAi(conv.id);
+    const semEmail = conv.leadId ? !(await this.conversations.leadTemEmail(conv.leadId)) : false;
     let reply: string;
     try {
       reply = paraWhatsapp(
         await this.ai.generateReply(
           history,
           undefined,
-          [promptForaDoPlantao(), await this.extraEmpreendimentos(), clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : ""]
+          [
+            promptForaDoPlantao(),
+            await this.extraEmpreendimentos(),
+            semEmail ? PROMPT_PEDIR_EMAIL : "",
+            clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : "",
+          ]
             .filter(Boolean)
             .join("\n\n")
         )

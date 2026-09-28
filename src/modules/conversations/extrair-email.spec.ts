@@ -10,3 +10,14 @@ describe("extrairEmail", () => {
     expect(extrairEmail("")).toBeNull();
   });
 });
+
+describe("extrairEmail — e-mail falado no áudio", () => {
+  it("entende 'arroba' e 'ponto'", () => {
+    expect(extrairEmail('🎤 Áudio: "meu email é rodrigo arroba gmail ponto com"')).toBe("rodrigo@gmail.com");
+    expect(extrairEmail("é ana ponto souza arroba hotmail ponto com ponto br")).toBe("ana.souza@hotmail.com.br");
+    expect(extrairEmail("joao underline 22 arroba yahoo ponto com")).toBe("joao_22@yahoo.com");
+  });
+  it("frase sem arroba não inventa e-mail", () => {
+    expect(extrairEmail("quero visitar no sábado ponto final")).toBeNull();
+  });
+});

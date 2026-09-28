@@ -21,9 +21,28 @@ const ETIQUETA_STATUS: Record<string, LeadStatus> = {
   venda_ganha: LeadStatus.VENDA_GANHA,
 };
 
-/** Primeiro e-mail válido do texto (minúsculo), ou null. */
+/**
+ * E-mail FALADO no áudio vira e-mail escrito: "rodrigo ponto silva arroba gmail ponto com"
+ * → "rodrigo.silva@gmail.com". Só mexe no trecho em volta de "arroba".
+ */
+function emailFalado(texto: string): string {
+  return texto.replace(
+    /([a-z0-9_-]+(?:\s+(?:ponto|underline|traço|traco|hífen|hifen)\s+[a-z0-9_-]+)*)\s+arroba\s+([a-z0-9-]+(?:\s+ponto\s+[a-z0-9-]+)+)/gi,
+    (_m, antes: string, depois: string) => {
+      const junta = (s: string) =>
+        s
+          .replace(/\s+ponto\s+/gi, ".")
+          .replace(/\s+underline\s+/gi, "_")
+          .replace(/\s+(traço|traco|hífen|hifen)\s+/gi, "-");
+      return `${junta(antes)}@${junta(depois)}`;
+    }
+  );
+}
+
+/** Primeiro e-mail válido do texto (minúsculo), ou null. Entende e-mail falado em áudio. */
 export function extrairEmail(texto: string): string | null {
-  const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.exec(texto || "");
+  const t = emailFalado(texto || "");
+  const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.exec(t);
   return m ? m[0].toLowerCase().replace(/\.+$/, "") : null;
 }
 
@@ -391,6 +410,12 @@ export class ConversationsService {
     if (!lead || lead.email) return null;
     await this.leadsRepo.update(leadId, { email });
     return email;
+  }
+
+  /** O lead já tem e-mail no cadastro? (a IA pede enquanto não tiver) */
+  async leadTemEmail(leadId: string): Promise<boolean> {
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId }, select: ["id", "email"] });
+    return !!lead?.email;
   }
 
   /** Alguém da EQUIPE (não a IA) mandou mensagem nesta conversa nas últimas `horas`? */
