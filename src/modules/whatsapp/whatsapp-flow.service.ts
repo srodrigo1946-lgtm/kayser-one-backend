@@ -140,6 +140,33 @@ export class WhatsappFlowService {
     }
   }
 
+  /** Um relógio por conversa: a nota só sai quando a conversa "assenta". */
+  private readonly timersScore = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Score do lead (0–100) pra TODA conversa — no plantão também, onde a IA não responde.
+   * Espera 90s sem mensagem nova (o cliente costuma mandar várias seguidas) e aí a IA lê
+   * as últimas 30 mensagens (cliente + corretor/Kayser) e dá a nota. Economiza chamadas.
+   */
+  private agendarScore(convId: string, leadId: string) {
+    const antigo = this.timersScore.get(convId);
+    if (antigo) clearTimeout(antigo);
+    const t = setTimeout(async () => {
+      this.timersScore.delete(convId);
+      try {
+        const hist = await this.conversations.getHistoryForAi(convId, 30);
+        if (hist.length < 2) return;
+        const texto = hist.map((m) => `${m.role === "user" ? "cliente" : "atendimento"}: ${m.content}`).join("\n");
+        await this.ai.qualifyLead(leadId, texto);
+      } catch (err) {
+        this.logger.warn(`Não foi possível dar o score do lead: ${(err as Error).message}`);
+      }
+    }, 90_000);
+    // Não segura o processo aberto (deploy/testes) só por causa do relógio.
+    (t as any).unref?.();
+    this.timersScore.set(convId, t);
+  }
+
   /** Tira as tags [FOTOS: X] do texto e devolve os nomes pedidos. */
   private separarFotos(reply: string): { texto: string; pedidos: string[] } {
     const pedidos: string[] = [];
@@ -294,6 +321,8 @@ export class WhatsappFlowService {
         await this.knowledge.registrarInteresse(conv.leadId, textoCliente).catch(() => null);
         // Cliente mandou o e-mail? Vai direto pro cadastro do lead.
         await this.conversations.registrarEmailDoLead(conv.leadId, textoCliente).catch(() => null);
+        // Score em TODA conversa com lead — no plantão também (a IA só lê, não responde).
+        this.agendarScore(conv.id, conv.leadId);
       }
 
       if (ehCentral && !conv.fromAd) {
@@ -362,15 +391,7 @@ export class WhatsappFlowService {
       if (reply || fotosPedidas.length) {
         if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, responderEmAudio);
 
-        // Score do lead: a IA qualifica sozinha a partir da conversa. Roda em
-        // segundo plano (não segura a resposta ao cliente) e falha em silêncio —
-        // sem score é melhor que sem resposta.
-        if (conv.leadId) {
-          const texto = history.map((m) => `${m.role}: ${m.content}`).join("\n");
-          this.ai
-            .qualifyLead(conv.leadId, texto, userAi)
-            .catch((err) => this.logger.warn(`Não foi possível qualificar o lead: ${err?.message}`));
-        }
+        // Score do lead: agendado logo na entrada da mensagem (agendarScore).
         await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
       }
       return { persisted: true, autoReply: true };
@@ -423,11 +444,10 @@ export class WhatsappFlowService {
     if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, clienteMandouAudio);
     await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
 
-    // Em segundo plano: score do lead + visita combinada → Agenda. Falha em silêncio.
+    // Em segundo plano: visita combinada → Agenda (o score é agendado na entrada). Falha em silêncio.
     if (conv.leadId) {
       const leadId = conv.leadId;
       const texto = [...history, { role: "assistant", content: reply }].map((m) => `${m.role}: ${m.content}`).join("\n");
-      this.ai.qualifyLead(leadId, texto).catch(() => {});
       this.ai
         .extrairVisita(texto)
         .then(async (v) => {
@@ -478,6 +498,8 @@ export class WhatsappFlowService {
     const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
     const instanceOwner = conv.instanceOwnerId || senderUserId;
     await this.conversations.addMessage(conv.id, text, "out", false);
+    // O que o corretor conversou também conta pro score (ex.: agendou visita).
+    if (conv.leadId) this.agendarScore(conv.id, conv.leadId);
     if (conv.fromAd) {
       await this.leadQueue.markAttended(conv.id, senderUserId).catch(() => {});
     }
