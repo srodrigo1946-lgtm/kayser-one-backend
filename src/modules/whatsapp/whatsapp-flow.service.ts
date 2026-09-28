@@ -153,11 +153,13 @@ export class WhatsappFlowService {
       // ÁUDIO do cliente: transcreve e grava o texto na conversa — assim a IA
       // (Kayser) responde a mensagem de voz e o corretor lê sem precisar ouvir.
       let audioTranscrito = false;
+      let textoCliente = text; // o que o cliente disse (texto ou áudio transcrito)
       if (mediaType === "audio" && media?.base64 && !isGroup) {
         const t = await this.ai.transcreverAudio(media.base64, media.mediaMime).catch(() => null);
         if (t) {
           await this.conversations.updateMessageContent(salva.id, `🎤 Áudio: "${t}"`).catch(() => {});
           audioTranscrito = true;
+          textoCliente = t;
         }
       }
 
@@ -213,8 +215,17 @@ export class WhatsappFlowService {
       // NÚMERO CENTRAL = só clientes (decisão do Rodrigo, 27/09/2026 — antes a IA não
       // respondia ninguém ali além de anúncio). Todo contato vira lead e entra na fila
       // como o anúncio: no plantão vai pro corretor; fora dele o Kayser atende.
+      if (ehCentral && !conv.fromAd && !conv.leadId) {
+        conv.leadId = (await this.conversations.criarLeadWhatsapp(conv.id)) ?? null;
+      }
+
+      // Cliente citou um empreendimento ("informações do Ilha Stay")? O lead fica
+      // registrado nele — vale no plantão também (sem depender da IA responder).
+      if (conv.leadId && !isGroup) {
+        await this.knowledge.registrarInteresse(conv.leadId, textoCliente).catch(() => null);
+      }
+
       if (ehCentral && !conv.fromAd) {
-        if (!conv.leadId) conv.leadId = (await this.conversations.criarLeadWhatsapp(conv.id)) ?? null;
         const fila = await this.leadQueue.getSettings();
         if (fila.enabled && conv.leadId && !(await this.leadQueue.jaPassouNaFila(conv.id))) {
           const a = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId });

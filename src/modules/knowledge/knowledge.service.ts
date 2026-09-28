@@ -10,6 +10,45 @@ import { StorageService } from "../storage/storage.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiProvider } from "../settings/settings.entity";
 import { Property } from "../properties/property.entity";
+import { Lead } from "../leads/lead.entity";
+import { LeadHistory, LeadHistoryType } from "../lead-history/lead-history.entity";
+
+/** minúsculo, sem acento, só letras/números/espaço — pra comparar nomes. */
+export function normalizarNome(s: string): string {
+  return (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Palavras soltas que NÃO identificam um empreendimento sozinhas.
+const GENERICAS = new Set(["residencial", "residence", "resort", "recreio", "barra", "porto", "beach", "home", "ilha", "villa", "vila", "sky", "oferta", "condominio", "edificio", "torre"]);
+
+/**
+ * Qual empreendimento o cliente citou no texto? Casa pelo nome inteiro, pelas duas
+ * primeiras palavras ("ilha stay") ou pela 1ª palavra quando ela é marcante
+ * ("oceanside", "renascenca", "ilhamar"). Vence o trecho mais longo. Null = nenhum.
+ */
+export function detectarEmpreendimento<T extends { name: string }>(texto: string, props: T[]): T | null {
+  const t = ` ${normalizarNome(texto)} `;
+  let melhor: { p: T; tam: number } | null = null;
+  for (const p of props) {
+    const nome = normalizarNome(p.name);
+    const palavras = nome.split(" ").filter(Boolean);
+    const frases = [nome, palavras.slice(0, 2).join(" ")];
+    if (palavras[0] && (palavras[0].length >= 5 || palavras[0] === "beon") && !GENERICAS.has(palavras[0])) {
+      frases.push(palavras[0]);
+    }
+    for (const f of frases) {
+      if (f && f.length >= 4 && t.includes(` ${f} `) && (!melhor || f.length > melhor.tam)) {
+        melhor = { p, tam: f.length };
+      }
+    }
+  }
+  return melhor?.p ?? null;
+}
 import Anthropic from "@anthropic-ai/sdk";
 
 const IMAGEM_MIME: Record<string, "image/jpeg" | "image/png" | "image/webp" | "image/gif"> = {
@@ -169,6 +208,31 @@ export class KnowledgeService {
     const items = await this.repo.find({ order: { updatedAt: "DESC" } });
     // Imagem guardada como data URI é pesada: a lista só diz que é imagem.
     return items.map((i) => (i.fileKey?.startsWith("data:") ? { ...i, fileKey: "imagem" } : i));
+  }
+
+  /**
+   * Cliente citou um empreendimento na mensagem → o lead fica REGISTRADO nele
+   * (empreendimento + vínculo com o imóvel) e o histórico anota. Só grava se o lead
+   * ainda não está vinculado a um imóvel — o primeiro interesse (ou o corretor) vale.
+   */
+  async registrarInteresse(leadId: string, texto: string): Promise<string | null> {
+    if (!leadId || !texto?.trim()) return null;
+    const props = await this.repo.manager.getRepository(Property).find({ where: { active: true } });
+    const p = detectarEmpreendimento(texto, props);
+    if (!p) return null;
+    const leads = this.repo.manager.getRepository(Lead);
+    const lead = await leads.findOne({ where: { id: leadId } });
+    if (!lead || lead.propertyId) return null;
+    await leads.update(leadId, { propertyId: p.id, empreendimento: p.name });
+    await this.repo.manager
+      .getRepository(LeadHistory)
+      .save({
+        leadId,
+        type: LeadHistoryType.SISTEMA,
+        description: `Cliente perguntou sobre ${p.name} — lead registrado nesse empreendimento.`,
+      } as any)
+      .catch(() => {});
+    return p.name;
   }
 
   /** Empreendimentos ativos com o resumo do cadastro (preço, área, entrega, stand...). */
