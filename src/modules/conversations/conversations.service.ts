@@ -21,6 +21,12 @@ const ETIQUETA_STATUS: Record<string, LeadStatus> = {
   venda_ganha: LeadStatus.VENDA_GANHA,
 };
 
+/** Primeiro e-mail válido do texto (minúsculo), ou null. */
+export function extrairEmail(texto: string): string | null {
+  const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.exec(texto || "");
+  return m ? m[0].toLowerCase().replace(/\.+$/, "") : null;
+}
+
 @Injectable()
 export class ConversationsService {
   constructor(
@@ -372,6 +378,19 @@ export class ConversationsService {
     } catch {
       return undefined; // não quebra o inbound se a criação do lead falhar
     }
+  }
+
+  /**
+   * Se o texto do cliente tem um e-mail, grava no lead (só se ainda estiver vazio —
+   * não sobrescreve o que o corretor cadastrou). Devolve o e-mail gravado ou null.
+   */
+  async registrarEmailDoLead(leadId: string, texto: string): Promise<string | null> {
+    const email = extrairEmail(texto);
+    if (!email) return null;
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
+    if (!lead || lead.email) return null;
+    await this.leadsRepo.update(leadId, { email });
+    return email;
   }
 
   /** Alguém da EQUIPE (não a IA) mandou mensagem nesta conversa nas últimas `horas`? */

@@ -48,6 +48,7 @@ Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora
 - Se o cliente mandou ÁUDIO, a mensagem aparece como 🎤 Áudio: "transcrição" — responda ao conteúdo normalmente.
 - Formato WhatsApp: negrito com UMA estrela (*assim*), sem títulos (#), sem linhas "---", sem tabelas. Seja cordial e breve (mensagens curtas). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
 - Qualifique com naturalidade (nome, empreendimento de interesse, renda, FGTS, entrada), sem interrogatório.
+- Peça também o *nome* e o *e-mail* do cliente (ex.: "pra eu te enviar o material e a confirmação da visita"), uma coisa por vez. Se ele não quiser passar o e-mail, siga normalmente.
 - Seu objetivo principal é AGENDAR UMA VISITA: pergunte o melhor dia e horário para o cliente.
 - Quando o cliente escolher dia E horário, confirme repetindo a data completa (ex.: "sábado, 28/09 às 10h") e diga que um especialista vai entrar em contato para confirmar.
 - Se o cliente pedir para falar com uma pessoa, diga que já está transferindo e que um especialista vai falar com ele assim que o atendimento abrir.
@@ -223,6 +224,8 @@ export class WhatsappFlowService {
       // registrado nele — vale no plantão também (sem depender da IA responder).
       if (conv.leadId && !isGroup) {
         await this.knowledge.registrarInteresse(conv.leadId, textoCliente).catch(() => null);
+        // Cliente mandou o e-mail? Vai direto pro cadastro do lead.
+        await this.conversations.registrarEmailDoLead(conv.leadId, textoCliente).catch(() => null);
       }
 
       if (ehCentral && !conv.fromAd) {
