@@ -430,6 +430,11 @@ export class LeadQueueService {
     }
   }
 
+  /** Esta conversa já entrou na fila alguma vez (qualquer status)? Evita reenfileirar. */
+  async jaPassouNaFila(conversationId: string): Promise<boolean> {
+    return (await this.assignRepo.count({ where: { conversationId } })) > 0;
+  }
+
   /** A conversa está esperando o plantão abrir (ninguém atendendo ainda)? */
   async estaAguardando(conversationId: string): Promise<boolean> {
     return (await this.assignRepo.count({ where: { conversationId, status: "aguardando" } })) > 0;

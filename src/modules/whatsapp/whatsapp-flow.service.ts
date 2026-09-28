@@ -41,7 +41,7 @@ export function paraWhatsapp(texto: string): string {
 function promptForaDoPlantao(): string {
   const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   return `=== ATENDIMENTO FORA DO PLANTÃO — VOCÊ É O KAYSER ===
-Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora — VOCÊ atende este cliente que veio de um anúncio.
+Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora — VOCÊ atende este cliente.
 - Seu nome é *Kayser*, o assistente de INTELIGÊNCIA ARTIFICIAL da equipe. Seja transparente: na sua PRIMEIRA resposta da conversa, apresente-se assim (adapte a saudação ao horário):
   "Olá! 👋 Eu sou o *Kayser*, assistente de inteligência artificial da equipe. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"
   Nas respostas seguintes não precisa se apresentar de novo.
@@ -210,17 +210,36 @@ export class WhatsappFlowService {
       // Lead do número central (anúncio): em plantão a IA NÃO responde — o especialista
       // humano assume. FORA do plantão (conversa aguardando o turno abrir), a IA atende,
       // qualifica e tenta agendar a visita; quando o turno abre, o corretor assume.
-      if (conv.fromAd) {
-        if ((mediaType && !audioTranscrito) || !(await this.leadQueue.estaAguardando(conv.id))) {
+      // NÚMERO CENTRAL = só clientes (decisão do Rodrigo, 27/09/2026 — antes a IA não
+      // respondia ninguém ali além de anúncio). Todo contato vira lead e entra na fila
+      // como o anúncio: no plantão vai pro corretor; fora dele o Kayser atende.
+      if (ehCentral && !conv.fromAd) {
+        if (!conv.leadId) conv.leadId = (await this.conversations.criarLeadWhatsapp(conv.id)) ?? null;
+        const fila = await this.leadQueue.getSettings();
+        if (fila.enabled && conv.leadId && !(await this.leadQueue.jaPassouNaFila(conv.id))) {
+          const a = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId });
+          if (a && a.status !== "aguardando") {
+            await this.avisarEspecialista(conv, instanceName, remoteJidFull, a.assignedToId);
+            return { persisted: true, autoReply: false, central: true };
+          }
+        }
+      }
+
+      if (conv.fromAd || ehCentral) {
+        // Mídia que não deu pra transcrever: a IA não "vê" — o humano responde.
+        if (mediaType && !audioTranscrito) return { persisted: true, autoReply: false, central: true };
+        // Alguém da equipe respondeu nas últimas 12h: o humano assumiu, Kayser não atropela.
+        if (await this.conversations.humanoRespondeuRecente(conv.id, 12)) {
+          return { persisted: true, autoReply: false, central: true };
+        }
+        // Com a fila ligada, o Kayser só atende quem está AGUARDANDO o plantão; se já
+        // tem corretor (pendente/atendido), quem responde é ele.
+        const fila = await this.leadQueue.getSettings();
+        if (fila.enabled && !(await this.leadQueue.estaAguardando(conv.id))) {
           return { persisted: true, autoReply: false, central: true };
         }
         return this.responderForaDoPlantao(conv, instanceName, remoteJidFull);
       }
-
-      // NÚMERO CENTRAL: a IA não responde NINGUÉM (amigos, orgânico, colegas). Só o
-      // lead de anúncio recebe o aviso do especialista (acima). Bloqueia o resto —
-      // era a IA respondendo os contatos pessoais do Rodrigo.
-      if (ehCentral) return { persisted: true, autoReply: false, central: true };
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
       // (Áudio transcrito passa: a IA responde o texto da mensagem de voz.)

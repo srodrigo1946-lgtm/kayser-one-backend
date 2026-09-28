@@ -347,6 +347,42 @@ export class ConversationsService {
     }
   }
 
+  /**
+   * Contato que chegou SEM anúncio no número central (orgânico): cria o lead com
+   * origem WhatsApp → cai no Kanban como Novo Lead. Devolve o id (ou undefined).
+   */
+  async criarLeadWhatsapp(conversationId: string): Promise<string | undefined> {
+    const conv = await this.convRepo.findOne({ where: { id: conversationId } });
+    if (!conv) return undefined;
+    if (conv.leadId) return conv.leadId;
+    const numero = (conv.remoteJid ?? "").replace(/\D/g, "");
+    try {
+      const saved = await this.leadsRepo.save(
+        this.leadsRepo.create({
+          name: conv.contactName || numero || "Contato WhatsApp",
+          phone: numero,
+          whatsapp: numero,
+          origem: "whatsapp",
+          source: LeadSource.WHATSAPP,
+          responsavelId: conv.assignedToId ?? undefined,
+        })
+      );
+      await this.convRepo.update(conv.id, { leadId: saved.id });
+      return saved.id;
+    } catch {
+      return undefined; // não quebra o inbound se a criação do lead falhar
+    }
+  }
+
+  /** Alguém da EQUIPE (não a IA) mandou mensagem nesta conversa nas últimas `horas`? */
+  async humanoRespondeuRecente(conversationId: string, horas: number): Promise<boolean> {
+    const desde = new Date(Date.now() - horas * 3_600_000);
+    const n = await this.msgRepo.count({
+      where: { conversationId, direction: "out", isAI: false, createdAt: MoreThan(desde) },
+    });
+    return n > 0;
+  }
+
   /** Vincula um lead à conversa (usado pela entrada de formulário Meta). */
   async setLead(conversationId: string, leadId: string, contactName?: string) {
     await this.convRepo.update(conversationId, {
