@@ -476,25 +476,28 @@ Retorne APENAS o JSON, sem texto adicional.`;
       const cleaned = raw.replace(/```json|```/g, "").trim();
       const data = JSON.parse(cleaned);
       if (data.score) {
-        lead.score = data.score;
-        if (data.renda_detectada) lead.renda = data.renda_detectada;
-        if (data.fgts_detectado) lead.fgts = data.fgts_detectado;
-        if (data.cidade_detectada) lead.cidade = data.cidade_detectada;
+        // Grava SÓ os campos que a IA preencheu (update, não save): o lead foi lido antes
+        // da chamada à IA, e um save() da entidade inteira desfazia o que mudou nesse
+        // meio-tempo (status arrastado no Kanban, corretor atribuído pela fila, imóvel).
+        const mudou: Partial<Lead> = { score: data.score };
+        if (data.renda_detectada) mudou.renda = data.renda_detectada;
+        if (data.fgts_detectado) mudou.fgts = data.fgts_detectado;
+        if (data.cidade_detectada) mudou.cidade = data.cidade_detectada;
         // E-mail: só completa o vazio.
         if (data.email_detectado && !lead.email && /@/.test(data.email_detectado)) {
-          lead.email = String(data.email_detectado).trim().toLowerCase();
+          mudou.email = String(data.email_detectado).trim().toLowerCase();
         }
         // Nome: troca só o "nome provisório" (número de telefone ou "Contato WhatsApp").
         const provisorio = !lead.name || /^[\d\s()+-]+$/.test(lead.name) || lead.name === "Contato WhatsApp";
         if (data.nome_detectado && provisorio && String(data.nome_detectado).trim().length >= 2) {
-          lead.name = String(data.nome_detectado).trim().slice(0, 80);
+          mudou.name = String(data.nome_detectado).trim().slice(0, 80);
         }
         // Só completa o que está vazio: o que o corretor (ou o anúncio) já
         // preencheu vale mais que o palpite da IA.
         if (data.empreendimento_detectado && !lead.empreendimento) {
-          lead.empreendimento = data.empreendimento_detectado;
+          mudou.empreendimento = data.empreendimento_detectado;
         }
-        await this.leadsRepo.save(lead);
+        await this.leadsRepo.update(lead.id, mudou as any);
       }
       return data;
     } catch {
