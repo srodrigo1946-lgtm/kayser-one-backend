@@ -239,6 +239,9 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalImage" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaPageToken" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaVerifyToken" text`);
+    // Formulários permitidos. 1ª vez: só o "Ilha stay lead" (pedido do Rodrigo, 28/09/2026).
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaFormIds" text`);
+    await this.dataSource.query(`UPDATE settings SET "metaFormIds" = '960631980396672' WHERE "metaFormIds" IS NULL`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);

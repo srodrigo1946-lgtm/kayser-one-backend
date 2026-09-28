@@ -130,6 +130,10 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   metaVerifyToken: string;
 
+  // IDs dos formulários do Meta que mandam lead pro Kayser (vírgula). Vazio = todos.
+  @Column({ type: "text", nullable: true })
+  metaFormIds: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

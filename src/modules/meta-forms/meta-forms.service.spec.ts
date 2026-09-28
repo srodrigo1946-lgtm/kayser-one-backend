@@ -33,6 +33,21 @@ describe("MetaFormsService", () => {
     expect(r.phone).toBe("21999");
   });
 
+  it("só aceita lead dos formulários marcados (ex.: só o 'Ilha stay lead')", async () => {
+    const settings: any = { get: async () => ({ metaFormIds: "960631980396672" }) };
+    const s: any = new MetaFormsService({} as any, {} as any, {} as any, { get: () => "" } as any, settings);
+    const buscados: string[] = [];
+    s.fetchLead = async (id: string) => {
+      buscados.push(id);
+      return null; // sem telefone → não cria nada (não toca no banco)
+    };
+    const evento = (leadgen_id: string, form_id: string) => ({ field: "leadgen", value: { leadgen_id, form_id } });
+    await s.handleLeadgen({
+      entry: [{ changes: [evento("L1", "960631980396672"), evento("L2", "26634231496201321")] }],
+    });
+    expect(buscados).toEqual(["L1"]); // o da Barra Olímpica foi ignorado
+  });
+
   it("recebeDireto rejeita token errado e aceita o certo", async () => {
     const s: any = svc();
     const criados: any[] = [];
