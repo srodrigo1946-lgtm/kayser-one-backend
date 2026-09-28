@@ -33,6 +33,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensurePropertyDeliveryDate", () => this.ensurePropertyDeliveryDate()],
       ["ensurePropertyStandAddress", () => this.ensurePropertyStandAddress()],
       ["ensureKnowledgePropertyId", () => this.ensureKnowledgePropertyId()],
+      ["cancelarVisitasIaOrfas", () => this.cancelarVisitasIaOrfas()],
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
@@ -322,6 +323,17 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Previsão de entrega do empreendimento (texto livre). */
   private async ensurePropertyDeliveryDate() {
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "deliveryDate" varchar`);
+  }
+
+  /**
+   * Visitas agendadas pela IA cujo lead foi EXCLUÍDO (leadId virou null) ficavam na Agenda
+   * e nos avisos. Cancela. Idempotente (roda a cada deploy, só pega as órfãs).
+   */
+  private async cancelarVisitasIaOrfas() {
+    await this.dataSource.query(
+      `UPDATE appointments SET status = 'cancelado'
+        WHERE "leadId" IS NULL AND status = 'agendado' AND notes LIKE '%Agendado pela IA%'`
+    );
   }
 
   /** Conhecimento do Kayser separado por empreendimento. */

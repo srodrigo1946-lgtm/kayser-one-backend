@@ -420,6 +420,8 @@ export class DashboardService {
       status: AppointmentStatus.AGENDADO,
       scheduledAt: MoreThan(new Date()),
       notes: Like(`%${MARCA_VISITA_IA}%`),
+      // Lead excluído (leadId vira null): a visita não tem mais cliente — não avisa.
+      leadId: Not(IsNull()),
     };
     if (ids !== null) where.userId = In(ids);
     const appts = await this.leadsRepo.manager.getRepository(Appointment).find({

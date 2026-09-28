@@ -1,7 +1,8 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
-import { Repository, Like, In, FindOptionsWhere } from "typeorm";
+import { Repository, Like, In, FindOptionsWhere, MoreThan } from "typeorm";
+import { Appointment, AppointmentStatus } from "../appointments/appointment.entity";
 import * as XLSX from "xlsx";
 import { Lead, LeadStatus, LeadSource } from "./lead.entity";
 import { Conversation } from "../conversations/conversation.entity";
@@ -282,6 +283,15 @@ export class LeadsService {
 
   async remove(id: string, user?: User) {
     const lead = await this.findOne(id, user);
+    // Visitas FUTURAS desse lead não fazem mais sentido: cancela (some da Agenda e dos
+    // avisos do Kanban/sino). As passadas ficam como histórico.
+    await this.leadsRepo.manager
+      .getRepository(Appointment)
+      .update(
+        { leadId: lead.id, status: AppointmentStatus.AGENDADO, scheduledAt: MoreThan(new Date()) },
+        { status: AppointmentStatus.CANCELADO }
+      )
+      .catch((err) => this.logger.warn(`Falha ao cancelar visitas do lead excluído: ${(err as Error).message}`));
     await this.leadsRepo.remove(lead);
     return { message: "Lead removido." };
   }
