@@ -8,6 +8,17 @@ import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 
+/**
+ * O cliente mandou ÁUDIO → a resposta vira voz. Texto pra ser FALADO é diferente do
+ * escrito: sem isso a voz lia listas, emojis e "R$ 308.000,00" como robô.
+ */
+const PROMPT_RESPOSTA_FALADA = `=== ESTA RESPOSTA VAI SER ENVIADA EM ÁUDIO (voz) ===
+O cliente mandou áudio, então sua resposta será convertida em voz. Escreva como uma pessoa FALA num áudio de WhatsApp, em português do Brasil:
+- Frases curtas e naturais, tom de conversa ("olha", "então", "show", "perfeito" com moderação). Nada de listas, tópicos, asteriscos ou emojis.
+- Valores e números como se fala: "a partir de trezentos e oito mil reais", "entrega em dezembro de 2030", "de vinte e oito a setenta metros quadrados".
+- No máximo 3 ou 4 frases (uns 20 segundos de áudio). Termine com UMA pergunta simples pra continuar a conversa.
+- Se for mandar fotos, a linha [FOTOS: ...] continua valendo (ela não é falada).`;
+
 /** Tag que a IA escreve para o sistema enviar as fotos: [FOTOS: Nome do empreendimento]. */
 const TAG_FOTOS = /\[FOTOS:\s*([^\]]+)\]/gi;
 
@@ -73,6 +84,41 @@ export class WhatsappFlowService {
   private async extraEmpreendimentos(): Promise<string> {
     const cat = await this.knowledge.catalogoEmpreendimentos().catch(() => "");
     return promptEmpreendimentos(cat);
+  }
+
+  /**
+   * Envia a resposta da IA: em ÁUDIO (voz masculina) quando o cliente mandou áudio —
+   * regra do Rodrigo —, senão em texto. Se a voz falhar, cai pro texto. Registra na conversa.
+   */
+  private async enviarResposta(
+    convId: string,
+    instanceName: string | undefined,
+    remoteJidFull: string,
+    reply: string,
+    emAudio: boolean
+  ) {
+    if (emAudio && instanceName) {
+      const voz = await this.ai.falarTexto(reply).catch(() => null);
+      if (voz) {
+        try {
+          await this.whatsapp.sendAudio(instanceName, remoteJidFull, voz.base64);
+          await this.conversations.addMessage(convId, `🔊 Áudio: "${reply}"`, "out", true, {
+            mediaType: "audio",
+            mediaMime: voz.mimetype,
+            base64: voz.base64,
+          });
+          return;
+        } catch (err) {
+          this.logger.warn(`Falha ao enviar áudio, vai em texto: ${(err as Error).message}`);
+        }
+      }
+    }
+    await this.conversations.addMessage(convId, reply, "out", true);
+    if (instanceName) {
+      await this.whatsapp
+        .sendText(instanceName, remoteJidFull, reply)
+        .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
+    }
   }
 
   /** Tira as tags [FOTOS: X] do texto e devolve os nomes pedidos. */
@@ -252,7 +298,7 @@ export class WhatsappFlowService {
         if (fila.enabled && !(await this.leadQueue.estaAguardando(conv.id))) {
           return { persisted: true, autoReply: false, central: true };
         }
-        return this.responderForaDoPlantao(conv, instanceName, remoteJidFull);
+        return this.responderForaDoPlantao(conv, instanceName, remoteJidFull, audioTranscrito);
       }
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
@@ -273,7 +319,8 @@ export class WhatsappFlowService {
       const userAi = await this.ai.getUserAiConfig(conv.assignedToId ?? undefined);
       let reply: string;
       try {
-        reply = paraWhatsapp(await this.ai.generateReply(history, userAi, await this.extraEmpreendimentos()));
+        const extra = [await this.extraEmpreendimentos(), audioTranscrito ? PROMPT_RESPOSTA_FALADA : ""].filter(Boolean).join("\n\n");
+        reply = paraWhatsapp(await this.ai.generateReply(history, userAi, extra));
       } catch (err) {
         this.logger.warn(`IA não respondeu (chave/config?): ${(err as Error).message}`);
         return { persisted: true, autoReply: false };
@@ -284,7 +331,7 @@ export class WhatsappFlowService {
       reply = textoIa;
 
       if (reply || fotosPedidas.length) {
-        if (reply) await this.conversations.addMessage(conv.id, reply, "out", true);
+        if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, audioTranscrito);
 
         // Score do lead: a IA qualifica sozinha a partir da conversa. Roda em
         // segundo plano (não segura a resposta ao cliente) e falha em silêncio —
@@ -294,13 +341,6 @@ export class WhatsappFlowService {
           this.ai
             .qualifyLead(conv.leadId, texto, userAi)
             .catch((err) => this.logger.warn(`Não foi possível qualificar o lead: ${err?.message}`));
-        }
-        if (instanceName && reply) {
-          try {
-            await this.whatsapp.sendText(instanceName, remoteJidFull, reply);
-          } catch (err) {
-            this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`);
-          }
         }
         await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
       }
@@ -318,7 +358,8 @@ export class WhatsappFlowService {
   private async responderForaDoPlantao(
     conv: { id: string; leadId?: string | null },
     instanceName: string | undefined,
-    remoteJidFull: string
+    remoteJidFull: string,
+    clienteMandouAudio = false
   ) {
     const settings = await this.settings.get();
     if (!settings.aiAutoReply) return { persisted: true, autoReply: false, central: true };
@@ -327,7 +368,13 @@ export class WhatsappFlowService {
     let reply: string;
     try {
       reply = paraWhatsapp(
-        await this.ai.generateReply(history, undefined, `${promptForaDoPlantao()}\n\n${await this.extraEmpreendimentos()}`)
+        await this.ai.generateReply(
+          history,
+          undefined,
+          [promptForaDoPlantao(), await this.extraEmpreendimentos(), clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : ""]
+            .filter(Boolean)
+            .join("\n\n")
+        )
       );
     } catch (err) {
       this.logger.warn(`IA (fora do plantão) não respondeu: ${(err as Error).message}`);
@@ -338,14 +385,7 @@ export class WhatsappFlowService {
     reply = textoIa;
     if (!reply && !fotosPedidas.length) return { persisted: true, autoReply: false, central: true };
 
-    if (reply) {
-      await this.conversations.addMessage(conv.id, reply, "out", true);
-      if (instanceName) {
-        await this.whatsapp
-          .sendText(instanceName, remoteJidFull, reply)
-          .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
-      }
-    }
+    if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, clienteMandouAudio);
     await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
 
     // Em segundo plano: score do lead + visita combinada → Agenda. Falha em silêncio.

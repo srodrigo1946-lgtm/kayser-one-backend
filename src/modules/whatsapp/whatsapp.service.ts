@@ -158,6 +158,23 @@ export class WhatsappService {
     }
   }
 
+  /** Mensagem de VOZ (ptt) — áudio em base64 (ogg/opus). */
+  async sendAudio(instanceName: string, to: string, base64: string) {
+    const number = to.includes("@") ? to : to.replace(/\D/g, "");
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/message/sendWhatsAppAudio/${instanceName}`,
+        { number, audio: base64, encoding: true },
+        { headers: this.headers }
+      );
+      this.logger.log(`Áudio enviado para ${number} via ${instanceName}`);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`Evolution /sendWhatsAppAudio falhou: ${err?.message}`);
+      throw new ServiceUnavailableException(EVOLUTION_FORA);
+    }
+  }
+
   async sendText(instanceName: string, to: string, text: string) {
     // Evolution API v2 espera { number, text }. Se já vier um JID completo
     // (grupo @g.us ou contato @s.whatsapp.net) usamos como está; senão

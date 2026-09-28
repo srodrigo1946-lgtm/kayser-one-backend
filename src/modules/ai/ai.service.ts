@@ -48,6 +48,12 @@ Se o cliente ficar dias sem resposta:
 Nunca faça perguntas que já foram respondidas.
 Se houver dúvida fora da base de conhecimento, encaminhe para um corretor humano.`;
 
+/** Como a voz do Kayser deve soar (OpenAI gpt-4o-mini-tts). */
+const INSTRUCAO_VOZ = `Idioma: português do Brasil, sotaque carioca leve e natural. Você é um consultor imobiliário brasileiro gravando um áudio de WhatsApp para um cliente.
+Tom: simpático, próximo e confiante — como quem conversa, não como locutor nem atendente de telemarketing.
+Ritmo: natural, com pequenas pausas entre as ideias, sem pressa e sem arrastar. Entonação viva, variando como numa conversa real; sorria na voz ao cumprimentar.
+Evite: voz robótica, leitura monótona, ênfase exagerada.`;
+
 const DEFAULT_MODELS: Record<AiProvider, string> = {
   [AiProvider.ANTHROPIC]: "claude-sonnet-5",
   [AiProvider.OPENAI]: "gpt-4o-mini",
@@ -322,6 +328,50 @@ ${conversation}` };
     }
     this.ultimoErroAudio = erros.join(" | ") || "Falha desconhecida";
     this.logger.warn(`Falha ao transcrever áudio: ${this.ultimoErroAudio}`);
+    return null;
+  }
+
+  /**
+   * Texto → VOZ (resposta do Kayser em áudio quando o cliente mandou áudio). OpenAI TTS,
+   * voz MASCULINA ("onyx", escolha do Rodrigo), em ogg/opus = mensagem de voz do WhatsApp.
+   * Null se não houver chave OpenAI ou falhar (aí a resposta vai em texto).
+   */
+  async falarTexto(texto: string): Promise<{ base64: string; mimetype: string } | null> {
+    const { openaiKey } = await this.chavesAudio();
+    if (!openaiKey) return null;
+    // Voz não lê emoji nem *negrito*: limpa e corta (áudio longo cansa).
+    const fala = texto
+      .replace(/[*_~`]/g, "")
+      .replace(/\p{Extended_Pictographic}/gu, "")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 900);
+    if (!fala) return null;
+    const tentativas: Record<string, unknown>[] = [
+      // Voz masculina mais natural primeiro ("ash"); "onyx" de reserva. Instrução pra soar
+      // como gente de verdade no WhatsApp, não locutor (pedido do Rodrigo: bem humanizado).
+      { model: "gpt-4o-mini-tts", voice: "ash", instructions: INSTRUCAO_VOZ },
+      { model: "gpt-4o-mini-tts", voice: "onyx", instructions: INSTRUCAO_VOZ },
+      { model: "tts-1", voice: "onyx" },
+    ];
+    for (const t of tentativas) {
+      try {
+        const r = await fetch("https://api.openai.com/v1/audio/speech", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ ...t, input: fala, response_format: "opus" }),
+        });
+        if (r.ok) {
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length) return { base64: buf.toString("base64"), mimetype: "audio/ogg; codecs=opus" };
+        } else {
+          this.logger.warn(`TTS ${t.model} falhou (${r.status}): ${(await r.text()).slice(0, 160)}`);
+        }
+      } catch (err) {
+        this.logger.warn(`TTS ${t.model} erro: ${(err as Error).message}`);
+      }
+    }
     return null;
   }
 
