@@ -235,6 +235,79 @@ export class KnowledgeService {
     return p.name;
   }
 
+  /**
+   * Lead que chegou por ANÚNCIO: descobre de qual empreendimento é o anúncio e já registra
+   * o lead nele. 1º pelo nome no título/texto; se o anúncio não cita o nome (ex.: "No
+   * coração da Grande Tijuca"), pergunta à IA cruzando com bairro/cidade do cadastro.
+   * Só grava se o lead ainda não tem imóvel. Devolve o nome ou null.
+   */
+  async vincularAoAnuncio(
+    leadId: string | null | undefined,
+    titulo: string | undefined,
+    texto: string | undefined,
+    escolherComIa: (anuncio: string, opcoes: string) => Promise<string | null>
+  ): Promise<string | null> {
+    const anuncio = [titulo, texto].filter(Boolean).join(" — ").trim();
+    if (!leadId || !anuncio) return null;
+    const leads = this.repo.manager.getRepository(Lead);
+    const lead = await leads.findOne({ where: { id: leadId } });
+    if (!lead || lead.propertyId) return null;
+    const props = await this.repo.manager.getRepository(Property).find({ where: { active: true } });
+    if (!props.length) return null;
+
+    let p = detectarEmpreendimento(anuncio, props);
+    if (!p) {
+      const opcoes = props
+        // Bairro/cidade + endereços (o do stand costuma ter o bairro mesmo quando o campo está vazio).
+        .map((x) => {
+          const onde = [x.bairro, x.cidade, x.address, x.standAddress].filter(Boolean).join(" | ");
+          return `- ${x.name} (${onde || "sem endereço"})`;
+        })
+        .join("\n");
+      const nome = await escolherComIa(anuncio, opcoes).catch(() => null);
+      if (nome) {
+        const alvo = normalizarNome(nome);
+        p = props.find((x) => normalizarNome(x.name) === alvo) ?? detectarEmpreendimento(nome, props);
+      }
+    }
+    if (!p) return null;
+    await leads.update(leadId, { propertyId: p.id, empreendimento: p.name });
+    await this.repo.manager
+      .getRepository(LeadHistory)
+      .save({
+        leadId,
+        type: LeadHistoryType.SISTEMA,
+        description: `Lead veio do anúncio "${titulo || anuncio.slice(0, 60)}" → registrado no empreendimento ${p.name}.`,
+      } as any)
+      .catch(() => {});
+    return p.name;
+  }
+
+  /**
+   * Contexto do lead pro Kayser: de qual empreendimento/anúncio ele veio. Sem isso a IA
+   * perguntava "qual empreendimento?" pra quem acabou de clicar no anúncio de um deles.
+   */
+  async contextoDoLead(leadId: string | null | undefined): Promise<string> {
+    if (!leadId) return "";
+    const lead = await this.repo.manager.getRepository(Lead).findOne({ where: { id: leadId } });
+    if (!lead) return "";
+    const veioDeAnuncio = lead.source === "anuncio";
+    const anuncio = lead.campanha ? ` (anúncio: "${lead.campanha}")` : "";
+    if (lead.propertyId) {
+      const p = await this.repo.manager.getRepository(Property).findOne({ where: { id: lead.propertyId } });
+      if (p) {
+        return `=== INTERESSE DESTE CLIENTE ===
+${veioDeAnuncio ? "Este cliente acabou de chegar pelo ANÚNCIO" : "Este cliente tem interesse"} do empreendimento *${p.name}*${anuncio}.
+Fale DIRETO do ${p.name} (valores, plantas, localização, lazer, fotos) — NÃO pergunte qual empreendimento ele quer. Só apresente outros se ele pedir ou disser que não é esse.`;
+      }
+    }
+    if (veioDeAnuncio && lead.campanha) {
+      return `=== INTERESSE DESTE CLIENTE ===
+Este cliente chegou por um ANÚNCIO com o título "${lead.campanha}". Use o título (nome, bairro, região) pra identificar o empreendimento na lista acima e fale dele direto. Só pergunte qual empreendimento se realmente não der pra saber pelo anúncio.`;
+    }
+    return "";
+  }
+
   /** Empreendimentos ativos com o resumo do cadastro (preço, área, entrega, stand...). */
   async catalogoEmpreendimentos(): Promise<string> {
     const props = await this.repo.manager.getRepository(Property).find({ where: { active: true }, order: { name: "ASC" } });

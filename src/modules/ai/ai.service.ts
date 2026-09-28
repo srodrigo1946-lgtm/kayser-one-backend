@@ -414,6 +414,29 @@ ${conversation}` };
     };
   }
 
+  /**
+   * Qual empreendimento este ANÚNCIO divulga? Recebe o título/texto do anúncio e a lista
+   * (nome + bairro/cidade). Usa conhecimento de região (ex.: "Grande Tijuca" inclui Andaraí).
+   * Devolve o nome exato da lista ou null se não der pra saber.
+   */
+  async escolherEmpreendimento(anuncio: string, opcoes: string): Promise<string | null> {
+    const { provider, model, apiKey } = await this.resolveConfig();
+    const system = `Você identifica qual empreendimento imobiliário um anúncio de Facebook/Instagram está divulgando.
+Use o nome, o bairro e a região (ex.: "Grande Tijuca" inclui Tijuca, Andaraí, Vila Isabel, Grajaú, Maracanã; "Barra Olímpica" fica na Barra/Jacarepaguá).
+Responda APENAS um JSON: {"empreendimento": "nome EXATO da lista" } ou {"empreendimento": null} se não der pra saber com segurança.`;
+    const userMsg: ChatMessage = { role: "user", content: `Anúncio: ${anuncio}\n\nEmpreendimentos:\n${opcoes}` };
+    let raw: string;
+    if (provider === AiProvider.ANTHROPIC) raw = (await this.chatAnthropic(apiKey, model, system, [userMsg])).content;
+    else if (provider === AiProvider.OPENAI) raw = (await this.chatOpenAI(apiKey, model, system, [userMsg])).content;
+    else raw = (await this.chatGemini(apiKey, model, system, [userMsg])).content;
+    try {
+      const d = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      return typeof d.empreendimento === "string" && d.empreendimento.trim() ? d.empreendimento.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
   async qualifyLead(leadId: string, conversation: string, userAi?: UserAiConfig) {
     const lead = await this.leadsRepo.findOneOrFail({ where: { id: leadId } });
     const { provider, model, apiKey } = await this.resolveConfig(userAi);

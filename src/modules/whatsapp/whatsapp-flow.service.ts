@@ -100,9 +100,10 @@ export class WhatsappFlowService {
   ) {}
 
   /** Catálogo dos empreendimentos pro prompt (não derruba a resposta se falhar). */
-  private async extraEmpreendimentos(): Promise<string> {
+  private async extraEmpreendimentos(leadId?: string | null): Promise<string> {
     const cat = await this.knowledge.catalogoEmpreendimentos().catch(() => "");
-    return promptEmpreendimentos(cat);
+    const contexto = await this.knowledge.contextoDoLead(leadId).catch(() => "");
+    return [promptEmpreendimentos(cat), contexto].filter(Boolean).join("\n\n");
   }
 
   /**
@@ -292,6 +293,12 @@ export class WhatsappFlowService {
         // Garante o Lead (cria se não existir) → cai no Kanban como Novo Lead.
         const adLeadId = await this.conversations.setAdOrigin(conv.id, ad.platform, ad.campaign, conv.leadId);
         conv.leadId = adLeadId ?? conv.leadId;
+        // Qual empreendimento o anúncio divulga? Registra o lead nele ANTES do Kayser
+        // responder — assim ele fala direto do imóvel certo, sem perguntar.
+        await this.knowledge
+          .vincularAoAnuncio(conv.leadId, ad.campaign, ad.texto, (a, o) => this.ai.escolherEmpreendimento(a, o))
+          .then((nome) => nome && this.logger.log(`Anúncio "${ad.campaign}" → empreendimento ${nome}.`))
+          .catch((err) => this.logger.warn(`Não identificou o empreendimento do anúncio: ${err?.message}`));
         conv.fromAd = true;
         const queue = await this.leadQueue.getSettings();
         if (queue.enabled) {
@@ -372,7 +379,7 @@ export class WhatsappFlowService {
       try {
         const semEmail = conv.leadId ? !(await this.conversations.leadTemEmail(conv.leadId)) : false;
         const extra = [
-          await this.extraEmpreendimentos(),
+          await this.extraEmpreendimentos(conv.leadId),
           semEmail ? PROMPT_PEDIR_EMAIL : "",
           responderEmAudio ? PROMPT_RESPOSTA_FALADA : "",
         ]
@@ -424,7 +431,7 @@ export class WhatsappFlowService {
           undefined,
           [
             promptForaDoPlantao(),
-            await this.extraEmpreendimentos(),
+            await this.extraEmpreendimentos(conv.leadId),
             semEmail ? PROMPT_PEDIR_EMAIL : "",
             clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : "",
           ]
@@ -580,7 +587,7 @@ export class WhatsappFlowService {
     fromMe: boolean;
     pushName: string;
     instanceName?: string;
-    ad?: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string };
+    ad?: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string; texto?: string };
   } | null {
     const data = payload?.data ?? payload;
     const instanceName = payload?.instance || payload?.instanceName;
@@ -601,14 +608,19 @@ export class WhatsappFlowService {
     // referral em QUALQUER profundidade — as chaves são exclusivas de anúncio,
     // então não há falso-positivo.
     const ref = this.findAdReferral(msg);
-    let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string } | undefined;
+    let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string; texto?: string } | undefined;
     if (ref) {
       const ext = ref.externalAdReply || {};
       const hay = `${ref.entryPointConversionApp || ""} ${ext.sourceApp || ""} ${
         ext.sourceType || ""
       } ${ext.sourceUrl || ""}`.toLowerCase();
       const platform = hay.includes("insta") ? "instagram" : hay.includes("tiktok") ? "tiktok" : "facebook";
-      ad = { platform, campaign: ext.title || ext.sourceId || ref.ctwaPayload || undefined };
+      ad = {
+        platform,
+        campaign: ext.title || ext.sourceId || ref.ctwaPayload || undefined,
+        // Texto do anúncio (legenda/descrição): ajuda a saber de qual empreendimento é.
+        texto: ext.body || ext.description || undefined,
+      };
     } else {
       // Diagnóstico: mensagem NÃO reconhecida como anúncio. Loga só as CHAVES
       // (nunca o conteúdo) pra identificar formato novo. Nível `log` de propósito.
