@@ -31,6 +31,9 @@ class UpdateSettingsDto {
   aiApiKey?: string;
 
   @IsOptional() @IsString()
+  audioApiKey?: string;
+
+  @IsOptional() @IsString()
   masterPrompt?: string;
 
   @IsOptional() @IsBoolean()

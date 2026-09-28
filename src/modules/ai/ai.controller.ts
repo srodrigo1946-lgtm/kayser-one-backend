@@ -1,8 +1,11 @@
-import { Controller, Post, Body, Param, UseGuards, Request } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray } from "class-validator";
 import { AiService } from "./ai.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../users/user.entity";
 
 class ChatDto {
   @IsArray()
@@ -21,6 +24,14 @@ export class AiController {
   // req.user não carrega mais a aiApiKey (select:false) — busca a config pelo id.
   async chat(@Body() dto: ChatDto, @Request() req: any) {
     return this.aiService.chat(dto.messages, await this.aiService.getUserAiConfig(req.user.id));
+  }
+
+  @Get("diagnostico-audio")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Diagnóstico da transcrição de áudio (só Diretor)" })
+  diagnosticoAudio() {
+    return this.aiService.diagnosticoAudio();
   }
 
   @Post("qualify/:leadId")

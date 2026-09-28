@@ -25,10 +25,11 @@ export class SettingsService {
   /** Versão segura para o front: não expõe chaves/tokens nem a imagem (grande). */
   async getPublic() {
     const s = await this.get();
-    const { aiApiKey, direcionalImage, metaPageToken, metaVerifyToken, ...rest } = s;
+    const { aiApiKey, audioApiKey, direcionalImage, metaPageToken, metaVerifyToken, ...rest } = s;
     return {
       ...rest,
       hasApiKey: !!aiApiKey,
+      hasAudioKey: !!audioApiKey,
       hasDirecionalImage: !!direcionalImage,
       hasMetaToken: !!metaPageToken,
       hasMetaVerify: !!metaVerifyToken,
@@ -62,7 +63,7 @@ export class SettingsService {
   async update(dto: Partial<Settings>) {
     const settings = await this.get();
     // Não sobrescreve segredos com vazio (permite manter os existentes).
-    for (const k of ["aiApiKey", "metaPageToken", "metaVerifyToken"] as const) {
+    for (const k of ["aiApiKey", "audioApiKey", "metaPageToken", "metaVerifyToken"] as const) {
       if (dto[k] === "" || dto[k] === undefined) delete dto[k];
     }
     Object.assign(settings, dto);

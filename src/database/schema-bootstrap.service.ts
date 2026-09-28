@@ -225,6 +225,8 @@ export class SchemaBootstrapService implements OnModuleInit {
       `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupSources" text DEFAULT 'anuncio,manual'`
     );
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
+    // Chave da OpenAI pra transcrever áudio dos clientes (campo na página IA).
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "audioApiKey" varchar`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgNoite" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalImage" text`);

@@ -31,6 +31,10 @@ export class Settings {
   @Column({ nullable: true })
   aiApiKey: string;
 
+  // Chave da OpenAI só pra TRANSCREVER ÁUDIO dos clientes (Whisper) — a Claude não ouve.
+  @Column({ nullable: true })
+  audioApiKey: string;
+
   // Permite sobrescrever o prompt mestre padrão.
   @Column({ type: "text", nullable: true })
   masterPrompt: string;

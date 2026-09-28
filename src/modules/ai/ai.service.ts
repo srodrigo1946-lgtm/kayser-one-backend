@@ -227,17 +227,42 @@ ${conversation}` };
     }
   }
 
+  /** Último erro da transcrição de áudio (mostrado no botão "Testar áudio"). */
+  private ultimoErroAudio: string | null = null;
+
+  /** Chaves que servem pra ouvir áudio (a Claude não ouve): OpenAI e/ou Google. */
+  private async chavesAudio() {
+    const s = await this.settingsService.get();
+    return {
+      // 1º a chave de áudio colada na página IA; depois a da empresa (se for OpenAI); depois o servidor.
+      openaiKey:
+        s.audioApiKey || (s.aiProvider === AiProvider.OPENAI && s.aiApiKey) || this.config.get<string>("OPENAI_API_KEY") || "",
+      geminiKey: (s.aiProvider === AiProvider.GEMINI && s.aiApiKey) || this.config.get<string>("GOOGLE_AI_API_KEY") || "",
+    };
+  }
+
+  /** Modelos do Google a tentar, em ordem (o nome muda com o tempo). */
+  private modelosGemini(): string[] {
+    const env = this.config.get<string>("GEMINI_AUDIO_MODEL");
+    return [...new Set([env, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"].filter(Boolean) as string[])];
+  }
+
   /**
    * Transcreve o ÁUDIO (mensagem de voz) do cliente. A Claude não ouve áudio, então usa
-   * OpenAI (Whisper) se houver chave, senão Google (Gemini). Null se não conseguir.
+   * OpenAI (Whisper) se houver chave, senão Google (Gemini) — tentando vários modelos.
+   * Null se não conseguir (o motivo fica em ultimoErroAudio e no log).
    */
   async transcreverAudio(base64: string, mime: string): Promise<string | null> {
-    const s = await this.settingsService.get();
-    const openaiKey = (s.aiProvider === AiProvider.OPENAI && s.aiApiKey) || this.config.get<string>("OPENAI_API_KEY");
-    const geminiKey = (s.aiProvider === AiProvider.GEMINI && s.aiApiKey) || this.config.get<string>("GOOGLE_AI_API_KEY");
-    const tipo = (mime || "audio/ogg").split(";")[0];
-    try {
-      if (openaiKey) {
+    const { openaiKey, geminiKey } = await this.chavesAudio();
+    const tipo = (mime || "audio/ogg").split(";")[0].trim() || "audio/ogg";
+    const erros: string[] = [];
+    if (!openaiKey && !geminiKey) {
+      this.ultimoErroAudio = "Nenhuma chave de áudio no servidor (GOOGLE_AI_API_KEY ou OPENAI_API_KEY).";
+      this.logger.warn(this.ultimoErroAudio);
+      return null;
+    }
+    if (openaiKey) {
+      try {
         const form = new FormData();
         const ext = tipo.includes("mpeg") ? "mp3" : tipo.includes("mp4") ? "m4a" : "ogg";
         form.append("file", new Blob([Buffer.from(base64, "base64")], { type: tipo }), `audio.${ext}`);
@@ -250,35 +275,91 @@ ${conversation}` };
         });
         if (r.ok) {
           const t = ((await r.json()) as any)?.text?.trim();
-          if (t) return t;
+          if (t) {
+            this.ultimoErroAudio = null;
+            return t;
+          }
+          erros.push("OpenAI: transcrição vazia");
         } else {
-          this.logger.warn(`Whisper falhou (${r.status})`);
+          erros.push(`OpenAI ${r.status}: ${(await r.text()).slice(0, 160)}`);
+        }
+      } catch (err) {
+        erros.push(`OpenAI: ${(err as Error).message}`);
+      }
+    }
+    if (geminiKey) {
+      for (const model of this.modelosGemini()) {
+        try {
+          const { data } = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+            {
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    { inline_data: { mime_type: tipo, data: base64 } },
+                    { text: "Transcreva fielmente este áudio em português do Brasil. Responda SÓ com a transcrição." },
+                  ],
+                },
+              ],
+            },
+            { headers: { "Content-Type": "application/json" }, timeout: 60_000 }
+          );
+          const t = (data?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text || "").join(" ").trim();
+          if (t) {
+            this.ultimoErroAudio = null;
+            return t;
+          }
+          erros.push(`Google ${model}: transcrição vazia`);
+        } catch (err: any) {
+          const st = err?.response?.status;
+          const msg = err?.response?.data?.error?.message || err?.message || "erro";
+          erros.push(`Google ${model} ${st ?? ""}: ${String(msg).slice(0, 160)}`);
+          // 400/401/403 = chave/áudio com problema: outro modelo não resolve.
+          if (st === 400 || st === 401 || st === 403) break;
         }
       }
-      if (geminiKey) {
-        const model = this.config.get<string>("GEMINI_AUDIO_MODEL") || "gemini-2.5-flash";
-        const { data } = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-          {
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  { inline_data: { mime_type: tipo, data: base64 } },
-                  { text: "Transcreva fielmente este áudio em português do Brasil. Responda SÓ com a transcrição." },
-                ],
-              },
-            ],
-          },
-          { headers: { "Content-Type": "application/json" }, timeout: 60_000 }
-        );
-        const t = (data?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text || "").join(" ").trim();
-        if (t) return t;
-      }
-    } catch (err) {
-      this.logger.warn(`Falha ao transcrever áudio: ${(err as Error).message}`);
     }
+    this.ultimoErroAudio = erros.join(" | ") || "Falha desconhecida";
+    this.logger.warn(`Falha ao transcrever áudio: ${this.ultimoErroAudio}`);
     return null;
+  }
+
+  /**
+   * Diagnóstico do áudio (botão "Testar áudio", só Diretor): quais chaves existem
+   * (sem mostrar a chave), se o Google/OpenAI respondem e o último erro.
+   */
+  async diagnosticoAudio() {
+    const { openaiKey, geminiKey } = await this.chavesAudio();
+    const testes: { provedor: string; ok: boolean; detalhe: string }[] = [];
+    if (openaiKey) {
+      try {
+        const r = await fetch("https://api.openai.com/v1/models/whisper-1", { headers: { Authorization: `Bearer ${openaiKey}` } });
+        testes.push({ provedor: "OpenAI (Whisper)", ok: r.ok, detalhe: r.ok ? "chave válida" : `erro ${r.status}` });
+      } catch (err) {
+        testes.push({ provedor: "OpenAI (Whisper)", ok: false, detalhe: (err as Error).message });
+      }
+    }
+    if (geminiKey) {
+      try {
+        const { data } = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}&pageSize=200`, { timeout: 20_000 });
+        const disponiveis = ((data?.models ?? []) as any[]).map((m) => String(m.name || "").replace("models/", ""));
+        const usavel = this.modelosGemini().find((m) => disponiveis.includes(m));
+        testes.push({
+          provedor: "Google (Gemini)",
+          ok: !!usavel,
+          detalhe: usavel ? `chave válida — vai usar ${usavel}` : `chave válida, mas nenhum modelo da lista existe (tem: ${disponiveis.filter((m) => m.includes("flash")).slice(0, 5).join(", ")})`,
+        });
+      } catch (err: any) {
+        testes.push({ provedor: "Google (Gemini)", ok: false, detalhe: `erro ${err?.response?.status ?? ""} ${err?.response?.data?.error?.message ?? err?.message ?? ""}`.trim() });
+      }
+    }
+    return {
+      temChaveOpenAI: !!openaiKey,
+      temChaveGoogle: !!geminiKey,
+      testes,
+      ultimoErro: this.ultimoErroAudio,
+    };
   }
 
   async qualifyLead(leadId: string, conversation: string, userAi?: UserAiConfig) {
