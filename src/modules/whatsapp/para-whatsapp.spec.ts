@@ -40,3 +40,18 @@ describe("tag de fotos da IA", () => {
     expect(svc.separarFotos("Oi!").pedidos).toEqual([]);
   });
 });
+
+describe("pedeEscrito (cliente falando por áudio pede resposta escrita)", () => {
+  const { pedeEscrito } = require("./whatsapp-flow.service");
+  it("reconhece os pedidos de texto", () => {
+    expect(pedeEscrito('🎤 Áudio: "me manda por escrito o valor"')).toBe(true);
+    expect(pedeEscrito("escreve pra mim o endereço do stand")).toBe(true);
+    expect(pedeEscrito("pode digitar? tô no trabalho")).toBe(true);
+    expect(pedeEscrito("me manda o endereço")).toBe(true);
+    expect(pedeEscrito("não consigo ouvir áudio agora")).toBe(true);
+  });
+  it("conversa normal continua em áudio", () => {
+    expect(pedeEscrito("quero saber o valor do ilha stay")).toBe(false);
+    expect(pedeEscrito("pode ser sábado às dez")).toBe(false);
+  });
+});

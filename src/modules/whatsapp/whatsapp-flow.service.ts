@@ -26,6 +26,18 @@ O cadastro deste cliente está SEM e-mail. Peça o e-mail dele de forma simpáti
 - Se já pediu e ele não respondeu, continue a conversa e peça de novo mais pra frente, com outra frase (sem insistir em toda mensagem).
 - Se ele disser que não quer passar, respeite e não peça mais.`;
 
+/**
+ * Cliente falando por áudio mas pediu a resposta ESCRITA ("manda por escrito",
+ * "escreve o endereço", "digita aí")? Então essa resposta vai em texto, não em voz.
+ */
+export function pedeEscrito(texto: string): boolean {
+  const t = (texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return /\b(escrev\w*|escrit[oa]s?|digit\w*|por texto|em texto|mensagem de texto|manda (o |a )?(endereco|link|localizacao)|me passa (o |a )?(endereco|link|localizacao)|nao (posso|consigo) (ouvir|escutar)|sem audio|nao manda audio)\b/.test(t);
+}
+
 /** Tag que a IA escreve para o sistema enviar as fotos: [FOTOS: Nome do empreendimento]. */
 const TAG_FOTOS = /\[FOTOS:\s*([^\]]+)\]/gi;
 
@@ -217,6 +229,9 @@ export class WhatsappFlowService {
         }
       }
 
+      // Cliente mandou áudio → responde em voz; MAS se ele pediu por escrito, vai em texto.
+      const responderEmAudio = audioTranscrito && !pedeEscrito(textoCliente);
+
       // Nome + foto do contato/grupo (busca a foto só quando ainda não temos).
       if (!isGroup) {
         // Individual: pushName é o nome do contato.
@@ -305,7 +320,7 @@ export class WhatsappFlowService {
         if (fila.enabled && !(await this.leadQueue.estaAguardando(conv.id))) {
           return { persisted: true, autoReply: false, central: true };
         }
-        return this.responderForaDoPlantao(conv, instanceName, remoteJidFull, audioTranscrito);
+        return this.responderForaDoPlantao(conv, instanceName, remoteJidFull, responderEmAudio);
       }
 
       // Mídia (imagem/áudio/etc.) é registrada, mas a IA não responde a ela (não "vê" o conteúdo).
@@ -330,7 +345,7 @@ export class WhatsappFlowService {
         const extra = [
           await this.extraEmpreendimentos(),
           semEmail ? PROMPT_PEDIR_EMAIL : "",
-          audioTranscrito ? PROMPT_RESPOSTA_FALADA : "",
+          responderEmAudio ? PROMPT_RESPOSTA_FALADA : "",
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -345,7 +360,7 @@ export class WhatsappFlowService {
       reply = textoIa;
 
       if (reply || fotosPedidas.length) {
-        if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, audioTranscrito);
+        if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, responderEmAudio);
 
         // Score do lead: a IA qualifica sozinha a partir da conversa. Roda em
         // segundo plano (não segura a resposta ao cliente) e falha em silêncio —
