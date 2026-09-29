@@ -4,7 +4,7 @@ import { MoreThan, Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
 import { Lead, LeadStatus, LeadSource } from "../leads/lead.entity";
-import { User } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
 import { LeadsService } from "../leads/leads.service";
 import { AppointmentsService } from "../appointments/appointments.service";
@@ -44,6 +44,14 @@ export function extrairEmail(texto: string): string | null {
   const t = emailFalado(texto || "");
   const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.exec(t);
   return m ? m[0].toLowerCase().replace(/\.+$/, "") : null;
+}
+
+/**
+ * Aviso de passagem da fila ("Você agora será atendido pelo nosso especialista X").
+ * Os cargos NÃO veem (mostraria por quais corretores o lead já passou) — só o Diretor.
+ */
+export function ehAvisoDaFila(texto?: string | null): boolean {
+  return /agora ser[aá] atendid[oa] pelo nosso especialista/i.test(texto || "");
 }
 
 @Injectable()
@@ -98,7 +106,12 @@ export class ConversationsService {
         ids: scopeIds,
       });
     }
-    return qb.getMany();
+    const convs = await qb.getMany();
+    if (user.role !== UserRole.DIRETOR) {
+      // A prévia da lista também não pode mostrar o aviso da fila pros cargos.
+      for (const c of convs) if (ehAvisoDaFila(c.lastMessage)) (c as any).lastMessage = "";
+    }
+    return convs;
   }
 
   /**
@@ -254,10 +267,12 @@ export class ConversationsService {
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
     await this.assertConvScope(conv, user); // visibilidade por hierarquia (igual ao list)
     this.stripAssigned(conv);
-    const rows = await this.msgRepo.find({
+    const todas = await this.msgRepo.find({
       where: { conversationId },
       order: { createdAt: "ASC" },
     });
+    // Cargos veem a conversa (cliente + Kayser + corretor), sem os avisos da fila.
+    const rows = user.role === UserRole.DIRETOR ? todas : todas.filter((m) => !ehAvisoDaFila(m.content));
     // Não envia o mediaKey (pode ser um data URI enorme); expõe só se há mídia.
     const messages = rows.map((m) => {
       const { mediaKey, ...rest } = m;
