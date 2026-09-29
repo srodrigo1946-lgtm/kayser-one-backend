@@ -364,7 +364,7 @@ export class WhatsappFlowService {
       if (mediaType && !audioTranscrito) return { persisted: true, autoReply: false, media: mediaType };
 
       const settings = await this.settings.get();
-      if (!settings.aiAutoReply) return { persisted: true, autoReply: false };
+      if (!settings.aiAutoReply || settings.whatsappPausado) return { persisted: true, autoReply: false };
 
       // Mensagens de grupo só recebem resposta da IA se o toggle estiver ligado.
       if (isGroup && !settings.aiReplyGroups) {
@@ -419,7 +419,7 @@ export class WhatsappFlowService {
     clienteMandouAudio = false
   ) {
     const settings = await this.settings.get();
-    if (!settings.aiAutoReply) return { persisted: true, autoReply: false, central: true };
+    if (!settings.aiAutoReply || settings.whatsappPausado) return { persisted: true, autoReply: false, central: true };
 
     const history = await this.conversations.getHistoryForAi(conv.id);
     const semEmail = conv.leadId ? !(await this.conversations.leadTemEmail(conv.leadId)) : false;

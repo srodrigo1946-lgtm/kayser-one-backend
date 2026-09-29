@@ -105,6 +105,9 @@ export class AutomationService {
     if (!settings.followupEnabled) {
       return { skipped: true, reason: "Follow-up desativado nas configurações." };
     }
+    if (settings.whatsappPausado) {
+      return { skipped: true, reason: "WhatsApp central pausado (contingência)." };
+    }
 
     const cutoff = subDays(new Date(), settings.followupDays);
     // Origens que recebem o follow-up (padrão: número central = anúncio + WhatsApp, e

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { SettingsService } from "../settings/settings.service";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
 
@@ -42,7 +43,10 @@ export class WhatsappService {
   private readonly apiKey: string;
   private readonly webhookUrl: string;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly settings: SettingsService
+  ) {
     this.apiUrl = config.get("EVOLUTION_API_URL", "http://localhost:8080");
     this.apiKey = config.get("EVOLUTION_API_KEY", "");
     // URL pública deste backend, para onde a Evolution deve mandar os eventos.
@@ -54,6 +58,35 @@ export class WhatsappService {
     this.webhookUrl = base
       ? `${base.replace(/\/$/, "")}/api/v1/whatsapp/webhook${token ? `?token=${token}` : ""}`
       : "";
+  }
+
+  private pausaCache: { em: number; valor: boolean } | null = null;
+
+  /** Contingência ligada em Configurações? (cache de 30s pra não bater no banco a cada envio) */
+  async pausado(): Promise<boolean> {
+    if (this.pausaCache && Date.now() - this.pausaCache.em < 30_000) return this.pausaCache.valor;
+    const s = await this.settings.get().catch(() => null);
+    this.pausaCache = { em: Date.now(), valor: !!s?.whatsappPausado };
+    return this.pausaCache.valor;
+  }
+
+  private async bloqueiaSePausado() {
+    if (await this.pausado()) {
+      throw new ServiceUnavailableException(
+        "WhatsApp central PAUSADO (contingência). Os leads continuam entrando na fila; o envio volta quando o Diretor desligar a pausa em Configurações."
+      );
+    }
+  }
+
+  /** O número (instância) está conectado na Evolution? */
+  async conectado(instanceName: string): Promise<boolean> {
+    try {
+      const data = await this.getInstanceStatus(instanceName);
+      const st = data?.instance?.state ?? data?.state;
+      return st === "open";
+    } catch {
+      return false;
+    }
   }
 
   private get headers() {
@@ -165,6 +198,7 @@ export class WhatsappService {
       : file.mimetype.startsWith("video/")
         ? "video"
         : "document";
+    await this.bloqueiaSePausado();
     // Aceita data URI ("data:...;base64,XXX") ou base64 puro.
     const media = file.base64.includes(",") ? file.base64.split(",")[1] : file.base64;
     try {
@@ -190,6 +224,7 @@ export class WhatsappService {
 
   /** Mensagem de VOZ (ptt) — áudio em base64 (ogg/opus). */
   async sendAudio(instanceName: string, to: string, base64: string) {
+    await this.bloqueiaSePausado();
     const number = to.includes("@") ? to : to.replace(/\D/g, "");
     try {
       const { data } = await axios.post(
@@ -210,6 +245,7 @@ export class WhatsappService {
     // (grupo @g.us ou contato @s.whatsapp.net) usamos como está; senão
     // mandamos só os dígitos e a Evolution resolve o destino.
     const number = to.includes("@") ? to : to.replace(/\D/g, "");
+    await this.bloqueiaSePausado();
     try {
       const { data } = await axios.post(
         `${this.apiUrl}/message/sendText/${instanceName}`,

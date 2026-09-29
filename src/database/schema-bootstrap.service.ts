@@ -250,6 +250,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaFormIds" text`);
     await this.dataSource.query(`UPDATE settings SET "metaFormIds" = '960631980396672' WHERE "metaFormIds" IS NULL`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
+    // Contingência do WhatsApp central (29/09/2026).
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "whatsappPausado" boolean NOT NULL DEFAULT false`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);
     await this.dataSource.query(

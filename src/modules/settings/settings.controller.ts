@@ -60,6 +60,9 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean()
   aiReplyGroups?: boolean;
 
+  @IsOptional() @IsBoolean()
+  whatsappPausado?: boolean;
+
   @IsOptional() @IsString()
   metaPageToken?: string;
 

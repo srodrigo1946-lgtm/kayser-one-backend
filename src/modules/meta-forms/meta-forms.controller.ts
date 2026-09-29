@@ -42,6 +42,15 @@ export class MetaFormsController {
     return this.meta.listarFormularios();
   }
 
+  @Post("sincronizar")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Puxar agora os leads do formulário (últimas horas) pra fila" })
+  sincronizar(@Query("horas") horas?: string) {
+    const h = Math.min(Math.max(Number(horas) || 72, 1), 24 * 30);
+    return this.meta.sincronizar(h);
+  }
+
   @Post("lead-direct")
   @ApiOperation({ summary: "Lead pronto via Zapier/Make (protegido por ?token=)" })
   async direct(@Query("token") token: string, @Body() body: any) {

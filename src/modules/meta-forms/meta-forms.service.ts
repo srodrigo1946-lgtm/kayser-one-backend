@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Repository } from "typeorm";
+import { In, IsNull, MoreThan, Repository } from "typeorm";
+import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
 import { timingSafeEqual } from "crypto";
@@ -15,6 +16,15 @@ import { User, UserRole } from "../users/user.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { LeadQueueAssignment } from "../lead-queue/lead-queue-assignment.entity";
 import { primeiroNome } from "../automation/automation.service";
+import { Message } from "../conversations/message.entity";
+
+/** Variações do telefone BR pra achar lead já cadastrado (com/sem 55). */
+export function variacoesTelefone(p: string): string[] {
+  const d = (p || "").replace(/\D/g, "");
+  if (!d) return [];
+  const sem55 = d.startsWith("55") && d.length >= 12 ? d.slice(2) : d;
+  return Array.from(new Set([d, sem55, `55${sem55}`]));
+}
 
 /**
  * Compara o token recebido com o esperado. Token esperado VAZIO = sempre recusa
@@ -199,12 +209,19 @@ export class MetaFormsService {
   }
 
   /** Cria Lead + Conversa e enfileira. Idempotente por telefone (conversa já com lead = duplicata). */
-  private async criarLead(dados: DadosLead): Promise<void> {
+  private async criarLead(dados: DadosLead): Promise<boolean> {
     dados.phone = telefoneWhatsapp(dados.phone);
+    // Já existe lead com esse telefone (planilha, manual, formulário)? Não duplica.
+    const tels = variacoesTelefone(dados.phone);
+    const existente = await this.leadsRepo.findOne({ where: [{ phone: In(tels) }, { whatsapp: In(tels) }] });
+    if (existente) {
+      this.logger.log(`Formulário: ${dados.phone} já é lead (${existente.id}) — ignorado.`);
+      return false;
+    }
     const conv = await this.conversations.findOrCreateByPhone(dados.phone);
     if (conv.leadId) {
       this.logger.log(`Formulário: ${dados.phone} já tem lead — ignorado (duplicata).`);
-      return;
+      return false;
     }
     // O nome do formulário indica o empreendimento ("Ilha stay lead" → Ilha stay home Resort).
     let imovel: Property | null = null;
@@ -229,6 +246,106 @@ export class MetaFormsService {
     this.logger.log(`Formulário Meta → lead ${lead.id} (${dados.name}) criado e enfileirado.`);
     // Pedido do Rodrigo: entrou lead do formulário → o Kayser já chama no WhatsApp.
     await this.primeiroContato(conv.id, lead, atribuicao);
+    return true;
+  }
+
+  private sincronizando = false;
+
+  /**
+   * Puxa do Facebook os leads dos formulários marcados das últimas `horas` e traz
+   * os que faltam pro Kayser (entram na fila). Rede de segurança do webhook:
+   * roda sozinho a cada 15 min e pelo botão em Configurações.
+   */
+  async sincronizar(horas = 72): Promise<{ encontrados: number; novos: number; erro?: string }> {
+    if (this.sincronizando) return { encontrados: 0, novos: 0, erro: "Já está puxando, aguarde." };
+    this.sincronizando = true;
+    let encontrados = 0;
+    let novos = 0;
+    try {
+      const token = await this.pageToken();
+      if (!token) return { encontrados, novos, erro: "Token da Página do Meta não configurado." };
+      const forms = await this.formsPermitidos();
+      if (!forms.length) return { encontrados, novos, erro: "Nenhum formulário marcado em Configurações." };
+      const desde = Math.floor((Date.now() - horas * 3600_000) / 1000);
+      for (const formId of forms) {
+        const form = await axios
+          .get(`${GRAPH}/${formId}`, { params: { access_token: token, fields: "name" } })
+          .catch(() => null);
+        let url: string | null = `${GRAPH}/${formId}/leads`;
+        let params: any = {
+          access_token: token,
+          fields: "id,created_time,field_data",
+          limit: 100,
+          filtering: JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: desde }]),
+        };
+        for (let pagina = 0; url && pagina < 10; pagina++) {
+          const { data }: any = await axios.get(url, { params });
+          for (const l of data?.data ?? []) {
+            encontrados++;
+            const dados = this.mapFieldData(l.field_data ?? []);
+            if (!dados.phone) continue;
+            dados.formId = formId;
+            dados.formulario = form?.data?.name || undefined;
+            try {
+              if (await this.criarLead(dados)) novos++;
+            } catch (err) {
+              this.logger.warn(`Sincronizar: falha no lead ${l.id}: ${(err as Error).message}`);
+            }
+          }
+          url = data?.paging?.next ?? null;
+          params = undefined; // o "next" já vem com tudo na URL
+        }
+      }
+      if (novos) this.logger.log(`Sincronizar formulários: ${novos} lead(s) novo(s) de ${encontrados}.`);
+      return { encontrados, novos };
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message ?? err?.message ?? "erro";
+      this.logger.warn(`Sincronizar formulários falhou: ${msg}`);
+      return { encontrados, novos, erro: String(msg).slice(0, 200) };
+    } finally {
+      this.sincronizando = false;
+    }
+  }
+
+  /** Automático: a cada 15 min confere o Facebook (lead não se perde se o webhook falhar). */
+  @Cron("*/15 * * * *", { timeZone: "America/Sao_Paulo" })
+  async sincronizarAutomatico() {
+    if (!(await this.pageToken())) return;
+    await this.sincronizar(24);
+  }
+
+  /**
+   * Automático: WhatsApp voltou (conectado e sem pausa)? Manda a 1ª mensagem pros
+   * leads de formulário das últimas 72h que ficaram SEM nenhuma mensagem. Poucos por
+   * vez (3 a cada 10 min) pra não ser bloqueado de novo.
+   */
+  @Cron("*/10 * * * *", { timeZone: "America/Sao_Paulo" })
+  async contatarPendentes(limite = 3) {
+    if (await this.whatsapp.pausado()) return { enviados: 0, motivo: "pausado" };
+    const users = this.leadsRepo.manager.getRepository(User);
+    const diretor = await users.findOne({ where: { role: UserRole.DIRETOR, empresaId: IsNull() }, order: { createdAt: "ASC" } });
+    if (!diretor) return { enviados: 0 };
+    if (!(await this.whatsapp.conectado(`user_${diretor.id}`))) return { enviados: 0, motivo: "desconectado" };
+    const leads = await this.leadsRepo.find({
+      where: { source: "formulario_meta" as any, createdAt: MoreThan(new Date(Date.now() - 72 * 3600_000)) },
+      order: { createdAt: "ASC" },
+      take: 200,
+    });
+    const convRepo = this.leadsRepo.manager.getRepository(Conversation);
+    const msgRepo = this.leadsRepo.manager.getRepository(Message);
+    const filaRepo = this.leadsRepo.manager.getRepository(LeadQueueAssignment);
+    let enviados = 0;
+    for (const lead of leads) {
+      if (enviados >= limite) break;
+      const conv = await convRepo.findOne({ where: { leadId: lead.id } });
+      if (!conv) continue;
+      if ((await msgRepo.count({ where: { conversationId: conv.id } })) > 0) continue;
+      const atrib = await filaRepo.findOne({ where: { conversationId: conv.id }, order: { assignedAt: "DESC" } });
+      if (await this.primeiroContato(conv.id, lead, atrib)) enviados++;
+      else break; // falhou (WhatsApp ainda com problema): tenta de novo na próxima rodada
+    }
+    if (enviados) this.logger.log(`WhatsApp de volta: 1ª mensagem enviada a ${enviados} lead(s) pendente(s).`);
+    return { enviados };
   }
 
   /**
@@ -236,14 +353,14 @@ export class MetaFormsService {
    * A conversa fica no número central — a resposta do cliente cai no fluxo normal
    * (Kayser fora do plantão / corretor no plantão). Falha em silêncio (não perde o lead).
    */
-  private async primeiroContato(convId: string, lead: Lead, atribuicao: LeadQueueAssignment | null) {
+  private async primeiroContato(convId: string, lead: Lead, atribuicao: LeadQueueAssignment | null): Promise<boolean> {
     try {
       const users = this.leadsRepo.manager.getRepository(User);
       const diretor = await users.findOne({
         where: { role: UserRole.DIRETOR, empresaId: IsNull() },
         order: { createdAt: "ASC" },
       });
-      if (!diretor) return;
+      if (!diretor) return false;
       // Conversa pertence ao número central (responder / avisar corretor pelo número certo).
       const convRepo = this.leadsRepo.manager.getRepository(Conversation);
       const conv = await convRepo.findOne({ where: { id: convId } });
@@ -259,6 +376,10 @@ export class MetaFormsService {
         corretor = u?.name ? u.name.split(" ").slice(0, 2).join(" ") : null;
       }
       const s = await this.settings.get();
+      if (s.whatsappPausado) {
+        this.logger.log(`Formulário: WhatsApp pausado — lead ${lead.id} na fila; 1ª mensagem sai quando voltar.`);
+        return false;
+      }
       const msg = mensagemFormulario({
         nome: primeiroNome(lead.name),
         empreendimento: lead.empreendimento,
@@ -269,8 +390,10 @@ export class MetaFormsService {
       // isAI=true: é o Kayser/sistema falando — não conta como "humano respondeu".
       await this.conversations.addMessage(convId, msg, "out", true);
       this.logger.log(`Formulário: Kayser chamou o lead ${lead.id} no WhatsApp.`);
+      return true;
     } catch (err) {
       this.logger.warn(`Formulário: não consegui chamar o lead ${lead.id} no WhatsApp: ${(err as Error).message}`);
+      return false;
     }
   }
 }
