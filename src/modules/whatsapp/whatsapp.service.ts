@@ -1,9 +1,39 @@
-import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
 
 const EVOLUTION_FORA =
   "WhatsApp (Evolution API) indisponível no momento. Verifique/reinicie o serviço da Evolution no Railway e tente de novo.";
+
+/**
+ * Traduz o erro da Evolution pro motivo REAL (antes tudo virava "indisponível" e
+ * ninguém sabia se era a Evolution fora, o número desconectado ou o cliente sem WhatsApp).
+ */
+export function erroEvolution(err: any, instanceName: string): Error {
+  const status = err?.response?.status;
+  const data = err?.response?.data;
+  const texto = JSON.stringify(data ?? "").toLowerCase();
+  // Sem resposta nenhuma = a Evolution não atendeu (fora do ar / rede).
+  if (!err?.response) return new ServiceUnavailableException(EVOLUTION_FORA);
+  if (texto.includes('"exists":false') || texto.includes("not exist") && texto.includes("number")) {
+    return new BadRequestException("Esse número não tem WhatsApp (a Evolution não encontrou a conta). Confira o telefone do cliente.");
+  }
+  if (status === 404 || texto.includes("not found") || texto.includes("does not exist")) {
+    return new ServiceUnavailableException(
+      `O WhatsApp que envia esta conversa (${instanceName}) não está conectado. Reconecte pelo QR Code em Conversas ao vivo e tente de novo.`
+    );
+  }
+  if (texto.includes("connection closed") || texto.includes("not connected") || texto.includes("close")) {
+    return new ServiceUnavailableException(
+      `O WhatsApp que envia esta conversa (${instanceName}) caiu/desconectou. Reconecte pelo QR Code em Conversas ao vivo e tente de novo.`
+    );
+  }
+  if (status === 401 || status === 403) {
+    return new ServiceUnavailableException("A Evolution recusou a chave de acesso (EVOLUTION_API_KEY no Railway).");
+  }
+  const msg = (data?.response?.message ?? data?.message ?? err?.message ?? "erro desconhecido").toString().slice(0, 200);
+  return new ServiceUnavailableException(`WhatsApp não enviou (Evolution ${status}): ${msg}`);
+}
 
 @Injectable()
 export class WhatsappService {
@@ -153,8 +183,8 @@ export class WhatsappService {
       this.logger.log(`Mídia (${mediatype}) enviada para ${number} via ${instanceName}`);
       return data;
     } catch (err: any) {
-      this.logger.error(`Evolution /sendMedia falhou: ${err?.message}`);
-      throw new ServiceUnavailableException(EVOLUTION_FORA);
+      this.logger.error(`Evolution /sendMedia falhou (${instanceName}): ${err?.response?.status ?? ""} ${JSON.stringify(err?.response?.data ?? err?.message).slice(0, 300)}`);
+      throw erroEvolution(err, instanceName);
     }
   }
 
@@ -170,8 +200,8 @@ export class WhatsappService {
       this.logger.log(`Áudio enviado para ${number} via ${instanceName}`);
       return data;
     } catch (err: any) {
-      this.logger.error(`Evolution /sendWhatsAppAudio falhou: ${err?.message}`);
-      throw new ServiceUnavailableException(EVOLUTION_FORA);
+      this.logger.error(`Evolution /sendWhatsAppAudio falhou (${instanceName}): ${err?.response?.status ?? ""} ${JSON.stringify(err?.response?.data ?? err?.message).slice(0, 300)}`);
+      throw erroEvolution(err, instanceName);
     }
   }
 
@@ -189,8 +219,8 @@ export class WhatsappService {
       this.logger.log(`Mensagem enviada para ${number} via ${instanceName}`);
       return data;
     } catch (err: any) {
-      this.logger.error(`Evolution /sendText falhou: ${err?.message}`);
-      throw new ServiceUnavailableException(EVOLUTION_FORA);
+      this.logger.error(`Evolution /sendText falhou (${instanceName}): ${err?.response?.status ?? ""} ${JSON.stringify(err?.response?.data ?? err?.message).slice(0, 300)}`);
+      throw erroEvolution(err, instanceName);
     }
   }
 
