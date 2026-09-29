@@ -228,10 +228,17 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
     // 28/09/2026: follow-up passa a incluir os leads do número central sem anúncio
     // (origem whatsapp). Só troca quem ainda estava no padrão antigo.
-    await this.dataSource.query(
-      `UPDATE settings SET "followupSources" = 'anuncio,whatsapp,manual' WHERE "followupSources" = 'anuncio,manual'`
+    // Roda UMA vez: enquanto o DEFAULT da coluna ainda é o antigo. Depois disso, se o Diretor
+    // desmarcar "WhatsApp" nas Configurações, o deploy não volta a marcar sozinho.
+    const [col] = await this.dataSource.query(
+      `SELECT column_default FROM information_schema.columns WHERE table_name = 'settings' AND column_name = 'followupSources'`
     );
-    await this.dataSource.query(`ALTER TABLE settings ALTER COLUMN "followupSources" SET DEFAULT 'anuncio,whatsapp,manual'`);
+    if (!String(col?.column_default ?? "").includes("anuncio,whatsapp,manual")) {
+      await this.dataSource.query(
+        `UPDATE settings SET "followupSources" = 'anuncio,whatsapp,manual' WHERE "followupSources" = 'anuncio,manual'`
+      );
+      await this.dataSource.query(`ALTER TABLE settings ALTER COLUMN "followupSources" SET DEFAULT 'anuncio,whatsapp,manual'`);
+    }
     // Chave da OpenAI pra transcrever áudio dos clientes (campo na página IA).
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "audioApiKey" varchar`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
