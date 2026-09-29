@@ -1,7 +1,11 @@
-import { Controller, Get, Post, Query, Body, Res } from "@nestjs/common";
+import { Controller, Get, Post, Query, Body, Res, UseGuards } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Response } from "express";
 import { MetaFormsService } from "./meta-forms.service";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../users/user.entity";
 
 // Endpoint público (o Meta chama de fora, sem JWT).
 @ApiTags("Formulário Meta")
@@ -28,6 +32,14 @@ export class MetaFormsController {
     // Responde 200 sempre e processa (o Meta reenvia se não receber 200).
     res.status(200).send("EVENT_RECEIVED");
     await this.meta.handleLeadgen(body).catch(() => {});
+  }
+
+  @Get("forms")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Formulários da Página (Diretor marca quais mandam lead)" })
+  forms() {
+    return this.meta.listarFormularios();
   }
 
   @Post("lead-direct")

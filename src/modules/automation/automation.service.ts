@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Cron } from "@nestjs/schedule";
 import { InjectRepository } from "@nestjs/typeorm";
 import { LessThan, Not, In, Repository } from "typeorm";
 import { subDays } from "date-fns";
@@ -9,6 +9,30 @@ import { SettingsService } from "../settings/settings.service";
 import { WhatsappFlowService } from "../whatsapp/whatsapp-flow.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
+import { Conversation } from "../conversations/conversation.entity";
+import { LeadHistory } from "../lead-history/lead-history.entity";
+import { User, UserRole } from "../users/user.entity";
+
+/**
+ * Primeiro nome "de gente" pro follow-up: tenta o nome do cadastro e depois o nome do
+ * perfil do WhatsApp. Ignora número de telefone e "Contato WhatsApp", tira emoji/símbolo
+ * e ajusta a caixa ("RODRIGO SILVA" → "Rodrigo"). Vazio = sem nome ("Oi, bom dia!").
+ */
+export function primeiroNome(...candidatos: (string | null | undefined)[]): string {
+  for (const c of candidatos) {
+    const bruto = (c || "").trim();
+    if (!bruto || /^[\d\s()+-]+$/.test(bruto) || /^contato whatsapp$/i.test(bruto)) continue;
+    const palavra = (bruto.split(/\s+/)[0] || "").replace(/[^\p{L}'-]/gu, "");
+    if (palavra.length < 2) continue;
+    return palavra.charAt(0).toLocaleUpperCase("pt-BR") + palavra.slice(1).toLocaleLowerCase("pt-BR");
+  }
+  return "";
+}
+
+/** Hora (0–23) em Brasília — o servidor roda em UTC. */
+export function horaBrasilia(d = new Date()): number {
+  return Number(d.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hourCycle: "h23" }));
+}
 
 @Injectable()
 export class AutomationService {
@@ -34,7 +58,7 @@ export class AutomationService {
 
   /** Monta a mensagem do follow-up: template do horário atual, com {nome} = primeiro nome. */
   buildMessage(settings: Settings, name?: string): string {
-    const h = new Date().getHours();
+    const h = horaBrasilia();
     const period = h < 12 ? "manha" : h < 18 ? "tarde" : "noite";
     const custom =
       period === "manha"
@@ -43,15 +67,37 @@ export class AutomationService {
           ? settings.followupMsgTarde
           : settings.followupMsgNoite;
     const template = custom?.trim() || AutomationService.DEFAULTS[period];
-    const firstName = name?.trim().split(" ")[0] || "";
+    const firstName = primeiroNome(name);
     // Troca {nome} e limpa vírgula solta caso o lead não tenha nome ("Oi , bom dia" → "Oi, bom dia").
     return template.replace(/\{nome\}/g, firstName).replace(/\s+,/g, ",");
   }
 
-  /** Roda todo dia às 9h. Pode ser disparado manualmente via runFollowup(). */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  /**
+   * Roda todo dia às 9h de BRASÍLIA (antes era 9h UTC = 6h da manhã aqui).
+   * Pode ser disparado manualmente via runFollowup().
+   */
+  @Cron("0 9 * * *", { timeZone: "America/Sao_Paulo" })
   async dailyFollowup() {
     return this.runFollowup();
+  }
+
+  /**
+   * Lead "manual" só entra no follow-up se quem cadastrou foi o Diretor. O autor vem do
+   * histórico ("Lead criado por…", tipo criacao, com o userId). Sem autor conhecido = fora.
+   */
+  private async soManuaisDoDiretor(leads: Lead[]): Promise<Lead[]> {
+    const manuais = leads.filter((l) => l.source === "manual");
+    if (!manuais.length) return leads;
+    const diretores = await this.leadsRepo.manager
+      .getRepository(User)
+      .find({ where: { role: UserRole.DIRETOR }, select: ["id"] });
+    const idsDiretor = new Set(diretores.map((u) => u.id));
+    const criacoes = await this.leadsRepo.manager.getRepository(LeadHistory).find({
+      where: { leadId: In(manuais.map((l) => l.id)), type: LeadHistoryType.CRIACAO },
+      select: ["leadId", "userId"],
+    });
+    const doDiretor = new Set(criacoes.filter((h) => h.userId && idsDiretor.has(h.userId)).map((h) => h.leadId));
+    return leads.filter((l) => l.source !== "manual" || doDiretor.has(l.id));
   }
 
   async runFollowup() {
@@ -61,10 +107,11 @@ export class AutomationService {
     }
 
     const cutoff = subDays(new Date(), settings.followupDays);
-    // Origens que recebem o follow-up (padrão: anúncio + cadastro manual).
+    // Origens que recebem o follow-up (padrão: número central = anúncio + WhatsApp, e
+    // cadastro manual). Manual vale SÓ pro lead que o DIRETOR cadastrou (regra do Rodrigo).
     const sources =
-      settings.followupSources?.length ? settings.followupSources : ["anuncio", "manual"];
-    const leads = await this.leadsRepo.find({
+      settings.followupSources?.length ? settings.followupSources : ["anuncio", "whatsapp", "manual"];
+    const encontrados = await this.leadsRepo.find({
       where: {
         lastContactAt: LessThan(cutoff),
         status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
@@ -72,10 +119,14 @@ export class AutomationService {
       },
       take: 100,
     });
+    const leads = await this.soManuaisDoDiretor(encontrados);
 
     let sent = 0;
+    const convRepo = this.leadsRepo.manager.getRepository(Conversation);
     for (const lead of leads) {
-      const message = this.buildMessage(settings, lead.name);
+      // Nome do cadastro; se for número/"Contato WhatsApp", usa o nome do perfil do WhatsApp.
+      const conv = await convRepo.findOne({ where: { leadId: lead.id } }).catch(() => null);
+      const message = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName));
 
       try {
         if (lead.phone && lead.responsavelId) {

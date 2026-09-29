@@ -67,6 +67,9 @@ class UpdateSettingsDto {
   metaVerifyToken?: string;
 
   @IsOptional() @IsString()
+  metaFormIds?: string;
+
+  @IsOptional() @IsString()
   direcionalUrl?: string;
 
   @IsOptional() @IsString()

@@ -47,8 +47,8 @@ export class Settings {
   followupDays: number;
 
   // Origens de lead que recebem o follow-up (simple-array: texto separado por vírgula).
-  // Padrão: anúncio + cadastro manual (exclui WhatsApp orgânico).
-  @Column({ type: "simple-array", default: "anuncio,manual" })
+  // Padrão: anúncio + WhatsApp do número central + cadastro manual (igual ao bootstrap).
+  @Column({ type: "simple-array", default: "anuncio,whatsapp,manual" })
   followupSources: string[];
 
   // Textos da saudação por horário (usam {nome} = primeiro nome do lead).
@@ -129,6 +129,10 @@ export class Settings {
 
   @Column({ type: "text", nullable: true })
   metaVerifyToken: string;
+
+  // IDs dos formulários do Meta que mandam lead pro Kayser (vírgula). Vazio = todos.
+  @Column({ type: "text", nullable: true })
+  metaFormIds: string;
 
   @CreateDateColumn()
   createdAt: Date;

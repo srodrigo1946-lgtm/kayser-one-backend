@@ -223,9 +223,22 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Colunas novas de follow-up em settings (defaults tratados no código). */
   private async ensureSettingsColumns() {
     await this.dataSource.query(
-      `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupSources" text DEFAULT 'anuncio,manual'`
+      `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupSources" text DEFAULT 'anuncio,whatsapp,manual'`
     );
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgManha" text`);
+    // 28/09/2026: follow-up passa a incluir os leads do número central sem anúncio
+    // (origem whatsapp). Só troca quem ainda estava no padrão antigo.
+    // Roda UMA vez: enquanto o DEFAULT da coluna ainda é o antigo. Depois disso, se o Diretor
+    // desmarcar "WhatsApp" nas Configurações, o deploy não volta a marcar sozinho.
+    const [col] = await this.dataSource.query(
+      `SELECT column_default FROM information_schema.columns WHERE table_name = 'settings' AND column_name = 'followupSources'`
+    );
+    if (!String(col?.column_default ?? "").includes("anuncio,whatsapp,manual")) {
+      await this.dataSource.query(
+        `UPDATE settings SET "followupSources" = 'anuncio,whatsapp,manual' WHERE "followupSources" = 'anuncio,manual'`
+      );
+      await this.dataSource.query(`ALTER TABLE settings ALTER COLUMN "followupSources" SET DEFAULT 'anuncio,whatsapp,manual'`);
+    }
     // Chave da OpenAI pra transcrever áudio dos clientes (campo na página IA).
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "audioApiKey" varchar`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "followupMsgTarde" text`);
@@ -233,6 +246,9 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalImage" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaPageToken" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaVerifyToken" text`);
+    // Formulários permitidos. 1ª vez: só o "Ilha stay lead" (pedido do Rodrigo, 28/09/2026).
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaFormIds" text`);
+    await this.dataSource.query(`UPDATE settings SET "metaFormIds" = '960631980396672' WHERE "metaFormIds" IS NULL`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);
