@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Repository, Like, In, FindOptionsWhere, MoreThan } from "typeorm";
@@ -13,6 +13,16 @@ import { User, UserRole } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
+
+/** "isaac" / "time isaac" / "TIME  Isaac" → "Time Isaac". Vazio → "". */
+export function nomeDoTime(t?: string | null): string {
+  const limpo = String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!limpo) return "";
+  const semPrefixo = limpo.replace(/^time(\s+|$)/i, "").trim();
+  if (!semPrefixo) return "";
+  const cap = semPrefixo.replace(/(^|\s)(\p{L})/gu, (_m, esp: string, l: string) => esp + l.toUpperCase());
+  return `Time ${cap}`;
+}
 
 @Injectable()
 export class LeadsService {
@@ -296,7 +306,14 @@ export class LeadsService {
     return { message: "Lead removido." };
   }
 
-  async importFromExcel(file: Express.Multer.File, user: User) {
+  async importFromExcel(file: Express.Multer.File, user: User, time?: string) {
+    if (!file?.buffer) throw new BadRequestException("Envie a planilha.");
+    // Cargos abaixo do Diretor: a planilha tem que dizer de qual TIME é
+    // (ex.: "Time Isaac"), pra não misturar com os leads que já existem.
+    const nomeTime = nomeDoTime(time);
+    if (user.role !== UserRole.DIRETOR && !nomeTime) {
+      throw new BadRequestException("Informe o nome do time da planilha (ex.: Time Isaac).");
+    }
     const wb = XLSX.read(file.buffer, { type: "buffer" });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
@@ -331,9 +348,12 @@ export class LeadsService {
       const exists = await this.leadsRepo.findOne({ where: { phone: dto.phone } });
       if (exists) { duplicates++; continue; }
 
+      if (nomeTime) dto.campanha = dto.campanha ? `${nomeTime} — ${dto.campanha}` : nomeTime;
       const entity = this.leadsRepo.create({
         ...dto,
-        responsavelId: user.role === UserRole.CORRETOR ? user.id : undefined,
+        // Quem subiu fica responsável (senão o lead some da visão do gerente e
+        // cai no bolo geral do Diretor). Diretor distribui depois.
+        responsavelId: user.role === UserRole.DIRETOR ? undefined : user.id,
       } as Partial<Lead>);
       leads.push(entity);
     }
