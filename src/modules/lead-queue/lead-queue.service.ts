@@ -187,6 +187,23 @@ export class LeadQueueService {
     return membros[idx];
   }
 
+  /**
+   * Grava SÓ o ponteiro do rodízio. Antes salvava a config inteira (objeto lido lá
+   * atrás) e um cron podia regravar o ponteiro velho → "a fila não anda".
+   */
+  private async salvarPonteiro(s: LeadQueueSettings) {
+    await this.settingsRepo.update(s.id, { pointer: s.pointer });
+  }
+
+  /** Quem acabou de receber um lead: o próximo do rodízio passa a ser o seguinte a ele. */
+  private async avancarDepoisDe(userId: string, membros: string[]) {
+    const idx = membros.indexOf(userId);
+    if (idx < 0) return;
+    const s = await this.getSettings();
+    s.pointer = (idx + 1) % membros.length;
+    await this.salvarPonteiro(s);
+  }
+
   private prazo(s: LeadQueueSettings): Date {
     return new Date(Date.now() + s.slaMinutes * 60_000);
   }
@@ -251,7 +268,7 @@ export class LeadQueueService {
     }
 
     const userId = this.proximo(s, membros);
-    await this.settingsRepo.save(s);
+    await this.salvarPonteiro(s);
     const saved = await this.assignRepo.save(
       this.assignRepo.create({
         conversationId: input.conversationId,
@@ -400,7 +417,7 @@ export class LeadQueueService {
       await this.avisarEspecialistaNoTurno(a.conversationId, userId);
       count++;
     }
-    await this.settingsRepo.save(s);
+    if (count) await this.salvarPonteiro(s);
     if (count) this.logger.log(`Fila: ${count} lead(s) aguardando distribuído(s) no início do turno.`);
     return count;
   }
@@ -557,6 +574,9 @@ export class LeadQueueService {
       });
       await this.assignRepo.save(next);
       await this.atribuir(a.conversationId, a.leadId, nextUser);
+      // O lead repassado CONTA como a vez dele: o "Próximo" anda pro seguinte
+      // (senão o mesmo corretor recebia o repassado E o próximo lead novo).
+      await this.avancarDepoisDe(nextUser, membros);
       // Passou pro próximo: avisa o cliente com o NOME do novo corretor — sem dizer
       // que o anterior estava ocupado (não fica estranho).
       await this.avisarEspecialistaNoTurno(a.conversationId, nextUser);

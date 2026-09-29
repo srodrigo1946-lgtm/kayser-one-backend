@@ -17,6 +17,10 @@ function make(
       Object.assign(settings, v);
       return settings;
     }),
+    update: jest.fn(async (_id: any, v: any) => {
+      Object.assign(settings, v);
+      return {};
+    }),
   };
   const assignRepo: any = {
     findOne: jest.fn(async ({ where }: any) =>
@@ -164,6 +168,14 @@ describe("LeadQueueService", () => {
     await svc.reassignExpired();
     expect(venc.status).toBe("expirado");
     expect(assignments.some((x) => x.status === "pendente" && x.assignedToId === "B")).toBe(true);
+  });
+
+  it("SLA repassado conta como a vez: o 'Próximo' anda pro seguinte a quem recebeu", async () => {
+    const settings = { id: "s", enabled: true, slaMinutes: 5, pointer: 1 }; // próximo = B
+    const venc = { conversationId: "c1", leadId: "L1", assignedToId: "A", status: "pendente", dueAt: new Date(Date.now() - 1000), attempts: 1 };
+    const { svc } = make(settings, [venc], ["A", "B", "C"], undefined, {}, { id: "L1", status: "novo_lead" });
+    await svc.reassignExpired(); // A → B
+    expect(settings.pointer).toBe(2); // próximo lead novo vai pro C, não pro B de novo
   });
 
   it("SLA: lead excluído / 'não é lead' encerra a atribuição sem reenviar nem repassar", async () => {
