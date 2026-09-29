@@ -427,6 +427,11 @@ export class ConversationsService {
     return email;
   }
 
+  /** Cliente pediu pra parar: marca o lead (sai do follow-up automático). */
+  async marcarNaoPerturbe(leadId: string) {
+    await this.leadsRepo.update(leadId, { naoPerturbe: true });
+  }
+
   /** O lead já tem e-mail no cadastro? (a IA pede enquanto não tiver) */
   async leadTemEmail(leadId: string): Promise<boolean> {
     const lead = await this.leadsRepo.findOne({ where: { id: leadId }, select: ["id", "email"] });

@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConversationsService } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
-import { WhatsappService } from "./whatsapp.service";
+import { WhatsappService, pedeParar } from "./whatsapp.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
@@ -328,6 +328,8 @@ export class WhatsappFlowService {
         await this.knowledge.registrarInteresse(conv.leadId, textoCliente).catch(() => null);
         // Cliente mandou o e-mail? Vai direto pro cadastro do lead.
         await this.conversations.registrarEmailDoLead(conv.leadId, textoCliente).catch(() => null);
+        // Pediu pra parar? Sai do follow-up automático (denúncia de spam derruba o número).
+        if (pedeParar(textoCliente)) await this.conversations.marcarNaoPerturbe(conv.leadId).catch(() => null);
         // Score em TODA conversa com lead — no plantão também (a IA só lê, não responde).
         this.agendarScore(conv.id, conv.leadId);
       }
@@ -501,6 +503,11 @@ export class WhatsappFlowService {
    * dono da conversa (`instanceOwnerId`) — importante quando é um lead da fila no número
    * central. Se for lead de anúncio, a resposta do cargo atribuído marca como atendido.
    */
+  /** Pausa entre envios em massa (usada pelo follow-up). */
+  pausaEntreDisparos() {
+    return this.whatsapp.pausaEntreDisparos();
+  }
+
   async sendManual(senderUserId: string, remoteJid: string, text: string) {
     const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
     const instanceOwner = conv.instanceOwnerId || senderUserId;

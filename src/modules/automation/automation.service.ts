@@ -119,14 +119,19 @@ export class AutomationService {
         lastContactAt: LessThan(cutoff),
         status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
         source: In(sources),
+        naoPerturbe: false,
       },
-      take: 100,
+      order: { lastContactAt: "ASC" },
+      // PROTEÇÃO: no máximo 40 por dia (o resto vai nos dias seguintes).
+      take: 40,
     });
     const leads = await this.soManuaisDoDiretor(encontrados);
 
     let sent = 0;
     const convRepo = this.leadsRepo.manager.getRepository(Conversation);
     for (const lead of leads) {
+      // PROTEÇÃO: 25-60s entre um cliente e outro (nada de rajada às 9h).
+      if (sent > 0) await this.whatsappFlow.pausaEntreDisparos();
       // Nome do cadastro; se for número/"Contato WhatsApp", usa o nome do perfil do WhatsApp.
       const conv = await convRepo.findOne({ where: { leadId: lead.id } }).catch(() => null);
       const message = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName));

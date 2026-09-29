@@ -77,6 +77,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "valorVenda" numeric`);
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "dataVenda" date`);
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "corujaoLiberado" boolean NOT NULL DEFAULT false`);
+    // Proteção do WhatsApp: cliente pediu pra parar = sem follow-up (29/09/2026).
+    await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "naoPerturbe" boolean NOT NULL DEFAULT false`);
   }
 
   /**

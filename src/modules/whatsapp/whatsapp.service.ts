@@ -36,6 +36,16 @@ export function erroEvolution(err: any, instanceName: string): Error {
   return new ServiceUnavailableException(`WhatsApp não enviou (Evolution ${status}): ${msg}`);
 }
 
+/** Cliente pediu pra parar ("pare", "não quero mais", "sair da lista"...). */
+export function pedeParar(texto?: string | null): boolean {
+  const t = (texto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (!t || t.length > 120) return false;
+  return /^(pare|para|parar|sair|stop|chega)[.!]*$/.test(t) ||
+    /(nao (quero|tenho) (mais )?(interesse|receber|mensage)|para(r)? de (me )?(mandar|enviar)|pare de (me )?(mandar|enviar)|me (tira|tire|remova|remove) (da|dessa|desta) lista|descadastr|nao me (mande|mandem|envie|enviem))/.test(t);
+}
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
@@ -61,6 +71,31 @@ export class WhatsappService {
   }
 
   private pausaCache: { em: number; valor: boolean } | null = null;
+  private ultimoEnvio = new Map<string, number>();
+
+  /**
+   * PROTEÇÃO: nunca dispara 2 mensagens coladas pelo mesmo número (1,5 a 3,5s entre
+   * elas, com variação — robô manda em ritmo fixo, gente não).
+   */
+  private async espacar(instanceName: string) {
+    const gap = 1500 + Math.random() * 2000;
+    const espera = (this.ultimoEnvio.get(instanceName) ?? 0) + gap - Date.now();
+    this.ultimoEnvio.set(instanceName, Date.now() + Math.max(espera, 0));
+    if (espera > 0) await dormir(espera);
+  }
+
+  /**
+   * PROTEÇÃO pra envio em MASSA (follow-up, 1ª mensagem pendente): pausa de 25 a 60s
+   * entre um cliente e outro. Disparo seguido é o que mais faz o WhatsApp bloquear.
+   */
+  async pausaEntreDisparos() {
+    await dormir(25_000 + Math.random() * 35_000);
+  }
+
+  /** "digitando..." proporcional ao tamanho do texto (1,2 a 5s). */
+  private digitando(texto: string): number {
+    return Math.min(5000, 1200 + (texto?.length ?? 0) * 25);
+  }
 
   /** Contingência ligada em Configurações? (cache de 30s pra não bater no banco a cada envio) */
   async pausado(): Promise<boolean> {
@@ -199,6 +234,7 @@ export class WhatsappService {
         ? "video"
         : "document";
     await this.bloqueiaSePausado();
+    await this.espacar(instanceName);
     // Aceita data URI ("data:...;base64,XXX") ou base64 puro.
     const media = file.base64.includes(",") ? file.base64.split(",")[1] : file.base64;
     try {
@@ -225,6 +261,7 @@ export class WhatsappService {
   /** Mensagem de VOZ (ptt) — áudio em base64 (ogg/opus). */
   async sendAudio(instanceName: string, to: string, base64: string) {
     await this.bloqueiaSePausado();
+    await this.espacar(instanceName);
     const number = to.includes("@") ? to : to.replace(/\D/g, "");
     try {
       const { data } = await axios.post(
@@ -246,10 +283,11 @@ export class WhatsappService {
     // mandamos só os dígitos e a Evolution resolve o destino.
     const number = to.includes("@") ? to : to.replace(/\D/g, "");
     await this.bloqueiaSePausado();
+    await this.espacar(instanceName);
     try {
       const { data } = await axios.post(
         `${this.apiUrl}/message/sendText/${instanceName}`,
-        { number, text },
+        { number, text, delay: this.digitando(text) },
         { headers: this.headers }
       );
       this.logger.log(`Mensagem enviada para ${number} via ${instanceName}`);

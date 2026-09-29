@@ -141,6 +141,10 @@ export class Lead {
   @Column({ nullable: true })
   lastContactAt: Date;
 
+  // Cliente pediu pra parar de receber: sem follow-up automático (protege o número).
+  @Column({ default: false })
+  naoPerturbe: boolean;
+
   @Column({ nullable: true })
   kanbanOrder: number;
 

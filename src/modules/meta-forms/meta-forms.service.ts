@@ -226,7 +226,7 @@ export class MetaFormsService {
   }
 
   /** Cria Lead + Conversa e enfileira. Idempotente por telefone (conversa já com lead = duplicata). */
-  private async criarLead(dados: DadosLead): Promise<boolean> {
+  private async criarLead(dados: DadosLead, contatarAgora = true): Promise<boolean> {
     dados.phone = telefoneWhatsapp(dados.phone);
     // Já existe lead com esse telefone (planilha, manual, formulário)? Não duplica.
     const tels = variacoesTelefone(dados.phone);
@@ -262,7 +262,8 @@ export class MetaFormsService {
     const atribuicao = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: lead.id });
     this.logger.log(`Formulário Meta → lead ${lead.id} (${dados.name}) criado e enfileirado.`);
     // Pedido do Rodrigo: entrou lead do formulário → o Kayser já chama no WhatsApp.
-    await this.primeiroContato(conv.id, lead, atribuicao);
+    // Em lote (puxar do Facebook) NÃO dispara aqui: o contatarPendentes manda aos poucos.
+    if (contatarAgora) await this.primeiroContato(conv.id, lead, atribuicao);
     return true;
   }
 
@@ -304,7 +305,7 @@ export class MetaFormsService {
             dados.formId = formId;
             dados.formulario = form?.data?.name || undefined;
             try {
-              if (await this.criarLead(dados)) novos++;
+              if (await this.criarLead(dados, false)) novos++;
             } catch (err) {
               this.logger.warn(`Sincronizar: falha no lead ${l.id}: ${(err as Error).message}`);
             }
@@ -358,6 +359,7 @@ export class MetaFormsService {
       if (!conv) continue;
       if ((await msgRepo.count({ where: { conversationId: conv.id } })) > 0) continue;
       const atrib = await filaRepo.findOne({ where: { conversationId: conv.id }, order: { assignedAt: "DESC" } });
+      if (enviados > 0) await this.whatsapp.pausaEntreDisparos();
       if (await this.primeiroContato(conv.id, lead, atrib)) enviados++;
       else break; // falhou (WhatsApp ainda com problema): tenta de novo na próxima rodada
     }
