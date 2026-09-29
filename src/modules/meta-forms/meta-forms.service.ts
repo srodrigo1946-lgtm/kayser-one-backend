@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { telefoneBloqueado } from "../leads/bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, MoreThan, Repository } from "typeorm";
 import { Cron } from "@nestjs/schedule";
@@ -252,6 +253,11 @@ export class MetaFormsService {
     dados.phone = telefoneWhatsapp(dados.phone);
     // Já existe lead com esse telefone (planilha, manual, formulário)? Não duplica.
     const tels = variacoesTelefone(dados.phone);
+    // Lead que o Diretor EXCLUIU não volta (ex.: teste BINHO voltando pelo "puxar").
+    if (await telefoneBloqueado(this.leadsRepo.manager, dados.phone)) {
+      this.logger.log(`Formulário: ${dados.phone} foi excluído pelo Diretor — não volta.`);
+      return false;
+    }
     const existente = await this.leadsRepo.findOne({ where: [{ phone: In(tels) }, { whatsapp: In(tels) }] });
     if (existente) {
       this.logger.log(`Formulário: ${dados.phone} já é lead (${existente.id}) — ignorado.`);

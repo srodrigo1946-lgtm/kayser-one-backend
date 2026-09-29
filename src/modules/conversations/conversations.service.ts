@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { telefoneBloqueado } from "../leads/bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
 import { MoreThan, Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
@@ -396,6 +397,8 @@ export class ConversationsService {
     if (!conv) return undefined;
     if (conv.leadId) return conv.leadId;
     const numero = (conv.remoteJid ?? "").replace(/\D/g, "");
+    // Lead excluído pelo Diretor não volta a virar lead pelo WhatsApp.
+    if (await telefoneBloqueado(this.leadsRepo.manager, numero)) return undefined;
     try {
       const saved = await this.leadsRepo.save(
         this.leadsRepo.create({

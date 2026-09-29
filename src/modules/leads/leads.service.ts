@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
+import { bloquearTelefones } from "./bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Repository, Like, In, FindOptionsWhere, MoreThan } from "typeorm";
@@ -302,6 +303,10 @@ export class LeadsService {
         { status: AppointmentStatus.CANCELADO }
       )
       .catch((err) => this.logger.warn(`Falha ao cancelar visitas do lead excluído: ${(err as Error).message}`));
+    // Excluído = não volta (o formulário do Meta e o WhatsApp não recriam esse telefone).
+    await bloquearTelefones(this.leadsRepo.manager, lead.phone, lead.whatsapp).catch((err) =>
+      this.logger.warn(`Falha ao bloquear telefone do lead excluído: ${(err as Error).message}`)
+    );
     await this.leadsRepo.remove(lead);
     return { message: "Lead removido." };
   }

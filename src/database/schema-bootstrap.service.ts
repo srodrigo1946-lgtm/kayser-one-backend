@@ -41,6 +41,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureAdInvestmentDayTable", () => this.ensureAdInvestmentDayTable()],
       ["ensureFeedbackTable", () => this.ensureFeedbackTable()],
       ["ensureAssignmentAgendado", () => this.ensureAssignmentAgendado()],
+      ["ensureLeadsBloqueados", () => this.ensureLeadsBloqueados()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -414,5 +415,14 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiModel" varchar`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiApiKey" text`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "recoveryCodeHash" text`);
+  }
+
+  /** Telefones de leads EXCLUÍDOS pelo Diretor — não voltam pelo formulário/WhatsApp (29/09/2026). */
+  private async ensureLeadsBloqueados() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS leads_bloqueados (
+        phone varchar PRIMARY KEY,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
   }
 }
