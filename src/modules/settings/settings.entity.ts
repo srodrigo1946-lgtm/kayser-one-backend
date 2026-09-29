@@ -76,6 +76,10 @@ export class Settings {
   @Column({ default: false })
   whatsappPausado: boolean;
 
+  // Conta(s) de anúncio do Meta (IDs, vírgula) de onde vem o gasto do Custo por Lead.
+  @Column({ type: "text", nullable: true })
+  metaAdAccountIds: string;
+
   // Imagem das condições comerciais do mês (aba Grupo Direcional). Chave no R2
   // ou data URI (fallback). Só o Diretor troca; todos os cargos veem.
   @Column({ type: "text", nullable: true })

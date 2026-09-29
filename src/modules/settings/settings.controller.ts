@@ -65,6 +65,9 @@ class UpdateSettingsDto {
   whatsappPausado?: boolean;
 
   @IsOptional() @IsString()
+  metaAdAccountIds?: string;
+
+  @IsOptional() @IsString()
   metaPageToken?: string;
 
   @IsOptional() @IsString()

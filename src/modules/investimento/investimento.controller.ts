@@ -82,6 +82,14 @@ export class InvestimentoController {
     return this.service.clearDays(Number(year), Number(month));
   }
 
+  @Post("sincronizar-meta")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Puxar agora o gasto por dia do Meta (somente Diretor)" })
+  sincronizarMeta(@Query("year") year: string, @Query("month") month: string) {
+    return this.service.sincronizarMeta(Number(year), Number(month));
+  }
+
   // Entrada automática (FiqOn/Make empurra o gasto do FB). Público, protegido por token.
   @Post("dia-direct")
   @ApiOperation({ summary: "Recebe o gasto de um dia de uma ferramenta parceira (token)" })
