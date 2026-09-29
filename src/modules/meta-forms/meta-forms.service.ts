@@ -152,12 +152,28 @@ export class MetaFormsService {
   async listarFormularios(): Promise<{ id: string; name: string; leads: number; status: string }[]> {
     const token = await this.pageToken();
     if (!token) return [];
-    try {
-      const { data: me } = await axios.get(`${GRAPH}/me`, { params: { access_token: token, fields: "id" } });
-      const { data } = await axios.get(`${GRAPH}/${me.id}/leadgen_forms`, {
-        params: { access_token: token, fields: "id,name,status,leads_count", limit: 100 },
+    const formsDaPagina = async (pageId: string, tk: string) => {
+      const { data } = await axios.get(`${GRAPH}/${pageId}/leadgen_forms`, {
+        params: { access_token: tk, fields: "id,name,status,leads_count", limit: 100 },
       });
       return (data?.data ?? []).map((f: any) => ({ id: f.id, name: f.name, leads: f.leads_count ?? 0, status: f.status }));
+    };
+    try {
+      const { data: me } = await axios.get(`${GRAPH}/me`, { params: { access_token: token, fields: "id" } });
+      try {
+        return await formsDaPagina(me.id, token); // token de PÁGINA: /me é a própria Página
+      } catch (err: any) {
+        // Token de USUÁRIO (#100 leadgen_forms não existe em User): lista pelas Páginas dele.
+        if (err?.response?.data?.error?.code !== 100) throw err;
+        const { data: contas } = await axios.get(`${GRAPH}/me/accounts`, {
+          params: { access_token: token, fields: "id,access_token", limit: 50 },
+        });
+        const todas: { id: string; name: string; leads: number; status: string }[] = [];
+        for (const p of contas?.data ?? []) {
+          todas.push(...(await formsDaPagina(p.id, p.access_token || token).catch(() => [])));
+        }
+        return todas;
+      }
     } catch (err: any) {
       throw new BadRequestException(erroMeta(err));
     }
