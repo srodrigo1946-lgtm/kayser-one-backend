@@ -1,4 +1,4 @@
-import { MetaFormsService, mensagemFormulario, telefoneWhatsapp } from "./meta-forms.service";
+import { MetaFormsService, mensagemFormulario, telefoneWhatsapp, tokenConfere } from "./meta-forms.service";
 
 function svc() {
   const conversations: any = {};
@@ -57,6 +57,27 @@ describe("MetaFormsService", () => {
     expect(c).toContain("especialista *Marcelo Dias*");
     expect(c).not.toContain("Kayser");
     expect(mensagemFormulario({ nome: "", kayser: false })).toContain("Olá! 👋 Recebemos seu cadastro sobre o imóvel");
+  });
+
+  it("token vazio configurado NUNCA libera (lead-direct / webhook)", async () => {
+    expect(tokenConfere("", "")).toBe(false);
+    expect(tokenConfere(undefined, "")).toBe(false);
+    expect(tokenConfere("x", "")).toBe(false);
+    expect(tokenConfere("segredo", "segredo")).toBe(true);
+    expect(tokenConfere("segred0", "segredo")).toBe(false);
+    const semToken: any = new MetaFormsService({} as any, {} as any, {} as any, { get: () => "" } as any, { get: async () => ({}) } as any, {} as any);
+    semToken.criarLead = async () => { throw new Error("não devia criar"); };
+    expect(await semToken.recebeDireto("", { nome: "X", telefone: "21988887777" })).toEqual({ ok: false });
+  });
+
+  it("evento SEM form_id não fura o filtro (confere o form real da Graph)", async () => {
+    const settings: any = { get: async () => ({ metaFormIds: "960631980396672" }) };
+    const s: any = new MetaFormsService({} as any, {} as any, {} as any, { get: () => "" } as any, settings, {} as any);
+    const criados: string[] = [];
+    s.fetchLead = async () => ({ name: "X", phone: "5521988887777", formId: "26634231496201321" });
+    s.criarLead = async (d: any) => criados.push(d.phone);
+    await s.handleLeadgen({ entry: [{ changes: [{ field: "leadgen", value: { leadgen_id: "L9" } }] }] });
+    expect(criados).toEqual([]);
   });
 
   it("telefone do formulário ganha o 55 do Brasil", () => {

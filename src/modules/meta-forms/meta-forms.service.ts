@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Repository } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
+import { timingSafeEqual } from "crypto";
 import { Lead } from "../leads/lead.entity";
 import { ConversationsService } from "../conversations/conversations.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
@@ -14,6 +15,18 @@ import { User, UserRole } from "../users/user.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { LeadQueueAssignment } from "../lead-queue/lead-queue-assignment.entity";
 import { primeiroNome } from "../automation/automation.service";
+
+/**
+ * Compara o token recebido com o esperado. Token esperado VAZIO = sempre recusa
+ * (Sofia, 29/09: senão `?token=` vazio passava e disparava WhatsApp pelo central).
+ * Comparação em tempo constante.
+ */
+export function tokenConfere(recebido: string | undefined, esperado: string): boolean {
+  if (!esperado || !recebido) return false;
+  const a = Buffer.from(String(recebido));
+  const b = Buffer.from(esperado);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /** Telefone BR só com dígitos e com o 55 (o WhatsApp responde como 55DDDNÚMERO). */
 export function telefoneWhatsapp(phone: string): string {
@@ -51,6 +64,8 @@ interface DadosLead {
   email?: string;
   /** Nome do formulário (ex.: "Ilha stay lead") — vira campanha e indica o empreendimento. */
   formulario?: string;
+  /** ID do formulário (vem da Graph API — confere de novo com a lista permitida). */
+  formId?: string;
 }
 
 @Injectable()
@@ -80,7 +95,7 @@ export class MetaFormsService {
   /** Verificação do webhook (GET): devolve o challenge só se o token bater. */
   async verify(mode: string, token: string, challenge: string): Promise<string | null> {
     const esperado = await this.verifyToken();
-    return mode === "subscribe" && !!esperado && token === esperado ? challenge : null;
+    return mode === "subscribe" && tokenConfere(token, esperado) ? challenge : null;
   }
 
   /**
@@ -89,7 +104,7 @@ export class MetaFormsService {
    * nome/telefone/email. Protegido pelo mesmo Verify Token (colado na aba Integrações).
    */
   async recebeDireto(token: string, body: any): Promise<{ ok: boolean }> {
-    if (token !== (await this.verifyToken())) return { ok: false };
+    if (!tokenConfere(token, await this.verifyToken())) return { ok: false };
     const pega = (...ks: string[]) => {
       for (const k of ks) if (body?.[k]) return String(body[k]);
       return "";
@@ -137,6 +152,11 @@ export class MetaFormsService {
       }
       try {
         const dados = await this.fetchLead(leadgenId);
+        // Confere de novo com o form_id REAL (Graph API): evento sem form_id não fura o filtro.
+        if (dados?.formId && permitidos.length && !permitidos.includes(dados.formId)) {
+          this.logger.log(`Formulário ${dados.formId} fora da lista — lead ${leadgenId} ignorado.`);
+          continue;
+        }
         if (dados?.phone) await this.criarLead(dados);
       } catch (err) {
         this.logger.warn(`Falha ao processar leadgen ${leadgenId}: ${(err as Error).message}`);
@@ -155,6 +175,7 @@ export class MetaFormsService {
       params: { access_token: token, fields: "field_data,form_id" },
     });
     const dados = this.mapFieldData(data?.field_data ?? []);
+    if (data?.form_id) dados.formId = String(data.form_id);
     if (data?.form_id) {
       const form = await axios
         .get(`${GRAPH}/${data.form_id}`, { params: { access_token: token, fields: "name" } })
