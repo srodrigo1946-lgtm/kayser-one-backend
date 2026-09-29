@@ -8,6 +8,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Res,
+  Query,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
@@ -96,6 +97,14 @@ export class SettingsController {
   @ApiOperation({ summary: "Obter configurações (sem expor a chave de IA)" })
   get() {
     return this.settingsService.getPublic();
+  }
+
+  @Get("segredo")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Mostrar token salvo do Meta (somente Diretor)" })
+  segredo(@Query("campo") campo: string) {
+    return this.settingsService.segredo(campo);
   }
 
   @Put()

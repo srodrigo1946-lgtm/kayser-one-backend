@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, MoreThan, Repository } from "typeorm";
 import { Cron } from "@nestjs/schedule";
@@ -17,6 +17,19 @@ import { Conversation } from "../conversations/conversation.entity";
 import { LeadQueueAssignment } from "../lead-queue/lead-queue-assignment.entity";
 import { primeiroNome } from "../automation/automation.service";
 import { Message } from "../conversations/message.entity";
+
+/** Traduz o erro da Graph API (token vencido/invalidado, sem permissão...). */
+export function erroMeta(err: any): string {
+  const e = err?.response?.data?.error;
+  if (!e) return `Não consegui falar com o Facebook: ${err?.message ?? "erro"}`;
+  if (e.code === 190) {
+    return "O Page Access Token do Meta venceu ou foi invalidado (troca de senha, saída do app ou do Business). Gere um token novo e cole em \"Page Access Token\".";
+  }
+  if (e.code === 10 || e.code === 200 || /permission/i.test(e.message ?? "")) {
+    return `O token não tem permissão pra ler os leads (leads_retrieval / pages_manage_ads). Meta: ${e.message}`;
+  }
+  return `Meta recusou: ${e.message ?? "erro"}`;
+}
 
 /** Variações do telefone BR pra achar lead já cadastrado (com/sem 55). */
 export function variacoesTelefone(p: string): string[] {
@@ -139,11 +152,15 @@ export class MetaFormsService {
   async listarFormularios(): Promise<{ id: string; name: string; leads: number; status: string }[]> {
     const token = await this.pageToken();
     if (!token) return [];
-    const { data: me } = await axios.get(`${GRAPH}/me`, { params: { access_token: token, fields: "id" } });
-    const { data } = await axios.get(`${GRAPH}/${me.id}/leadgen_forms`, {
-      params: { access_token: token, fields: "id,name,status,leads_count", limit: 100 },
-    });
-    return (data?.data ?? []).map((f: any) => ({ id: f.id, name: f.name, leads: f.leads_count ?? 0, status: f.status }));
+    try {
+      const { data: me } = await axios.get(`${GRAPH}/me`, { params: { access_token: token, fields: "id" } });
+      const { data } = await axios.get(`${GRAPH}/${me.id}/leadgen_forms`, {
+        params: { access_token: token, fields: "id,name,status,leads_count", limit: 100 },
+      });
+      return (data?.data ?? []).map((f: any) => ({ id: f.id, name: f.name, leads: f.leads_count ?? 0, status: f.status }));
+    } catch (err: any) {
+      throw new BadRequestException(erroMeta(err));
+    }
   }
 
   /** Evento de leadgen: para cada lead novo, busca os dados e cria no CRM + fila. */
@@ -299,7 +316,7 @@ export class MetaFormsService {
       if (novos) this.logger.log(`Sincronizar formulários: ${novos} lead(s) novo(s) de ${encontrados}.`);
       return { encontrados, novos };
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message ?? err?.message ?? "erro";
+      const msg = erroMeta(err);
       this.logger.warn(`Sincronizar formulários falhou: ${msg}`);
       return { encontrados, novos, erro: String(msg).slice(0, 200) };
     } finally {

@@ -36,6 +36,14 @@ export class SettingsService {
     };
   }
 
+  /** Chave/senha salva, pra o Diretor conferir (botão 👁). Só campos desta lista. */
+  async segredo(campo: string): Promise<{ valor: string }> {
+    const permitidos = ["metaPageToken", "metaVerifyToken"] as const;
+    if (!(permitidos as readonly string[]).includes(campo)) return { valor: "" };
+    const s = await this.get();
+    return { valor: ((s as any)[campo] as string) || "" };
+  }
+
   /** Salva a imagem de condições comerciais do mês (R2 quando ativo, senão data URI). */
   async setDirecionalImage(file: Express.Multer.File) {
     const settings = await this.get();

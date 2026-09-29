@@ -20,3 +20,11 @@ describe("Contingência do WhatsApp / puxar formulários", () => {
     expect(r.erro).toContain("Token");
   });
 });
+
+import { erroMeta } from "./meta-forms.service";
+describe("erroMeta", () => {
+  it("token vencido vira mensagem clara", () => {
+    expect(erroMeta({ response: { data: { error: { code: 190, message: "Session has expired" } } } })).toContain("venceu");
+    expect(erroMeta({ message: "ETIMEDOUT" })).toContain("ETIMEDOUT");
+  });
+});
