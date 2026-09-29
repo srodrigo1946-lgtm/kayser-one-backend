@@ -149,14 +149,20 @@ export class MetaFormsService {
   }
 
   /** Formulários da Página (pra tela de Configurações marcar quais entram). */
-  async listarFormularios(): Promise<{ id: string; name: string; leads: number; status: string }[]> {
+  async listarFormularios(): Promise<{ id: string; name: string; leads: number; status: string; criado?: string }[]> {
     const token = await this.pageToken();
     if (!token) return [];
     const formsDaPagina = async (pageId: string, tk: string) => {
       const { data } = await axios.get(`${GRAPH}/${pageId}/leadgen_forms`, {
-        params: { access_token: tk, fields: "id,name,status,leads_count", limit: 100 },
+        params: { access_token: tk, fields: "id,name,status,leads_count,created_time", limit: 200 },
       });
-      return (data?.data ?? []).map((f: any) => ({ id: f.id, name: f.name, leads: f.leads_count ?? 0, status: f.status }));
+      return (data?.data ?? []).map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        leads: f.leads_count ?? 0,
+        status: f.status,
+        criado: f.created_time,
+      }));
     };
     try {
       const { data: me } = await axios.get(`${GRAPH}/me`, { params: { access_token: token, fields: "id" } });
@@ -168,7 +174,7 @@ export class MetaFormsService {
         const { data: contas } = await axios.get(`${GRAPH}/me/accounts`, {
           params: { access_token: token, fields: "id,access_token", limit: 50 },
         });
-        const todas: { id: string; name: string; leads: number; status: string }[] = [];
+        const todas: { id: string; name: string; leads: number; status: string; criado?: string }[] = [];
         for (const p of contas?.data ?? []) {
           todas.push(...(await formsDaPagina(p.id, p.access_token || token).catch(() => [])));
         }
