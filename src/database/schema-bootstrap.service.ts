@@ -258,7 +258,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     // Origem "Corujão" na lista de origens do lead (30/09/2026) — só acrescenta se faltar.
     await this.dataSource.query(
       `UPDATE settings SET "leadOrigens" = CASE WHEN COALESCE("leadOrigens", '') = '' THEN 'Corujão' ELSE "leadOrigens" || ',Corujão' END
-       WHERE COALESCE("leadOrigens", '') NOT ILIKE '%coruj%'`
+       WHERE COALESCE("leadOrigens", '') NOT ILIKE '%coruj%' AND "updatedAt" < '2026-09-30 21:30:00'`
     );
     // Custo por Lead puxando o gasto do Meta (29/09/2026). 1ª vez: a conta do Rodrigo.
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaAdAccountIds" text`);
