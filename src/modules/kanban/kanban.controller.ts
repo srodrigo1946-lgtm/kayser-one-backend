@@ -65,7 +65,7 @@ export class KanbanController {
   @ApiOperation({ summary: "Editar coluna (somente Diretor)" })
   updateColumn(
     @Param("id") id: string,
-    @Body() body: { title?: string; emoji?: string; color?: string }
+    @Body() body: { title?: string; emoji?: string; color?: string; somenteGestores?: boolean }
   ) {
     return this.kanbanService.updateColumn(id, body);
   }

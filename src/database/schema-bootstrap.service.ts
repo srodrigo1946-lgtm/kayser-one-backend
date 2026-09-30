@@ -42,6 +42,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureFeedbackTable", () => this.ensureFeedbackTable()],
       ["ensureAssignmentAgendado", () => this.ensureAssignmentAgendado()],
       ["ensureLeadsBloqueados", () => this.ensureLeadsBloqueados()],
+      ["ensureKanbanSomenteGestores", () => this.ensureKanbanSomenteGestores()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -423,6 +424,16 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiModel" varchar`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiApiKey" text`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "recoveryCodeHash" text`);
+  }
+
+  /** Coluna do Kanban só pra gerente pra cima (30/09/2026). 1ª vez: "Arquivos dos TIMES". */
+  private async ensureKanbanSomenteGestores() {
+    const r = await this.dataSource.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'kanban_columns' AND column_name = 'somenteGestores'`
+    );
+    if (r.length) return; // já existe: não mexe (o Diretor pode ter desligado)
+    await this.dataSource.query(`ALTER TABLE kanban_columns ADD COLUMN IF NOT EXISTS "somenteGestores" boolean NOT NULL DEFAULT false`);
+    await this.dataSource.query(`UPDATE kanban_columns SET "somenteGestores" = true WHERE title ILIKE '%arquivo%time%'`);
   }
 
   /** Telefones de leads EXCLUÍDOS pelo Diretor — não voltam pelo formulário/WhatsApp (29/09/2026). */

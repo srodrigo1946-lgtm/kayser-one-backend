@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, In } from "typeorm";
 import { Lead } from "../leads/lead.entity";
@@ -23,6 +23,11 @@ export const KANBAN_COLUMNS = [
   { key: "venda_ganha", title: "Venda Ganha", emoji: "🎉", color: "#16a34a" },
   { key: "venda_perdida", title: "Venda Perdida", emoji: "❌", color: "#ef4444" },
 ];
+
+/** Gerente pra cima (Diretor, Superintendente, Gerente Geral, Gerente). */
+export function ehGestor(user?: { role?: string } | null): boolean {
+  return !!user && ["diretor", "superintendente", "gerente_geral", "gerente"].includes(String(user.role));
+}
 
 @Injectable()
 export class KanbanService {
@@ -52,7 +57,8 @@ export class KanbanService {
   }
 
   async getBoard(user: User) {
-    const columns = await this.listColumns();
+    // Corretor não vê as colunas marcadas "só gerente pra cima".
+    const columns = (await this.listColumns()).filter((c) => !c.somenteGestores || ehGestor(user));
     // Escopo por equipe: Diretor (null) vê todos; demais veem só a sua equipe.
     const scopeIds = await this.users.getScopeIds(user);
     const where = scopeIds === null ? {} : { responsavelId: In(scopeIds) };
@@ -89,6 +95,7 @@ export class KanbanService {
       title: col.title,
       emoji: col.emoji,
       color: col.color,
+      somenteGestores: !!col.somenteGestores,
       leads: leads
         .filter((l) => l.status === col.key)
         .map((l) => ({ ...l, stageSince: sinceMap.get(l.id) ?? l.updatedAt })),
@@ -96,6 +103,10 @@ export class KanbanService {
   }
 
   async moveCard(leadId: string, toStatus: string, toOrder: number, user?: User) {
+    if (user && !ehGestor(user)) {
+      const destino = await this.columnsRepo.findOne({ where: { key: toStatus } });
+      if (destino?.somenteGestores) throw new ForbiddenException("Essa coluna é só para gerentes.");
+    }
     // Delega ao LeadsService para registrar o histórico da movimentação.
     return this.leadsService.updateStatus(leadId, toStatus, toOrder, user);
   }
@@ -135,12 +146,13 @@ export class KanbanService {
     return this.columnsRepo.save(col);
   }
 
-  async updateColumn(id: string, dto: { title?: string; emoji?: string; color?: string }) {
+  async updateColumn(id: string, dto: { title?: string; emoji?: string; color?: string; somenteGestores?: boolean }) {
     const col = await this.columnsRepo.findOne({ where: { id } });
     if (!col) throw new NotFoundException("Coluna não encontrada.");
     if (dto.title !== undefined) col.title = dto.title;
     if (dto.emoji !== undefined) col.emoji = dto.emoji;
     if (dto.color !== undefined) col.color = dto.color;
+    if (dto.somenteGestores !== undefined) col.somenteGestores = !!dto.somenteGestores;
     return this.columnsRepo.save(col);
   }
 

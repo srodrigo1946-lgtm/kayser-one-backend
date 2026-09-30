@@ -29,6 +29,10 @@ export class KanbanColumnEntity {
   @Column({ type: "int", default: 0 })
   position: number;
 
+  // Coluna só pra gerente pra cima (corretor não vê nem move lead pra ela).
+  @Column({ default: false })
+  somenteGestores: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 }
