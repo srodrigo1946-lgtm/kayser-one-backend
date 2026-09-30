@@ -21,6 +21,8 @@ export function nomeDoTime(t?: string | null): string {
   if (!limpo) return "";
   const semPrefixo = limpo.replace(/^time(\s+|$)/i, "").trim();
   if (!semPrefixo) return "";
+  // Origem que não é time: Corujão (repique) fica com o nome próprio.
+  if (/^coruj[aã]o$/i.test(semPrefixo)) return "Corujão";
   const cap = semPrefixo.replace(/(^|\s)(\p{L})/gu, (_m, esp: string, l: string) => esp + l.toUpperCase());
   return `Time ${cap}`;
 }

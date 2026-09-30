@@ -255,6 +255,11 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "direcionalUrl" text`);
     // Contingência do WhatsApp central (29/09/2026).
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "whatsappPausado" boolean NOT NULL DEFAULT false`);
+    // Origem "Corujão" na lista de origens do lead (30/09/2026) — só acrescenta se faltar.
+    await this.dataSource.query(
+      `UPDATE settings SET "leadOrigens" = CASE WHEN COALESCE("leadOrigens", '') = '' THEN 'Corujão' ELSE "leadOrigens" || ',Corujão' END
+       WHERE COALESCE("leadOrigens", '') NOT ILIKE '%coruj%'`
+    );
     // Custo por Lead puxando o gasto do Meta (29/09/2026). 1ª vez: a conta do Rodrigo.
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaAdAccountIds" text`);
     await this.dataSource.query(`UPDATE settings SET "metaAdAccountIds" = '542408373588337' WHERE "metaAdAccountIds" IS NULL`);
