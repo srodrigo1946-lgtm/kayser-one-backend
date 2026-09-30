@@ -106,8 +106,13 @@ export class LeadsController {
   @ApiOperation({ summary: "Importar leads via Excel" })
   // Até 10 MB (planilha de lead não passa disso; evita travar o servidor).
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
-  importExcel(@UploadedFile() file: Express.Multer.File, @Body("time") time: string, @Request() req: any) {
-    return this.leadsService.importFromExcel(file, req.user, time);
+  importExcel(
+    @UploadedFile() file: Express.Multer.File,
+    @Body("time") time: string,
+    @Body("status") status: string,
+    @Request() req: any
+  ) {
+    return this.leadsService.importFromExcel(file, req.user, time, status);
   }
 
   @Get("export/excel")

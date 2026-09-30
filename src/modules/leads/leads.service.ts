@@ -15,6 +15,30 @@ import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
 
+/** Cabeçalho normalizado: minúsculo, sem acento, só letras/números ("Nome Completo" → "nomecompleto"). */
+function normCab(h: any): string {
+  return String(h ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+}
+
+/** Qual campo do lead cada cabeçalho representa (aceita os nomes mais comuns de planilha). */
+export function campoDoCabecalho(h: any): keyof CreateLeadDto | null {
+  const c = normCab(h);
+  if (!c) return null;
+  if (/^(whatsapp|whats|zap|wpp)/.test(c)) return "whatsapp";
+  if (/(telefone|celular|fone|^tel|phone|contato|numero|^cel)/.test(c)) return "phone";
+  if (/(email|mail)/.test(c)) return "email";
+  if (/^(nome|cliente|name|fullname|lead|nomedo|nomecliente)/.test(c)) return "name";
+  if (/(empreendimento|imovel|produto)/.test(c)) return "empreendimento";
+  if (/^origem/.test(c)) return "origem";
+  if (/^campanha/.test(c)) return "campanha";
+  if (/^cidade/.test(c)) return "cidade";
+  if (/^renda/.test(c)) return "renda";
+  if (/^fgts/.test(c)) return "fgts";
+  if (/^entrada/.test(c)) return "entrada";
+  if (/^(obs|observa)/.test(c)) return "observacoes";
+  return null;
+}
+
 /** "isaac" / "time isaac" / "TIME  Isaac" → "Time Isaac". Vazio → "". */
 export function nomeDoTime(t?: string | null): string {
   const limpo = String(t ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -360,8 +384,28 @@ export class LeadsService {
     return { message: "Lead removido." };
   }
 
-  async importFromExcel(file: Express.Multer.File, user: User, time?: string) {
+  async importFromExcel(file: Express.Multer.File, user: User, time?: string, status?: string) {
     if (!file?.buffer) throw new BadRequestException("Envie a planilha.");
+    // Coluna do Kanban onde os leads entram (vazio = Novo Lead).
+    let colunaStatus: string | undefined;
+    let donoColuna: string | undefined;
+    if (status && status.trim()) {
+      const col: any[] = await this.leadsRepo.manager
+        .query(`SELECT key, "somenteGestores" FROM kanban_columns WHERE key = $1`, [status.trim()])
+        .catch(() => []);
+      if (!col.length) throw new BadRequestException("Coluna do Kanban não encontrada.");
+      if (col[0].somenteGestores && user.role === UserRole.CORRETOR) {
+        throw new BadRequestException("Essa coluna é só para gerentes.");
+      }
+      colunaStatus = col[0].key;
+      // "Cliente sem interesse" é do Diretor.
+      if (colunaStatus === LeadStatus.VENDA_PERDIDA) {
+        const d: any[] = await this.leadsRepo.manager
+          .query(`SELECT id FROM users WHERE role = 'diretor' AND "empresaId" IS NULL ORDER BY "createdAt" ASC LIMIT 1`)
+          .catch(() => []);
+        donoColuna = d[0]?.id;
+      }
+    }
     // Cargos abaixo do Diretor: a planilha tem que dizer de qual TIME é
     // (ex.: "Time Isaac"), pra não misturar com os leads que já existem.
     const nomeTime = nomeDoTime(time);
@@ -369,37 +413,57 @@ export class LeadsService {
       throw new BadRequestException("Informe o nome do time da planilha (ex.: Time Isaac).");
     }
     const wb = XLSX.read(file.buffer, { type: "buffer" });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-
-    const columnMap: Record<string, keyof CreateLeadDto> = {
-      "nome": "name",
-      "telefone": "phone",
-      "whatsapp": "whatsapp",
-      "email": "email",
-      "empreendimento": "empreendimento",
-      "origem": "origem",
-      "campanha": "campanha",
-      "cidade": "cidade",
-      "renda": "renda",
-      "fgts": "fgts",
-      "entrada": "entrada",
-      "observacoes": "observacoes",
-    };
+    // Acha a aba e a LINHA de cabeçalho (pode não ser a 1ª) que tenha telefone/celular.
+    let linhas: any[][] = [];
+    let cab = -1;
+    let mapa: (keyof CreateLeadDto | null)[] = [];
+    const cabecalhosVistos: string[] = [];
+    for (const nome of wb.SheetNames) {
+      const arr: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "" });
+      for (let i = 0; i < Math.min(arr.length, 15); i++) {
+        const m = (arr[i] || []).map(campoDoCabecalho);
+        if (i === 0) cabecalhosVistos.push(...(arr[i] || []).map(String).filter(Boolean));
+        if (m.includes("phone") || m.includes("whatsapp")) {
+          linhas = arr; cab = i; mapa = m;
+          break;
+        }
+      }
+      if (cab >= 0) break;
+    }
+    if (cab < 0) {
+      throw new BadRequestException(
+        `Não achei a coluna de TELEFONE na planilha. Use um cabeçalho como "Nome" e "Telefone" (ou Celular/WhatsApp).` +
+          (cabecalhosVistos.length ? ` Colunas encontradas: ${cabecalhosVistos.slice(0, 12).join(", ")}.` : "")
+      );
+    }
+    const rows = linhas.slice(cab + 1).filter((r) => (r || []).some((v) => String(v ?? "").trim() !== ""));
 
     const leads: Lead[] = [];
     let duplicates = 0;
+    let semTelefone = 0;
+    const vistos = new Set<string>();
 
     for (const row of rows) {
       const dto: Partial<CreateLeadDto> = {};
-      for (const [col, field] of Object.entries(columnMap)) {
-        const val = row[col] ?? row[col.toUpperCase()] ?? row[col.charAt(0).toUpperCase() + col.slice(1)];
-        if (val !== undefined && val !== "") (dto as any)[field] = val;
-      }
-      if (!dto.name || !dto.phone) continue;
+      mapa.forEach((field, i) => {
+        if (!field) return;
+        const val = row[i];
+        if (val === undefined || String(val).trim() === "") return;
+        if ((dto as any)[field] === undefined) (dto as any)[field] = String(val).trim();
+      });
+      // Telefone: só dígitos (Excel às vezes guarda como número). Sem telefone, usa o WhatsApp.
+      const tel = String(dto.phone || dto.whatsapp || "").replace(/\D/g, "");
+      if (tel.length < 8) { semTelefone++; continue; }
+      dto.phone = tel;
+      if (dto.whatsapp) dto.whatsapp = String(dto.whatsapp).replace(/\D/g, "") || undefined;
+      if (!dto.name) dto.name = "Contato da planilha";
 
-      // Check duplicate
-      const exists = await this.leadsRepo.findOne({ where: { phone: dto.phone } });
+      // Duplicado: com/sem 55, no cadastro ou repetido dentro da própria planilha.
+      const sem55 = tel.startsWith("55") && tel.length >= 12 ? tel.slice(2) : tel;
+      const tels = [sem55, `55${sem55}`];
+      if (tels.some((t) => vistos.has(t))) { duplicates++; continue; }
+      tels.forEach((t) => vistos.add(t));
+      const exists = await this.leadsRepo.findOne({ where: [{ phone: In(tels) }, { whatsapp: In(tels) }] });
       if (exists) { duplicates++; continue; }
 
       if (nomeTime) dto.campanha = dto.campanha ? `${nomeTime} — ${dto.campanha}` : nomeTime;
@@ -409,7 +473,8 @@ export class LeadsService {
         ...(user.role !== UserRole.DIRETOR && nomeTime ? { origem: nomeTime, source: LeadSource.TIME } : {}),
         // Quem subiu fica responsável (senão o lead some da visão do gerente e
         // cai no bolo geral do Diretor). Diretor distribui depois.
-        responsavelId: user.role === UserRole.DIRETOR ? undefined : user.id,
+        responsavelId: donoColuna ?? (user.role === UserRole.DIRETOR ? undefined : user.id),
+        ...(colunaStatus ? { status: colunaStatus } : {}),
       } as Partial<Lead>);
       leads.push(entity);
     }
@@ -419,6 +484,7 @@ export class LeadsService {
     return {
       imported: leads.length,
       duplicates,
+      semTelefone,
       total: rows.length,
     };
   }
