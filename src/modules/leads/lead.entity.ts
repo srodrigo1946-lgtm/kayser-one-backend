@@ -14,6 +14,7 @@ export enum LeadSource {
   ANUNCIO = "anuncio", // veio de anúncio "Clique para WhatsApp" (Face/Insta/TikTok)
   MANUAL = "manual", // cadastrado por um cargo no formulário de Leads
   WHATSAPP = "whatsapp", // chegou sozinho no WhatsApp (sem anúncio)
+  TIME = "time", // cadastrado por um cargo abaixo do Diretor (com time de origem) — fora do painel
 }
 
 export enum LeadStatus {

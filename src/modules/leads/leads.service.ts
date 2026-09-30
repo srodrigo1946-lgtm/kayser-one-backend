@@ -205,10 +205,27 @@ export class LeadsService {
   async create(dto: CreateLeadDto, user: User, source: LeadSource = LeadSource.MANUAL) {
     // Só o cadastro manual barra duplicado — anúncio/WhatsApp entram por source próprio.
     if (source === LeadSource.MANUAL) await this.assertNaoDuplicado(dto);
+    // Cargo abaixo do Diretor cadastra COM o time de origem (ex.: "Time Isaac"):
+    // não mistura com lead de anúncio nem com os do Diretor, e não conta no painel.
+    if (source === LeadSource.MANUAL && user.role !== UserRole.DIRETOR) {
+      const time = nomeDoTime(dto.origem);
+      if (!time) throw new BadRequestException("Informe o time de origem do lead (ex.: Time Isaac).");
+      dto = { ...dto, origem: time };
+      source = LeadSource.TIME;
+    }
+    // Responsável escolhido tem que ser da equipe de quem cadastra (Diretor = qualquer um).
+    if (dto.responsavelId) {
+      const scopeIds = await this.users.getScopeIds(user);
+      if (scopeIds !== null && !scopeIds.includes(dto.responsavelId)) {
+        throw new ForbiddenException("Você só pode atribuir o lead a alguém da sua equipe.");
+      }
+    }
     const lead = this.leadsRepo.create({
       ...dto,
       source,
-      responsavelId: dto.responsavelId || (user.role === UserRole.CORRETOR ? user.id : undefined),
+      // Cargo que cadastra fica responsável (antes só o Corretor: lead de gerente
+      // ficava sem dono e sumia da tela dele). Diretor deixa livre pra distribuir.
+      responsavelId: dto.responsavelId || (user.role === UserRole.DIRETOR ? undefined : user.id),
     });
     const saved = await this.leadsRepo.save(lead);
     await this.history.log({
@@ -356,6 +373,8 @@ export class LeadsService {
       if (nomeTime) dto.campanha = dto.campanha ? `${nomeTime} — ${dto.campanha}` : nomeTime;
       const entity = this.leadsRepo.create({
         ...dto,
+        // Planilha de cargo = lead do TIME (origem = time; fora do painel).
+        ...(user.role !== UserRole.DIRETOR && nomeTime ? { origem: nomeTime, source: LeadSource.TIME } : {}),
         // Quem subiu fica responsável (senão o lead some da visão do gerente e
         // cai no bolo geral do Diretor). Diretor distribui depois.
         responsavelId: user.role === UserRole.DIRETOR ? undefined : user.id,

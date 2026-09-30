@@ -37,6 +37,20 @@ describe("LeadsService", () => {
     );
   });
 
+  it("cargo cadastra lead do TIME: origem obrigatória, fica com ele e fora do painel", async () => {
+    const gerente = { id: "g1", name: "Isaac", role: UserRole.GERENTE } as any;
+    users.getScopeIds.mockResolvedValue(["g1", "c1"]);
+    await expect(service.create({ name: "Ana", phone: "21988887777" } as any, gerente)).rejects.toThrow(/time de origem/i);
+    const l: any = await service.create({ name: "Ana", phone: "21988887777", origem: "isaac" } as any, gerente);
+    expect(l.source).toBe("time");
+    expect(l.origem).toBe("Time Isaac");
+    expect(l.responsavelId).toBe("g1");
+    // Não pode jogar o lead pra fora da equipe.
+    await expect(
+      service.create({ name: "Bia", phone: "21977776666", origem: "Isaac", responsavelId: "x9" } as any, gerente)
+    ).rejects.toThrow(/sua equipe/i);
+  });
+
   it("bloqueia lead duplicado (mesmo telefone) e avisa no histórico", async () => {
     leadsRepo.find.mockResolvedValue([
       { id: "l0", name: "Maria", phone: "(11) 99999-0000", responsavel: { name: "Ney", email: "ney@x.com" } },

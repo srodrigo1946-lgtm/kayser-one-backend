@@ -33,7 +33,8 @@ export class DashboardService {
   }
 
   async getMetrics(user: User) {
-    const base = await this.scopeWhere(user);
+    // Lead cadastrado pelos TIMES (source "time") não conta no painel.
+    const base = { ...(await this.scopeWhere(user)), source: Not("time") };
     const now = new Date();
 
     const [leadsHoje, leadsSemana, leadsMes, visitas, vendas, semAtendimento, semContato] =
