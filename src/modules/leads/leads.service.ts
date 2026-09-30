@@ -1,4 +1,6 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
+import { randomUUID } from "crypto";
+import { detectarEmpreendimento } from "../knowledge/knowledge.service";
 import { bloquearTelefones } from "./bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
@@ -466,6 +468,16 @@ export class LeadsService {
     }
     const rows = linhas.slice(cab + 1).filter((r) => (r || []).some((v) => String(v ?? "").trim() !== ""));
 
+    // Empreendimento só entra se bater com um imóvel cadastrado (texto solto tipo
+    // "Força de vendas"/"Automação" é ignorado).
+    let imoveis: { id: string; name: string }[] = [];
+    try {
+      imoveis = await this.leadsRepo.manager.query(`SELECT id, name FROM properties WHERE active = true`);
+    } catch {
+      imoveis = [];
+    }
+    const importId = randomUUID();
+
     const leads: Lead[] = [];
     let duplicates = 0;
     let semTelefone = 0;
@@ -485,6 +497,15 @@ export class LeadsService {
       dto.phone = tel;
       if (dto.whatsapp) dto.whatsapp = String(dto.whatsapp).replace(/\D/g, "") || undefined;
       if (!dto.name) dto.name = "Contato da planilha";
+      if (dto.empreendimento) {
+        const imovel = detectarEmpreendimento(String(dto.empreendimento), imoveis);
+        if (imovel) {
+          dto.empreendimento = imovel.name;
+          (dto as any).propertyId = imovel.id;
+        } else {
+          delete dto.empreendimento;
+        }
+      }
 
       // Duplicado: com/sem 55, no cadastro ou repetido dentro da própria planilha.
       const sem55 = tel.startsWith("55") && tel.length >= 12 ? tel.slice(2) : tel;
@@ -503,8 +524,10 @@ export class LeadsService {
       if (nomeTime) dto.campanha = dto.campanha ? `${nomeTime} — ${dto.campanha}` : nomeTime;
       const entity = this.leadsRepo.create({
         ...dto,
-        // Planilha de cargo = lead do TIME (origem = time; fora do painel).
-        ...(user.role !== UserRole.DIRETOR && nomeTime ? { origem: nomeTime, source: LeadSource.TIME } : {}),
+        // Toda planilha fica FORA do painel (não mistura com anúncio). Com time = lead do TIME.
+        source: nomeTime ? LeadSource.TIME : LeadSource.PLANILHA,
+        ...(nomeTime ? { origem: nomeTime } : {}),
+        importLote: importId,
         // Quem subiu fica responsável (senão o lead some da visão do gerente e
         // cai no bolo geral do Diretor). Diretor distribui depois.
         responsavelId: donoColuna ?? (user.role === UserRole.DIRETOR ? undefined : user.id),
@@ -519,6 +542,14 @@ export class LeadsService {
     }
 
     if (leads.length) await this.leadsRepo.save(leads);
+    if (leads.length && this.leadsRepo.manager) {
+      await this.leadsRepo.manager
+        .query(
+          `INSERT INTO lead_imports (id, nome, "userId", "userName", total) VALUES ($1, $2, $3, $4, $5)`,
+          [importId, (file as any).originalname || "planilha", user.id, user.name ?? "", leads.length]
+        )
+        .catch((err: any) => this.logger.warn(`Falha ao registrar importação: ${err?.message}`));
+    }
 
     // Quantos entraram em cada lote (pra mostrar no fim).
     let ini = 0;
@@ -528,6 +559,7 @@ export class LeadsService {
       return n;
     });
     return {
+      importId: leads.length ? importId : undefined,
       imported: leads.length,
       duplicates,
       semTelefone,
@@ -535,6 +567,47 @@ export class LeadsService {
       porLote,
       restante: Math.max(0, leads.length - lotes.reduce((a, l) => a + l.quantidade, 0)),
     };
+  }
+
+  /** Planilhas importadas (Diretor vê todas; os cargos, as que eles subiram). */
+  async listarImportacoes(user: User) {
+    const soMinhas = user.role !== UserRole.DIRETOR;
+    const rows: any[] = await this.leadsRepo.manager.query(
+      `SELECT i.id, i.nome, i."userName", i.total, i."createdAt",
+              (SELECT COUNT(*)::int FROM leads l WHERE l."importLote" = i.id) AS restantes
+         FROM lead_imports i
+        WHERE i.apagado = false ${soMinhas ? `AND i."userId" = $1` : ""}
+        ORDER BY i."createdAt" DESC
+        LIMIT 30`,
+      soMinhas ? [user.id] : []
+    );
+    return rows;
+  }
+
+  /**
+   * Apaga TODOS os leads de uma planilha (subiu errado). Não bloqueia os telefones
+   * (dá pra subir de novo). Conversas ficam, só desvinculadas do lead.
+   */
+  async apagarImportacao(importId: string, user: User) {
+    const imp: any[] = await this.leadsRepo.manager.query(`SELECT id, "userId" FROM lead_imports WHERE id = $1`, [importId]);
+    if (!imp.length) throw new NotFoundException("Importação não encontrada.");
+    if (user.role !== UserRole.DIRETOR && imp[0].userId !== user.id) {
+      throw new ForbiddenException("Você só pode apagar as planilhas que você subiu.");
+    }
+    const ids: string[] = (
+      await this.leadsRepo.manager.query(`SELECT id FROM leads WHERE "importLote" = $1`, [importId])
+    ).map((r: any) => r.id);
+    if (ids.length) {
+      const m = this.leadsRepo.manager;
+      await m.query(`UPDATE conversations SET "leadId" = NULL WHERE "leadId" = ANY($1)`, [ids]);
+      await m.query(`DELETE FROM lead_history WHERE "leadId" = ANY($1)`, [ids]);
+      await m.query(`DELETE FROM lead_queue_assignments WHERE "leadId" = ANY($1)`, [ids]);
+      await m.query(`DELETE FROM appointments WHERE "leadId" = ANY($1)`, [ids]);
+      await m.query(`DELETE FROM leads WHERE id = ANY($1)`, [ids]);
+    }
+    await this.leadsRepo.manager.query(`UPDATE lead_imports SET apagado = true WHERE id = $1`, [importId]);
+    this.logger.log(`Planilha ${importId} apagada por ${user.name}: ${ids.length} lead(s).`);
+    return { removidos: ids.length };
   }
 
   async exportToExcel(user: User) {

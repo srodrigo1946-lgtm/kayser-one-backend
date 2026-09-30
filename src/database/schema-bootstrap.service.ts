@@ -44,6 +44,8 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureLeadsBloqueados", () => this.ensureLeadsBloqueados()],
       ["ensureKanbanSomenteGestores", () => this.ensureKanbanSomenteGestores()],
       ["arquivarSemInteresse", () => this.arquivarSemInteresse()],
+      ["desfazerImportCorujao3009", () => this.desfazerImportCorujao3009()],
+      ["ensureLeadImports", () => this.ensureLeadImports()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -425,6 +427,39 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiModel" varchar`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiApiKey" text`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "recoveryCodeHash" text`);
+  }
+
+  /** Registro das planilhas importadas + lote no lead (apagar planilha inteira) — 30/09/2026. */
+  private async ensureLeadImports() {
+    await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "importLote" varchar`);
+    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_leads_import_lote ON leads ("importLote")`);
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS lead_imports (
+        id varchar PRIMARY KEY,
+        nome varchar,
+        "userId" varchar,
+        "userName" varchar,
+        total int NOT NULL DEFAULT 0,
+        apagado boolean NOT NULL DEFAULT false,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
+  }
+
+  /**
+   * Desfaz a planilha do Corujão subida em 30/09/2026 ~18:50 (378 leads com "Força de
+   * vendas/Automação" no empreendimento) — o Rodrigo vai subir de novo. Janela FECHADA
+   * no tempo (21:00–21:58 UTC): não pega nenhuma importação futura. Sem bloquear telefone.
+   */
+  private async desfazerImportCorujao3009() {
+    const r = await this.dataSource.query(
+      `DELETE FROM leads l
+        WHERE l.campanha = 'Corujão' AND l.source = 'manual'
+          AND l."createdAt" BETWEEN '2026-09-30 21:00:00' AND '2026-09-30 21:58:30'
+          AND NOT EXISTS (SELECT 1 FROM lead_history h WHERE h."leadId" = l.id)
+          AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c."leadId" = l.id)`
+    );
+    const n = Array.isArray(r) ? r[1] : r?.affected;
+    if (n) this.logger.log(`Importação do Corujão (30/09) desfeita: ${n} lead(s) removido(s).`);
   }
 
   /**

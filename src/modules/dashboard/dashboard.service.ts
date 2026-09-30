@@ -13,6 +13,8 @@ import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date
 // Leads que contam pra custo/funil: só os PAGOS (anúncio + formulário Meta).
 // Oferta do corretor (manual) e orgânico (whatsapp) NÃO entram.
 const LEADS_PAGOS = ["anuncio", "formulario_meta"];
+// Lead de TIME e de PLANILHA não entram no painel (não misturam com os de anúncio).
+const FORA_DO_PAINEL = ["time", "planilha"];
 
 @Injectable()
 export class DashboardService {
@@ -34,7 +36,7 @@ export class DashboardService {
 
   async getMetrics(user: User) {
     // Lead cadastrado pelos TIMES (source "time") não conta no painel.
-    const base = { ...(await this.scopeWhere(user)), source: Not("time") };
+    const base = { ...(await this.scopeWhere(user)), source: Not(In(FORA_DO_PAINEL)) };
     const now = new Date();
 
     const [leadsHoje, leadsSemana, leadsMes, visitas, vendas, semAtendimento, semContato] =
@@ -159,7 +161,9 @@ export class DashboardService {
     const end = month
       ? new Date(targetYear, month, 0, 23, 59, 59, 999)
       : new Date(targetYear, 11, 31, 23, 59, 59, 999);
-    const roles = [UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE, UserRole.CORRETOR];
+    // Diretor entra: lead de anúncio que foi pra ele (ex.: "Cliente sem interesse") continua
+    // contando no Custo por Lead.
+    const roles = [UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE, UserRole.CORRETOR];
 
     const qb = this.userRepo
       .createQueryBuilder("user")
@@ -185,6 +189,18 @@ export class DashboardService {
     if (scopeIds !== null) qb.andWhere("user.id IN (:...ids)", { ids: scopeIds });
 
     const rows = await qb.groupBy("user.id").orderBy("leads", "DESC").getRawMany();
+    // Diretor vê também os leads pagos SEM responsável (senão somem do custo).
+    if (scopeIds === null) {
+      const semDono = await this.leadsRepo
+        .createQueryBuilder("lead")
+        .select("COUNT(lead.id)", "leads")
+        .where("lead.responsavelId IS NULL")
+        .andWhere("lead.source IN (:...pagos)", { pagos: LEADS_PAGOS })
+        .andWhere("lead.createdAt BETWEEN :start AND :end", { start, end })
+        .getRawOne<{ leads: string }>();
+      const n = Number(semDono?.leads) || 0;
+      if (n) rows.push({ responsavelId: null, nome: "Sem responsável", role: "", leads: n, vendas: 0, vgv: 0 });
+    }
     return rows.map((r) => ({
       responsavelId: r.responsavelId,
       nome: r.nome,
@@ -223,7 +239,7 @@ export class DashboardService {
   }
 
   async getMonthlyData(user: User, year?: number) {
-    const base = await this.scopeWhere(user);
+    const base = { ...(await this.scopeWhere(user)), source: Not(In(FORA_DO_PAINEL)) };
     const targetYear = year || new Date().getFullYear();
     const months = [];
     // Jan–Dez do ano escolhido (12 meses).

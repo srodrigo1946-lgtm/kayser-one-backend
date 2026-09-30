@@ -15,6 +15,7 @@ export enum LeadSource {
   MANUAL = "manual", // cadastrado por um cargo no formulário de Leads
   WHATSAPP = "whatsapp", // chegou sozinho no WhatsApp (sem anúncio)
   TIME = "time", // cadastrado por um cargo abaixo do Diretor (com time de origem) — fora do painel
+  PLANILHA = "planilha", // veio de planilha importada — fora do painel (não mistura com anúncio)
 }
 
 export enum LeadStatus {
@@ -141,6 +142,10 @@ export class Lead {
 
   @Column({ nullable: true })
   lastContactAt: Date;
+
+  // De qual importação de planilha veio (botão "apagar todos desta planilha").
+  @Column({ nullable: true })
+  importLote: string;
 
   // Cliente pediu pra parar de receber: sem follow-up automático (protege o número).
   @Column({ default: false })

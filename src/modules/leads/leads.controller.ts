@@ -116,6 +116,18 @@ export class LeadsController {
     return this.leadsService.importFromExcel(file, req.user, time, status, lotes);
   }
 
+  @Get("import/lista")
+  @ApiOperation({ summary: "Planilhas importadas (Diretor: todas; cargos: as suas)" })
+  listarImportacoes(@Request() req: any) {
+    return this.leadsService.listarImportacoes(req.user);
+  }
+
+  @Delete("import/:importId")
+  @ApiOperation({ summary: "Apagar todos os leads de uma planilha importada" })
+  apagarImportacao(@Param("importId") importId: string, @Request() req: any) {
+    return this.leadsService.apagarImportacao(importId, req.user);
+  }
+
   @Get("export/excel")
   @ApiOperation({ summary: "Exportar leads para Excel" })
   async exportExcel(@Request() req: any, @Res() res: Response) {
