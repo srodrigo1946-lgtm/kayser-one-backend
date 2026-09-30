@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, ForbiddenException, ConflictExce
 import { bloquearTelefones } from "./bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
-import { Repository, Like, In, FindOptionsWhere, MoreThan } from "typeorm";
+import { Repository, Like, In, FindOptionsWhere, MoreThan, IsNull } from "typeorm";
 import { Appointment, AppointmentStatus } from "../appointments/appointment.entity";
 import * as XLSX from "xlsx";
 import { Lead, LeadStatus, LeadSource } from "./lead.entity";
@@ -259,6 +259,7 @@ export class LeadsService {
       }
     }
     const prevResponsavelId = lead.responsavelId ?? null;
+    const prevStatus = lead.status;
     Object.assign(lead, dto);
     // GOTCHA TypeORM: o lead vem de findOne com a relação `responsavel` carregada
     // (o usuário ANTIGO). No save(), a relação vence o FK e regravaria o antigo —
@@ -277,6 +278,9 @@ export class LeadsService {
       if (newResponsavelId !== prevResponsavelId) {
         await this.convRepo.update({ leadId: saved.id }, { assignedToId: newResponsavelId });
       }
+    }
+    if (saved.status === LeadStatus.VENDA_PERDIDA && prevStatus !== LeadStatus.VENDA_PERDIDA) {
+      await this.arquivarSemInteresse(saved);
     }
     return saved;
   }
@@ -307,8 +311,34 @@ export class LeadsService {
           .update({ leadId: saved.id, status: "pendente" }, { status: "atendido" })
           .catch(() => {});
       }
+      if (saved.status === LeadStatus.VENDA_PERDIDA) await this.arquivarSemInteresse(saved);
     }
     return saved;
+  }
+
+  /**
+   * "Cliente sem interesse" (venda_perdida): o lead volta pro Diretor como
+   * responsável (sai da carteira do corretor) e o histórico é apagado.
+   */
+  async arquivarSemInteresse(lead: Lead) {
+    try {
+      const diretor = await this.leadsRepo.manager.getRepository(User).findOne({
+        where: { role: UserRole.DIRETOR, empresaId: IsNull() },
+        order: { createdAt: "ASC" },
+      });
+      if (diretor) {
+        await this.leadsRepo.update(lead.id, { responsavelId: diretor.id });
+        await this.convRepo.update({ leadId: lead.id }, { assignedToId: diretor.id }).catch(() => {});
+        lead.responsavelId = diretor.id;
+        (lead as any).responsavel = undefined;
+      }
+      await this.assignRepo
+        .update({ leadId: lead.id, status: In(["pendente", "aguardando"]) }, { status: "atendido" })
+        .catch(() => {});
+      await this.history.remove(lead.id);
+    } catch (err) {
+      this.logger.warn(`Falha ao arquivar lead sem interesse ${lead.id}: ${(err as Error).message}`);
+    }
   }
 
   async remove(id: string, user?: User) {

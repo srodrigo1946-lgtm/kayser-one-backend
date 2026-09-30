@@ -43,6 +43,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureAssignmentAgendado", () => this.ensureAssignmentAgendado()],
       ["ensureLeadsBloqueados", () => this.ensureLeadsBloqueados()],
       ["ensureKanbanSomenteGestores", () => this.ensureKanbanSomenteGestores()],
+      ["arquivarSemInteresse", () => this.arquivarSemInteresse()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -424,6 +425,29 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiModel" varchar`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiApiKey" text`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "recoveryCodeHash" text`);
+  }
+
+  /**
+   * "Cliente sem interesse" (venda_perdida) = do Diretor e sem histórico (30/09/2026).
+   * Idempotente: acerta os que já estão lá (e qualquer um que escapou).
+   */
+  private async arquivarSemInteresse() {
+    const d = await this.dataSource.query(
+      `SELECT id FROM users WHERE role = 'diretor' AND "empresaId" IS NULL ORDER BY "createdAt" ASC LIMIT 1`
+    );
+    if (!d.length) return;
+    const dir = d[0].id;
+    await this.dataSource.query(
+      `UPDATE leads SET "responsavelId" = $1 WHERE status = 'venda_perdida' AND ("responsavelId" IS NULL OR "responsavelId" <> $1)`,
+      [dir]
+    );
+    await this.dataSource.query(
+      `UPDATE conversations SET "assignedToId" = $1 WHERE "leadId" IN (SELECT id FROM leads WHERE status = 'venda_perdida') AND ("assignedToId" IS NULL OR "assignedToId" <> $1)`,
+      [dir]
+    );
+    await this.dataSource.query(
+      `DELETE FROM lead_history WHERE "leadId" IN (SELECT id FROM leads WHERE status = 'venda_perdida')`
+    );
   }
 
   /** Coluna do Kanban só pra gerente pra cima (30/09/2026). 1ª vez: "Arquivos dos TIMES". */
