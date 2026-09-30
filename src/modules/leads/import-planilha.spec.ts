@@ -78,3 +78,9 @@ describe("Importar planilha de leads", () => {
     ).rejects.toThrow(/Colunas encontradas: Cliente, Bairro/);
   });
 });
+
+describe("Coluna Cidade da planilha", () => {
+  it("é ignorada (vinha 'Força de vendas'/'Automação')", () => {
+    expect(campoDoCabecalho("Cidade")).toBeNull();
+  });
+});

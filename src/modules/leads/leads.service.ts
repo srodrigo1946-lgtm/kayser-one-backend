@@ -33,7 +33,7 @@ export function campoDoCabecalho(h: any): keyof CreateLeadDto | null {
   if (/(empreendimento|imovel|produto)/.test(c)) return "empreendimento";
   if (/^origem/.test(c)) return "origem";
   if (/^campanha/.test(c)) return "campanha";
-  if (/^cidade/.test(c)) return "cidade";
+  // Cidade NÃO entra: nas planilhas do Rodrigo essa coluna vem com lixo ("Força de vendas", "Automação").
   if (/^renda/.test(c)) return "renda";
   if (/^fgts/.test(c)) return "fgts";
   if (/^entrada/.test(c)) return "entrada";
