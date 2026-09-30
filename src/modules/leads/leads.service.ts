@@ -384,26 +384,54 @@ export class LeadsService {
     return { message: "Lead removido." };
   }
 
-  async importFromExcel(file: Express.Multer.File, user: User, time?: string, status?: string) {
+  /** Coluna do Kanban válida pra quem importa (+ dono forçado: "sem interesse" = Diretor). */
+  private async resolverColuna(status: string | undefined, user: User): Promise<{ key?: string; dono?: string }> {
+    if (!status || !status.trim()) return {};
+    const col: any[] = await this.leadsRepo.manager
+      .query(`SELECT key, "somenteGestores" FROM kanban_columns WHERE key = $1`, [status.trim()])
+      .catch(() => []);
+    if (!col.length) throw new BadRequestException("Coluna do Kanban não encontrada.");
+    if (col[0].somenteGestores && user.role === UserRole.CORRETOR) {
+      throw new BadRequestException("Essa coluna é só para gerentes.");
+    }
+    if (col[0].key === LeadStatus.VENDA_PERDIDA) {
+      const d: any[] = await this.leadsRepo.manager
+        .query(`SELECT id FROM users WHERE role = 'diretor' AND "empresaId" IS NULL ORDER BY "createdAt" ASC LIMIT 1`)
+        .catch(() => []);
+      return { key: col[0].key, dono: d[0]?.id };
+    }
+    return { key: col[0].key };
+  }
+
+  async importFromExcel(file: Express.Multer.File, user: User, time?: string, status?: string, lotesJson?: string) {
     if (!file?.buffer) throw new BadRequestException("Envie a planilha.");
     // Coluna do Kanban onde os leads entram (vazio = Novo Lead).
-    let colunaStatus: string | undefined;
-    let donoColuna: string | undefined;
-    if (status && status.trim()) {
-      const col: any[] = await this.leadsRepo.manager
-        .query(`SELECT key, "somenteGestores" FROM kanban_columns WHERE key = $1`, [status.trim()])
-        .catch(() => []);
-      if (!col.length) throw new BadRequestException("Coluna do Kanban não encontrada.");
-      if (col[0].somenteGestores && user.role === UserRole.CORRETOR) {
-        throw new BadRequestException("Essa coluna é só para gerentes.");
+    const padrao = await this.resolverColuna(status, user);
+    const colunaStatus = padrao.key;
+    const donoColuna = padrao.dono;
+
+    // LOTES: a mesma planilha repartida — ex.: 10 pro Isaac, 50 pra coluna X, o resto padrão.
+    // Na ordem da planilha; só conta lead que ENTROU (duplicado não gasta a cota).
+    type Lote = { quantidade: number; responsavelId?: string; status?: string; dono?: string; origem?: string };
+    const lotes: Lote[] = [];
+    if (lotesJson && lotesJson.trim()) {
+      let brutos: any[] = [];
+      try {
+        brutos = JSON.parse(lotesJson);
+      } catch {
+        throw new BadRequestException("Lotes inválidos.");
       }
-      colunaStatus = col[0].key;
-      // "Cliente sem interesse" é do Diretor.
-      if (colunaStatus === LeadStatus.VENDA_PERDIDA) {
-        const d: any[] = await this.leadsRepo.manager
-          .query(`SELECT id FROM users WHERE role = 'diretor' AND "empresaId" IS NULL ORDER BY "createdAt" ASC LIMIT 1`)
-          .catch(() => []);
-        donoColuna = d[0]?.id;
+      const scopeIds = await this.users.getScopeIds(user);
+      for (const b of Array.isArray(brutos) ? brutos : []) {
+        const quantidade = Math.floor(Number(b?.quantidade));
+        if (!quantidade || quantidade < 1) continue;
+        const responsavelId = b?.responsavelId ? String(b.responsavelId) : undefined;
+        if (responsavelId && scopeIds !== null && !scopeIds.includes(responsavelId)) {
+          throw new BadRequestException("Você só pode mandar lote pra alguém da sua equipe.");
+        }
+        const c = await this.resolverColuna(b?.status, user);
+        const origem = b?.origem ? nomeDoTime(String(b.origem)) || undefined : undefined;
+        lotes.push({ quantidade, responsavelId, status: c.key, dono: c.dono, origem });
       }
     }
     // Cargos abaixo do Diretor: a planilha tem que dizer de qual TIME é
@@ -466,6 +494,12 @@ export class LeadsService {
       const exists = await this.leadsRepo.findOne({ where: [{ phone: In(tels) }, { whatsapp: In(tels) }] });
       if (exists) { duplicates++; continue; }
 
+      // Qual lote esta linha pega (pela quantidade já importada).
+      let acum = 0;
+      const lote = lotes.find((l) => {
+        acum += l.quantidade;
+        return leads.length < acum;
+      });
       if (nomeTime) dto.campanha = dto.campanha ? `${nomeTime} — ${dto.campanha}` : nomeTime;
       const entity = this.leadsRepo.create({
         ...dto,
@@ -475,17 +509,31 @@ export class LeadsService {
         // cai no bolo geral do Diretor). Diretor distribui depois.
         responsavelId: donoColuna ?? (user.role === UserRole.DIRETOR ? undefined : user.id),
         ...(colunaStatus ? { status: colunaStatus } : {}),
+        // Lote manda: responsável, coluna e time de origem próprios.
+        ...(lote?.responsavelId ? { responsavelId: lote.responsavelId } : {}),
+        ...(lote?.status ? { status: lote.status } : {}),
+        ...(lote?.dono ? { responsavelId: lote.dono } : {}),
+        ...(lote?.origem ? { origem: lote.origem, source: LeadSource.TIME } : {}),
       } as Partial<Lead>);
       leads.push(entity);
     }
 
     if (leads.length) await this.leadsRepo.save(leads);
 
+    // Quantos entraram em cada lote (pra mostrar no fim).
+    let ini = 0;
+    const porLote = lotes.map((l) => {
+      const n = Math.max(0, Math.min(l.quantidade, leads.length - ini));
+      ini += l.quantidade;
+      return n;
+    });
     return {
       imported: leads.length,
       duplicates,
       semTelefone,
       total: rows.length,
+      porLote,
+      restante: Math.max(0, leads.length - lotes.reduce((a, l) => a + l.quantidade, 0)),
     };
   }
 

@@ -110,9 +110,10 @@ export class LeadsController {
     @UploadedFile() file: Express.Multer.File,
     @Body("time") time: string,
     @Body("status") status: string,
+    @Body("lotes") lotes: string,
     @Request() req: any
   ) {
-    return this.leadsService.importFromExcel(file, req.user, time, status);
+    return this.leadsService.importFromExcel(file, req.user, time, status, lotes);
   }
 
   @Get("export/excel")
