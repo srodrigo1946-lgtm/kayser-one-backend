@@ -67,6 +67,15 @@ describe("CorujaoService", () => {
     expect(history.log).toHaveBeenCalled();
   });
 
+  it("limite de 20 por dia: o 21º é barrado", async () => {
+    const { svc, leadsRepo } = make();
+    leadsRepo.manager = { query: jest.fn(async () => [{ n: 20 }]) };
+    await expect(
+      svc.aceitar("L1", { id: "c1", name: "Claudia", role: UserRole.CORRETOR, corujao: true } as any)
+    ).rejects.toThrow(/limite diário/i);
+    expect(leadsRepo.qb.execute).not.toHaveBeenCalled();
+  });
+
   it("lead que outro corretor já pegou não é roubado", async () => {
     const { svc, convRepo } = make(undefined, 0);
     await expect(

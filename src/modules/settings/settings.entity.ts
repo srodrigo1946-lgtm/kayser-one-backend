@@ -112,6 +112,10 @@ export class Settings {
   @Column({ default: true })
   corujaoIncluirDiretor: boolean;
 
+  // Máximo de leads do Corujão que cada corretor pega por dia (0 = sem limite).
+  @Column({ type: "int", default: 20 })
+  corujaoLimiteDia: number;
+
   // Último dia (YYYY-MM-DD, Brasília) em que o repique automático rodou (anti-duplicidade).
   @Column({ type: "text", nullable: true })
   corujaoLastRun: string;

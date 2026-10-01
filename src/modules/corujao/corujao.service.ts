@@ -123,6 +123,22 @@ export class CorujaoService {
     return { removidos, ...c };
   }
 
+  /** Quantos leads do Corujão este corretor já pegou HOJE (horário de Brasília). */
+  private async pegosHojePor(userId: string): Promise<number> {
+    if (!this.leadsRepo.manager) return 0;
+    const r: any[] = await this.leadsRepo.manager
+      .query(
+        `SELECT COUNT(*)::int AS n FROM lead_history h
+          WHERE h.description LIKE 'Repique Corujão: aceito por%'
+            AND h."userId"::text = $1
+            AND (h."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date
+                = (now() AT TIME ZONE 'America/Sao_Paulo')::date`,
+        [userId]
+      )
+      .catch(() => [{ n: 0 }]);
+    return Number(r?.[0]?.n) || 0;
+  }
+
   /** Só corretor ATIVADO no Corujão pode PEGAR (aceitar) os leads do repique. */
   private podePegar(user: User): boolean {
     return user.role === UserRole.CORRETOR && user.corujao === true;
@@ -137,7 +153,7 @@ export class CorujaoService {
     const ehDiretor = user.role === UserRole.DIRETOR;
     // Diretor acompanha: quem pegou quantos leads do Corujão HOJE (horário de Brasília).
     let pegosHoje: { nome: string; qtd: number }[] | undefined;
-    if (ehDiretor) {
+    if (ehDiretor && this.leadsRepo.manager) {
       pegosHoje = await this.leadsRepo.manager
         .query(
           `SELECT u.name AS nome, COUNT(*)::int AS qtd
@@ -149,8 +165,13 @@ export class CorujaoService {
         )
         .catch(() => []);
     }
+    const s = await this.settings.get();
+    const limite = Number((s as any).corujaoLimiteDia ?? 20) || 0;
+    const meus = this.podePegar(user) ? await this.pegosHojePor(user.id) : undefined;
     return {
       ...(pegosHoje ? { pegosHoje } : {}),
+      limiteDia: limite,
+      ...(meus !== undefined ? { meusHoje: meus } : {}),
       podePegar: this.podePegar(user),
       leads: leads.map((l) => ({
         id: l.id,
@@ -174,6 +195,13 @@ export class CorujaoService {
     }
     const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
     if (!lead) throw new NotFoundException("Lead não encontrado.");
+
+    // LIMITE DIÁRIO: ninguém leva tudo sozinho (pedido do Rodrigo: 20/dia).
+    const cfg = await this.settings.get();
+    const limite = Number((cfg as any).corujaoLimiteDia ?? 20) || 0;
+    if (limite > 0 && (await this.pegosHojePor(user.id)) >= limite) {
+      throw new ForbiddenException(`Você já pegou ${limite} leads do Corujão hoje — é o limite diário. Amanhã tem mais! 🦉`);
+    }
 
     // PEGA ATÔMICO: só vira do corretor se o lead AINDA está no pool. Antes, 2 corretores
     // aceitando o mesmo lead (ou tela desatualizada) = o 2º roubava o lead do 1º.

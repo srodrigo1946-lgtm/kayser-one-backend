@@ -278,6 +278,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoHora" varchar NOT NULL DEFAULT '14:00'`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoStatus" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoIncluirDiretor" boolean NOT NULL DEFAULT true`);
+    // Limite diário de leads do Corujão por corretor (01/10/2026 — pedido do Rodrigo: 20).
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoLimiteDia" int NOT NULL DEFAULT 20`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoLastRun" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoAutoQtd" int NOT NULL DEFAULT 0`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoAgendadoPara" timestamp`);
