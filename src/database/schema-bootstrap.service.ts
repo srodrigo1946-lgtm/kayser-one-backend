@@ -47,6 +47,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["desfazerImportCorujao3009", () => this.desfazerImportCorujao3009()],
       ["ensureLeadImports", () => this.ensureLeadImports()],
       ["corujaoParaPrimeiroContato", () => this.corujaoParaPrimeiroContato()],
+      ["corujaoMarcaEntrada", () => this.corujaoMarcaEntrada()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -436,6 +437,15 @@ export class SchemaBootstrapService implements OnModuleInit {
    * Leads pegos no Corujão ANTES da regra "entra em Primeiro Contato" (01/10/2026 14:41)
    * ficaram em Novo Lead — passam pra Primeiro Contato. Janela fechada; não mexe nos da fila.
    */
+  /** Aceites antigos do Corujão sem toStatus: marca a entrada em Primeiro Contato (Kanban
+   *  mostrava "56 dias nesta etapa" — idade antiga do lead). Idempotente. */
+  private async corujaoMarcaEntrada() {
+    await this.dataSource.query(
+      `UPDATE lead_history SET "toStatus" = 'primeiro_contato'
+        WHERE description LIKE 'Repique Corujão: aceito por%' AND "toStatus" IS NULL`
+    );
+  }
+
   private async corujaoParaPrimeiroContato() {
     await this.dataSource.query(
       `UPDATE leads SET status = 'primeiro_contato'

@@ -246,6 +246,10 @@ export class CorujaoService {
         type: LeadHistoryType.SISTEMA,
         description: `Repique Corujão: aceito por ${user.name} — entrou em Primeiro Contato.`,
         userId: user.id,
+        // Marca a ENTRADA na coluna: o Kanban conta "dias nesta etapa" a partir daqui (não
+        // da última vez que o lead passou por Primeiro Contato meses atrás).
+        fromStatus: lead.status,
+        toStatus: LeadStatus.PRIMEIRO_CONTATO,
       })
       .catch(() => {});
     return { ok: true, leadId: lead.id };
