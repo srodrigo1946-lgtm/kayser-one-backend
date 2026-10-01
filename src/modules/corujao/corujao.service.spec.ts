@@ -2,8 +2,14 @@ import { CorujaoService } from "./corujao.service";
 import { UserRole } from "../users/user.entity";
 import { LeadStatus } from "../leads/lead.entity";
 
-function make(lead: any = { id: "L1", name: "Ney", status: "cliente_sem_interesse" }) {
+function make(lead: any = { id: "L1", name: "Ney", status: "cliente_sem_interesse" }, afetados = 1) {
+  const qb: any = {
+    update: () => qb, set: jest.fn(() => qb), where: () => qb, andWhere: () => qb,
+    execute: jest.fn(async () => ({ affected: afetados })),
+  };
   const leadsRepo: any = {
+    createQueryBuilder: () => qb,
+    qb,
     findOne: jest.fn(async () => lead),
     save: jest.fn(async (x) => x),
     find: jest.fn(async () => [lead]),
@@ -53,10 +59,19 @@ describe("CorujaoService", () => {
     const { svc, leadsRepo, convRepo, history } = make();
     const r = await svc.aceitar("L1", { id: "c1", name: "Ana", role: UserRole.CORRETOR, corujao: true } as any);
     expect(r.ok).toBe(true);
-    const saved = leadsRepo.save.mock.calls[0][0];
+    const saved = leadsRepo.qb.set.mock.calls[0][0];
     expect(saved.responsavelId).toBe("c1");
     expect(saved.status).toBe(LeadStatus.NOVO_LEAD);
+    expect(saved.corujaoLiberado).toBe(false);
     expect(convRepo.update).toHaveBeenCalledWith({ leadId: "L1" }, { assignedToId: "c1" });
     expect(history.log).toHaveBeenCalled();
+  });
+
+  it("lead que outro corretor já pegou não é roubado", async () => {
+    const { svc, convRepo } = make(undefined, 0);
+    await expect(
+      svc.aceitar("L1", { id: "c2", name: "Bia", role: UserRole.CORRETOR, corujao: true } as any)
+    ).rejects.toThrow(/já foi pego/i);
+    expect(convRepo.update).not.toHaveBeenCalled();
   });
 });

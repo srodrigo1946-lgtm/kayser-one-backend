@@ -135,7 +135,22 @@ export class CorujaoService {
   async getPool(user: User) {
     const leads = await this.poolLeads();
     const ehDiretor = user.role === UserRole.DIRETOR;
+    // Diretor acompanha: quem pegou quantos leads do Corujão HOJE (horário de Brasília).
+    let pegosHoje: { nome: string; qtd: number }[] | undefined;
+    if (ehDiretor) {
+      pegosHoje = await this.leadsRepo.manager
+        .query(
+          `SELECT u.name AS nome, COUNT(*)::int AS qtd
+             FROM lead_history h JOIN users u ON u.id = h."userId"
+            WHERE h.description LIKE 'Repique Corujão: aceito por%'
+              AND (h."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date
+                  = (now() AT TIME ZONE 'America/Sao_Paulo')::date
+            GROUP BY u.name ORDER BY qtd DESC`
+        )
+        .catch(() => []);
+    }
     return {
+      ...(pegosHoje ? { pegosHoje } : {}),
       podePegar: this.podePegar(user),
       leads: leads.map((l) => ({
         id: l.id,
@@ -160,10 +175,35 @@ export class CorujaoService {
     const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
     if (!lead) throw new NotFoundException("Lead não encontrado.");
 
-    lead.responsavelId = user.id;
-    (lead as any).responsavel = undefined; // solta a relação p/ o FK novo valer (GOTCHA TypeORM)
-    lead.status = LeadStatus.NOVO_LEAD;
-    await this.leadsRepo.save(lead);
+    // PEGA ATÔMICO: só vira do corretor se o lead AINDA está no pool. Antes, 2 corretores
+    // aceitando o mesmo lead (ou tela desatualizada) = o 2º roubava o lead do 1º.
+    const s = await this.settings.get();
+    const alvo = await this.statusesAlvo(s);
+    const did = s.corujaoIncluirDiretor ? await this.diretorId() : null;
+    const qb = this.leadsRepo
+      .createQueryBuilder()
+      .update(Lead)
+      .set({ responsavelId: user.id, status: LeadStatus.NOVO_LEAD, corujaoLiberado: false } as any)
+      .where("id = :id", { id: leadId })
+      .andWhere(`"corujaoLiberado" = true`);
+    const conds: string[] = [];
+    const params: any = {};
+    if (alvo.length) {
+      conds.push("status IN (:...alvo)");
+      params.alvo = alvo;
+    }
+    if (did) {
+      conds.push(`("responsavelId" = :did AND status NOT IN (:...fechados))`);
+      params.did = did;
+      params.fechados = [LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA];
+    }
+    if (!conds.length) throw new ForbiddenException("Esse lead não está mais no Corujão.");
+    qb.andWhere(`(${conds.join(" OR ")})`, params);
+    const r = await qb.execute();
+    if (!r.affected) {
+      throw new ForbiddenException("Esse lead já foi pego por outro corretor. Atualize a lista. 🦉");
+    }
+    this.logger.log(`Corujão: lead ${lead.id} pego por ${user.name}.`);
     // Sincroniza o atendente da conversa vinculada (se houver).
     await this.convRepo.update({ leadId: lead.id }, { assignedToId: user.id }).catch(() => {});
     await this.history
