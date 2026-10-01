@@ -443,6 +443,11 @@ export class ConversationsService {
     return this.centralCache.id;
   }
 
+  /** Fixa o número (instância) que fala com esta conversa. */
+  async definirInstancia(conversationId: string, ownerId: string) {
+    await this.convRepo.update(conversationId, { instanceOwnerId: ownerId });
+  }
+
   /** Cliente pediu pra parar: marca o lead (sai do follow-up automático). */
   async marcarNaoPerturbe(leadId: string) {
     await this.leadsRepo.update(leadId, { naoPerturbe: true });

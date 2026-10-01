@@ -113,15 +113,22 @@ export class WhatsappService {
     }
   }
 
-  /** O número (instância) está conectado na Evolution? */
+  private conexaoCache = new Map<string, { ok: boolean; em: number }>();
+
+  /** O número (instância) está conectado na Evolution? (cache de 2 min) */
   async conectado(instanceName: string): Promise<boolean> {
+    const c = this.conexaoCache.get(instanceName);
+    if (c && Date.now() - c.em < 120_000) return c.ok;
+    let ok = false;
     try {
       const data = await this.getInstanceStatus(instanceName);
       const st = data?.instance?.state ?? data?.state;
-      return st === "open";
+      ok = st === "open";
     } catch {
-      return false;
+      ok = false;
     }
+    this.conexaoCache.set(instanceName, { ok, em: Date.now() });
+    return ok;
   }
 
   private get headers() {

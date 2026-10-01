@@ -512,7 +512,14 @@ export class WhatsappFlowService {
     const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
     // Sem dono de instância na conversa: sai pelo número CENTRAL (cargo não tem WhatsApp
     // conectado — antes caía em "user_<corretor>" e a mensagem falhava calada).
-    const instanceOwner = conv.instanceOwnerId || (await this.conversations.diretorCentralId()) || senderUserId;
+    const central = await this.conversations.diretorCentralId();
+    let instanceOwner = conv.instanceOwnerId || central || senderUserId;
+    // Conversa antiga presa no WhatsApp de um corretor que não está conectado: usa o
+    // CENTRAL e grava na conversa (senão toda mensagem dava "instance does not exist").
+    if (central && instanceOwner !== central && !(await this.whatsapp.conectado(`user_${instanceOwner}`))) {
+      instanceOwner = central;
+      await this.conversations.definirInstancia(conv.id, central).catch(() => {});
+    }
     await this.conversations.addMessage(conv.id, text, "out", false);
     // O que o corretor conversou também conta pro score (ex.: agendou visita).
     if (conv.leadId) this.agendarScore(conv.id, conv.leadId);
