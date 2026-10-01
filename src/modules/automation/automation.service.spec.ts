@@ -2,6 +2,15 @@ import { AutomationService, primeiroNome, horaBrasilia } from "./automation.serv
 import { Settings } from "../settings/settings.entity";
 
 describe("AutomationService.buildMessage", () => {
+  it("cita o empreendimento do lead no lugar de 'no imóvel'", () => {
+    const svc: any = new (require("./automation.service").AutomationService)({} as any, {} as any, {} as any, {} as any);
+    const s: any = { followupMsgManha: "", followupMsgTarde: "", followupMsgNoite: "" };
+    expect(svc.buildMessage(s, "Bianca Brasil", "Marine Barra Residence")).toContain("interesse no Marine Barra Residence");
+    expect(svc.buildMessage(s, "Bianca", null)).toContain("interesse no imóvel");
+    const c: any = { followupMsgManha: "Oi {nome}, e o {imovel}?", followupMsgTarde: "Oi {nome}, e o {imovel}?", followupMsgNoite: "Oi {nome}, e o {imovel}?" };
+    expect(svc.buildMessage(c, "Ana", "Ilha Stay")).toBe("Oi Ana, e o Ilha Stay?");
+  });
+
   // buildMessage não usa os repositórios/serviços, só o objeto settings.
   const service = new AutomationService(null as any, null as any, null as any, null as any);
   const baseSettings = { followupMsgManha: null, followupMsgTarde: null, followupMsgNoite: null } as unknown as Settings;

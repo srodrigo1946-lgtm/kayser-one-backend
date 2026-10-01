@@ -57,7 +57,7 @@ export class AutomationService {
   };
 
   /** Monta a mensagem do follow-up: template do horário atual, com {nome} = primeiro nome. */
-  buildMessage(settings: Settings, name?: string): string {
+  buildMessage(settings: Settings, name?: string, empreendimento?: string | null): string {
     const h = horaBrasilia();
     const period = h < 12 ? "manha" : h < 18 ? "tarde" : "noite";
     const custom =
@@ -69,7 +69,13 @@ export class AutomationService {
     const template = custom?.trim() || AutomationService.DEFAULTS[period];
     const firstName = primeiroNome(name);
     // Troca {nome} e limpa vírgula solta caso o lead não tenha nome ("Oi , bom dia" → "Oi, bom dia").
-    return template.replace(/\{nome\}/g, firstName).replace(/\s+,/g, ",");
+    // Cita o empreendimento do lead (o cliente não lembrava "qual imóvel"): {imovel} no
+    // texto, ou troca o "no imóvel" do texto padrão pelo nome do empreendimento.
+    const emp = (empreendimento || "").trim();
+    let t = template;
+    if (t.includes("{imovel}")) t = t.replace(/\{imovel\}/g, emp || "imóvel");
+    else if (emp) t = t.replace(/\bno im[óo]vel\b/i, `no ${emp}`);
+    return t.replace(/\{nome\}/g, firstName).replace(/\s+,/g, ",");
   }
 
   /**
@@ -129,7 +135,7 @@ export class AutomationService {
           if (enviados > 0) await this.whatsappFlow.pausaEntreDisparos();
           if ((await this.settings.get()).whatsappPausado) break;
           const conv = await convRepo.findOne({ where: { leadId: lead.id } }).catch(() => null);
-          const msg = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName));
+          const msg = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName), lead.empreendimento);
           try {
             await this.whatsappFlow.sendManual(lead.responsavelId || "", lead.phone, msg);
             await this.leadsRepo.update(lead.id, { lastContactAt: new Date() });
@@ -181,7 +187,7 @@ export class AutomationService {
       if (sent > 0) await this.whatsappFlow.pausaEntreDisparos();
       // Nome do cadastro; se for número/"Contato WhatsApp", usa o nome do perfil do WhatsApp.
       const conv = await convRepo.findOne({ where: { leadId: lead.id } }).catch(() => null);
-      const message = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName));
+      const message = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName), lead.empreendimento);
 
       try {
         if (!lead.phone) continue;
