@@ -100,6 +100,53 @@ export class AutomationService {
     return leads.filter((l) => l.source !== "manual" || doDiretor.has(l.id));
   }
 
+  private chamando = false;
+
+  /**
+   * Diretor manda a mensagem de follow-up (com o nome) pros leads escolhidos — ou pros
+   * "sem contato há 3+ dias" se não vier lista. Roda em segundo plano com a PROTEÇÃO do
+   * WhatsApp (25–60s entre cada um) e no máximo 40 por vez.
+   */
+  async chamarLeads(leadIds?: string[]): Promise<{ agendados: number; minutos: number; motivo?: string }> {
+    const settings = await this.settings.get();
+    if (settings.whatsappPausado) return { agendados: 0, minutos: 0, motivo: "WhatsApp central está PAUSADO." };
+    if (this.chamando) return { agendados: 0, minutos: 0, motivo: "Já tem um envio em andamento — aguarde terminar." };
+    const where: any = {
+      status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
+      naoPerturbe: false,
+    };
+    if (leadIds?.length) where.id = In(leadIds.slice(0, 40));
+    else where.lastContactAt = LessThan(subDays(new Date(), 3));
+    const leads = (await this.leadsRepo.find({ where, order: { lastContactAt: "ASC" }, take: 40 })).filter((l) => !!l.phone);
+    if (!leads.length) return { agendados: 0, minutos: 0, motivo: "Nenhum lead com telefone pra chamar." };
+
+    this.chamando = true;
+    const convRepo = this.leadsRepo.manager.getRepository(Conversation);
+    (async () => {
+      let enviados = 0;
+      try {
+        for (const lead of leads) {
+          if (enviados > 0) await this.whatsappFlow.pausaEntreDisparos();
+          if ((await this.settings.get()).whatsappPausado) break;
+          const conv = await convRepo.findOne({ where: { leadId: lead.id } }).catch(() => null);
+          const msg = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName));
+          try {
+            await this.whatsappFlow.sendManual(lead.responsavelId || "", lead.phone, msg);
+            await this.leadsRepo.update(lead.id, { lastContactAt: new Date() });
+            await this.history.log({ leadId: lead.id, type: LeadHistoryType.CONTATO, description: "Mensagem enviada pelo Diretor (lead sem contato)." });
+            enviados++;
+          } catch (err) {
+            this.logger.warn(`Chamar lead ${lead.id} falhou: ${(err as Error).message}`);
+          }
+        }
+      } finally {
+        this.chamando = false;
+        this.logger.log(`Chamar leads: ${enviados}/${leads.length} mensagem(ns) enviada(s).`);
+      }
+    })();
+    return { agendados: leads.length, minutos: Math.ceil((leads.length * 45) / 60) };
+  }
+
   async runFollowup() {
     const settings = await this.settings.get();
     if (!settings.followupEnabled) {
@@ -137,9 +184,9 @@ export class AutomationService {
       const message = this.buildMessage(settings, primeiroNome(lead.name, conv?.contactName));
 
       try {
-        if (lead.phone && lead.responsavelId) {
-          await this.whatsappFlow.sendManual(`user_${lead.responsavelId}`, lead.phone, message);
-        }
+        if (!lead.phone) continue;
+        // Sai pelo número central (sendManual resolve); antes passava "user_<id>" errado.
+        await this.whatsappFlow.sendManual(lead.responsavelId || "", lead.phone, message);
         lead.lastContactAt = new Date();
         await this.leadsRepo.save(lead);
         await this.history.log({

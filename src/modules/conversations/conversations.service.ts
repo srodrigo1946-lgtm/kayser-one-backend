@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { telefoneBloqueado } from "../leads/bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
-import { MoreThan, Repository } from "typeorm";
+import { IsNull, MoreThan, Repository } from "typeorm";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
 import { Lead, LeadStatus, LeadSource } from "../leads/lead.entity";
@@ -428,6 +428,19 @@ export class ConversationsService {
     if (!lead || lead.email) return null;
     await this.leadsRepo.update(leadId, { email });
     return email;
+  }
+
+  private centralCache: { id: string | null; em: number } | null = null;
+
+  /** Diretor dono do número CENTRAL (os cargos não têm WhatsApp próprio conectado). */
+  async diretorCentralId(): Promise<string | null> {
+    if (this.centralCache && Date.now() - this.centralCache.em < 5 * 60_000) return this.centralCache.id;
+    const d = await this.leadsRepo.manager
+      .getRepository(User)
+      .findOne({ where: { role: UserRole.DIRETOR, empresaId: IsNull() }, order: { createdAt: "ASC" } })
+      .catch(() => null);
+    this.centralCache = { id: d?.id ?? null, em: Date.now() };
+    return this.centralCache.id;
   }
 
   /** Cliente pediu pra parar: marca o lead (sai do follow-up automático). */

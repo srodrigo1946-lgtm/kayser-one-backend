@@ -510,7 +510,9 @@ export class WhatsappFlowService {
 
   async sendManual(senderUserId: string, remoteJid: string, text: string) {
     const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
-    const instanceOwner = conv.instanceOwnerId || senderUserId;
+    // Sem dono de instância na conversa: sai pelo número CENTRAL (cargo não tem WhatsApp
+    // conectado — antes caía em "user_<corretor>" e a mensagem falhava calada).
+    const instanceOwner = conv.instanceOwnerId || (await this.conversations.diretorCentralId()) || senderUserId;
     await this.conversations.addMessage(conv.id, text, "out", false);
     // O que o corretor conversou também conta pro score (ex.: agendou visita).
     if (conv.leadId) this.agendarScore(conv.id, conv.leadId);

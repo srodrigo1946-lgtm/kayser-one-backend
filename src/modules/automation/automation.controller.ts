@@ -1,4 +1,4 @@
-import { Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AutomationService } from "./automation.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -19,5 +19,13 @@ export class AutomationController {
   @ApiOperation({ summary: "Disparar o follow-up automático manualmente (Diretor)" })
   runFollowup() {
     return this.automationService.runFollowup();
+  }
+
+  @Post("chamar-leads")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Diretor manda mensagem pros leads sem contato (aos poucos, máx. 40)" })
+  chamarLeads(@Body() body: { leadIds?: string[] }) {
+    return this.automationService.chamarLeads(Array.isArray(body?.leadIds) ? body.leadIds.map(String) : undefined);
   }
 }
