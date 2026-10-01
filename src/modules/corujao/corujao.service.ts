@@ -178,7 +178,7 @@ export class CorujaoService {
         empreendimento: l.empreendimento || "",
         origem: l.origem || "",
         status: l.status,
-        desde: l.updatedAt, // há quanto tempo está parado
+        desde: l.lastContactAt || l.createdAt, // sem contato desde (liberar mexe no updatedAt)
         // Nome, telefone e dono atual só pro Diretor. Corretor/gerente veem só que
         // HÁ lead disponível (empreendimento/origem) e só descobrem quem é depois
         // de ACEITAR — aí o lead vira dele e aparece normal no CRM.
