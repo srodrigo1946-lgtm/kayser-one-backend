@@ -46,6 +46,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["arquivarSemInteresse", () => this.arquivarSemInteresse()],
       ["desfazerImportCorujao3009", () => this.desfazerImportCorujao3009()],
       ["ensureLeadImports", () => this.ensureLeadImports()],
+      ["corujaoParaPrimeiroContato", () => this.corujaoParaPrimeiroContato()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -427,6 +428,20 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiModel" varchar`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "aiApiKey" text`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "recoveryCodeHash" text`);
+  }
+
+  /**
+   * Leads pegos no Corujão ANTES da regra "entra em Primeiro Contato" (01/10/2026 14:41)
+   * ficaram em Novo Lead — passam pra Primeiro Contato. Janela fechada; não mexe nos da fila.
+   */
+  private async corujaoParaPrimeiroContato() {
+    await this.dataSource.query(
+      `UPDATE leads SET status = 'primeiro_contato'
+        WHERE status = 'novo_lead'
+          AND id IN (SELECT "leadId" FROM lead_history
+                      WHERE description LIKE 'Repique Corujão: aceito por%'
+                        AND "createdAt" < '2026-10-01 17:42:00')`
+    );
   }
 
   /** Registro das planilhas importadas + lote no lead (apagar planilha inteira) — 30/09/2026. */

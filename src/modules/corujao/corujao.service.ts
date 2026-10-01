@@ -141,7 +141,7 @@ export class CorujaoService {
       pegosHoje = await this.leadsRepo.manager
         .query(
           `SELECT u.name AS nome, COUNT(*)::int AS qtd
-             FROM lead_history h JOIN users u ON u.id = h."userId"
+             FROM lead_history h JOIN users u ON u.id::text = h."userId"::text
             WHERE h.description LIKE 'Repique Corujão: aceito por%'
               AND (h."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date
                   = (now() AT TIME ZONE 'America/Sao_Paulo')::date
