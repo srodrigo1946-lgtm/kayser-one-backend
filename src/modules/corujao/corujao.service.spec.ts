@@ -55,13 +55,13 @@ describe("CorujaoService", () => {
     ).rejects.toThrow(/corretores ativados/i);
   });
 
-  it("corretor ativado aceita: lead vira dele e volta pra Novo Lead", async () => {
+  it("corretor ativado aceita: lead vira dele e entra em Primeiro Contato", async () => {
     const { svc, leadsRepo, convRepo, history } = make();
     const r = await svc.aceitar("L1", { id: "c1", name: "Ana", role: UserRole.CORRETOR, corujao: true } as any);
     expect(r.ok).toBe(true);
     const saved = leadsRepo.qb.set.mock.calls[0][0];
     expect(saved.responsavelId).toBe("c1");
-    expect(saved.status).toBe(LeadStatus.NOVO_LEAD);
+    expect(saved.status).toBe(LeadStatus.PRIMEIRO_CONTATO);
     expect(saved.corujaoLiberado).toBe(false);
     expect(convRepo.update).toHaveBeenCalledWith({ leadId: "L1" }, { assignedToId: "c1" });
     expect(history.log).toHaveBeenCalled();

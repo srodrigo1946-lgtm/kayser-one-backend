@@ -167,7 +167,7 @@ export class CorujaoService {
     };
   }
 
-  /** Corretor ativado aceita a sugestão: o lead vira dele e volta para "Novo Lead". */
+  /** Corretor ativado aceita a sugestão: o lead vira dele e entra em "Primeiro Contato". */
   async aceitar(leadId: string, user: User) {
     if (!this.podePegar(user)) {
       throw new ForbiddenException("Só corretores ativados no Corujão podem pegar leads.");
@@ -183,7 +183,7 @@ export class CorujaoService {
     const qb = this.leadsRepo
       .createQueryBuilder()
       .update(Lead)
-      .set({ responsavelId: user.id, status: LeadStatus.NOVO_LEAD, corujaoLiberado: false } as any)
+      .set({ responsavelId: user.id, status: LeadStatus.PRIMEIRO_CONTATO, corujaoLiberado: false } as any)
       .where("id = :id", { id: leadId })
       .andWhere(`"corujaoLiberado" = true`);
     const conds: string[] = [];
@@ -210,7 +210,7 @@ export class CorujaoService {
       .log({
         leadId: lead.id,
         type: LeadHistoryType.SISTEMA,
-        description: `Repique Corujão: aceito por ${user.name} — voltou para Novo Lead.`,
+        description: `Repique Corujão: aceito por ${user.name} — entrou em Primeiro Contato.`,
         userId: user.id,
       })
       .catch(() => {});
