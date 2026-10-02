@@ -39,6 +39,12 @@ export class PropertiesService {
 
   async update(id: string, dto: Partial<Property>) {
     const property = await this.findOne(id);
+    // Endereço do stand mudou → a coordenada antiga (check-in do plantão) não vale mais;
+    // zera pra ser localizada de novo (botão Localizar / cron das 06:30).
+    if (dto.standAddress !== undefined && (dto.standAddress || "").trim() !== (property.standAddress || "").trim()) {
+      (dto as any).standLat = null;
+      (dto as any).standLng = null;
+    }
     Object.assign(property, dto);
     return this.repo.save(property);
   }
