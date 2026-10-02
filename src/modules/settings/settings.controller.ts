@@ -71,6 +71,9 @@ class UpdateSettingsDto {
   checkinObrigatorio?: boolean;
 
   @IsOptional() @IsString()
+  plantaoLivreDesde?: string | null;
+
+  @IsOptional() @IsString()
   metaPageToken?: string;
 
   @IsOptional() @IsString()

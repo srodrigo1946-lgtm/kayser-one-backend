@@ -180,13 +180,10 @@ export class LeadQueueService {
   private async atendentesDoTurno(now = new Date()): Promise<string[]> {
     const turno = await this.escala.turnoAtivo(now);
     if (!turno) return [];
-    const ativos = await this.filtrarAtivos(turno.atendenteIds);
-    // Check-in por GPS no stand: sem check-in neste turno, não recebe lead (regra do
-    // Rodrigo). Só vale quando já existe stand localizado (senão travaria a fila toda).
-    if (this.plantao && (await this.plantao.exigeCheckin().catch(() => false))) {
-      return this.plantao.comCheckin(turno.id, ativos);
-    }
-    return ativos;
+    // Plantão (check-in GPS, plantão livre, bloqueios) decide quem pode; aqui só
+    // garante que é corretor ativo.
+    const ids = this.plantao ? await this.plantao.idsDoTurno(turno).catch(() => turno.atendenteIds) : turno.atendenteIds;
+    return this.filtrarAtivos(ids);
   }
 
   /** Próximo do rodízio (avança o ponteiro em `s`; caller salva `s`). */

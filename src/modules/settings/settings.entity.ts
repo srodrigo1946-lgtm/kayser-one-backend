@@ -116,6 +116,10 @@ export class Settings {
   @Column({ default: true })
   checkinObrigatorio: boolean;
 
+  // Plantão livre (todos os corretores, sem escala) a partir deste dia (YYYY-MM-DD). Vazio = por escala.
+  @Column({ type: "text", nullable: true })
+  plantaoLivreDesde: string | null;
+
   // Máximo de leads do Corujão que cada corretor pega por dia (0 = sem limite).
   @Column({ type: "int", default: 20 })
   corujaoLimiteDia: number;

@@ -1,4 +1,4 @@
-import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno } from "./plantao.service";
+import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno, PlantaoService } from "./plantao.service";
 
 describe("Check-in do plantão (geolocalização)", () => {
   const stand = { nome: "Stand Sky", lat: -22.7556, lng: -43.4603 };
@@ -52,6 +52,32 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(escolherTurno([manha], "13:00")).toBeNull(); // turno acabou
     // nos dois turnos: 12:30 já é o check-in da tarde
     expect(escolherTurno([manha, tarde], "12:30")?.turno.id).toBe("t");
+  });
+
+  describe("quem a fila usa no turno (livre x escala, bloqueios)", () => {
+    const turno = { id: "T", atendenteIds: ["A", "B"] };
+    const montar = (livreDesde: string | null, bloqueados: string[]) =>
+      new PlantaoService(
+        { find: async () => [{ userId: "C" }, { userId: "A" }, { userId: "D" }] } as any, // check-ins (ordem de chegada)
+        { find: async () => [{ standAddress: "Rua X, 1", standLat: -22.9 }] } as any, // stands todos localizados
+        { find: async () => [] } as any,
+        { find: async () => bloqueados.map((userId) => ({ userId })) } as any,
+        {} as any,
+        { get: async () => ({ checkinObrigatorio: true, plantaoLivreDesde: livreDesde }) } as any,
+        {} as any
+      );
+
+    it("escala antiga: só quem é da escala e fez check-in", async () => {
+      expect(await montar(null, []).idsDoTurno(turno)).toEqual(["A"]);
+    });
+
+    it("plantão livre: qualquer um que fez check-in, menos bloqueados", async () => {
+      expect(await montar("2026-01-01", ["D"]).idsDoTurno(turno)).toEqual(["C", "A"]);
+    });
+
+    it("livre marcado pra amanhã ainda usa a escala", async () => {
+      expect(await montar("2999-01-01", []).idsDoTurno(turno)).toEqual(["A"]);
+    });
   });
 
   it("dia em Brasília", () => {

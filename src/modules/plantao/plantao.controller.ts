@@ -62,6 +62,24 @@ export class PlantaoController {
     return this.plantao.liberar(req.user, dto.userId, dto.turnoId);
   }
 
+  @Get("equipe")
+  @ApiOperation({ summary: "Corretores que posso bloquear no plantão (Diretor: todos; gestor: equipe)" })
+  equipe(@Request() req: any) {
+    return this.plantao.equipe(req.user);
+  }
+
+  @Post("bloquear/:userId")
+  @ApiOperation({ summary: "Bloquear corretor no plantão (hierarquia)" })
+  bloquear(@Param("userId") userId: string, @Request() req: any) {
+    return this.plantao.bloquear(req.user, userId);
+  }
+
+  @Post("desbloquear/:userId")
+  @ApiOperation({ summary: "Desbloquear corretor no plantão (hierarquia)" })
+  desbloquear(@Param("userId") userId: string, @Request() req: any) {
+    return this.plantao.desbloquear(req.user, userId);
+  }
+
   @Post("localizar-stands")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)

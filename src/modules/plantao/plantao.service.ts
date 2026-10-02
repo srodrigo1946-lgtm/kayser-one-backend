@@ -1,8 +1,10 @@
-import { BadRequestException, Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, Not, Repository } from "typeorm";
 import { Cron } from "@nestjs/schedule";
 import { PlantaoCheckin } from "./plantao-checkin.entity";
+import { PlantaoBloqueio } from "./plantao-bloqueio.entity";
+import { UsersService } from "../users/users.service";
 import { Property } from "../properties/property.entity";
 import { User, UserRole } from "../users/user.entity";
 import { EscalaService } from "../escala/escala.service";
@@ -115,9 +117,96 @@ export class PlantaoService implements OnModuleInit {
     @InjectRepository(PlantaoCheckin) private readonly checkins: Repository<PlantaoCheckin>,
     @InjectRepository(Property) private readonly props: Repository<Property>,
     @InjectRepository(User) private readonly users: Repository<User>,
+    @InjectRepository(PlantaoBloqueio) private readonly bloqueios: Repository<PlantaoBloqueio>,
     private readonly escala: EscalaService,
-    private readonly settings: SettingsService
+    private readonly settings: SettingsService,
+    private readonly usersService: UsersService
   ) {}
+
+  /**
+   * Plantão livre: todo corretor pode fazer check-in em qualquer turno (sem escala).
+   * Liga a partir do dia `plantaoLivreDesde`; vazio = plantão antigo (por escala).
+   */
+  async modoLivre(): Promise<boolean> {
+    const s: any = await this.settings.get().catch(() => null);
+    return !!s?.plantaoLivreDesde && hojeSP() >= s.plantaoLivreDesde;
+  }
+
+  /** Corretor que pode estar no plantão (só CORRETOR ativo, aprovado, sem empresa parceira). */
+  private elegivel(u: User): boolean {
+    return u.role === UserRole.CORRETOR && u.active !== false && u.approved !== false && !u.empresaId;
+  }
+
+  private async bloqueadosIds(): Promise<Set<string>> {
+    return new Set((await this.bloqueios.find()).map((b) => b.userId));
+  }
+
+  /** Turnos de hoje que valem pro usuário: livre = todos (se for corretor); antigo = os da escala dele. */
+  private meusTurnos<T extends { atendenteIds: string[] }>(user: User, turnos: T[], livre: boolean): T[] {
+    if (livre) return this.elegivel(user) ? turnos : [];
+    return turnos.filter((t) => (t.atendenteIds || []).includes(user.id));
+  }
+
+  /**
+   * Quem a fila pode usar neste turno. Com check-in: só quem fez (livre = qualquer
+   * corretor; antigo = só os da escala). Sem check-in: livre = todos os corretores;
+   * antigo = a escala. Bloqueados nunca entram.
+   */
+  async idsDoTurno(turno: { id: string; atendenteIds: string[] }): Promise<string[]> {
+    const [livre, checkin, bloq] = await Promise.all([this.modoLivre(), this.exigeCheckin(), this.bloqueadosIds()]);
+    let ids: string[];
+    if (checkin) {
+      const feitos = (await this.checkins.find({ where: { turnoId: turno.id, data: hojeSP() }, order: { createdAt: "ASC" } })).map((c) => c.userId);
+      ids = livre ? feitos : (turno.atendenteIds || []).filter((id) => feitos.includes(id));
+    } else if (livre) {
+      ids = (await this.users.find({ order: { name: "ASC" } })).filter((u) => this.elegivel(u)).map((u) => u.id);
+    } else ids = turno.atendenteIds || [];
+    return ids.filter((id) => !bloq.has(id));
+  }
+
+  /** Corretores que este gestor pode bloquear (Diretor: todos; gestor: a equipe dele). */
+  async equipe(user: User) {
+    if (user.role === UserRole.CORRETOR) throw new ForbiddenException("Só gestores bloqueiam no plantão.");
+    const escopo = await this.usersService.getScopeIds(user);
+    const us = (await this.users.find({ order: { name: "ASC" } })).filter((u) => this.elegivel(u) && (!escopo || escopo.includes(u.id)));
+    const bl = new Map((await this.bloqueios.find()).map((b) => [b.userId, b]));
+    return us.map((u) => {
+      const b = bl.get(u.id);
+      return {
+        id: u.id,
+        nome: u.name,
+        bloqueado: b ? { por: b.porNome, porDiretor: b.porDiretor, desde: b.createdAt } : null,
+        podeDesbloquear: !!b && (user.role === UserRole.DIRETOR || !b.porDiretor),
+      };
+    });
+  }
+
+  private async confereEscopo(user: User, alvoId: string) {
+    if (user.role === UserRole.CORRETOR) throw new ForbiddenException("Só gestores bloqueiam no plantão.");
+    const escopo = await this.usersService.getScopeIds(user);
+    if (escopo && !escopo.includes(alvoId)) throw new ForbiddenException("Esse corretor não é da sua equipe.");
+  }
+
+  async bloquear(user: User, alvoId: string) {
+    await this.confereEscopo(user, alvoId);
+    const ja = await this.bloqueios.findOne({ where: { userId: alvoId } });
+    if (ja) return { ok: true, jaBloqueado: true };
+    await this.bloqueios.save(
+      this.bloqueios.create({ userId: alvoId, porId: user.id, porNome: user.name, porDiretor: user.role === UserRole.DIRETOR })
+    );
+    this.logger.log(`Plantão: ${alvoId} bloqueado por ${user.name}.`);
+    return { ok: true };
+  }
+
+  async desbloquear(user: User, alvoId: string) {
+    await this.confereEscopo(user, alvoId);
+    const b = await this.bloqueios.findOne({ where: { userId: alvoId } });
+    if (!b) return { ok: true };
+    if (b.porDiretor && user.role !== UserRole.DIRETOR) throw new ForbiddenException("Quem bloqueou foi o Diretor — só ele desbloqueia.");
+    await this.bloqueios.delete({ userId: alvoId });
+    this.logger.log(`Plantão: ${alvoId} desbloqueado por ${user.name}.`);
+    return { ok: true };
+  }
 
   onModuleInit() {
     // Localiza os stands que ainda não têm coordenada (sem travar o boot).
@@ -267,17 +356,26 @@ export class PlantaoService implements OnModuleInit {
     const { turnos } = await this.escala.turnosDoDia(new Date());
     const idsEscala = [...new Set(turnos.flatMap((t) => t.atendenteIds || []))].filter((id) => !nomes.has(id));
     if (idsEscala.length) (await this.users.find({ where: { id: In(idsEscala) } })).forEach((u) => nomes.set(u.id, u.name));
+    const livre = await this.modoLivre();
+    const bloq = await this.bloqueadosIds();
     const turnosHoje = turnos
       .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio))
-      .map((t) => ({
-        id: t.id,
-        horaInicio: t.horaInicio,
-        horaFim: t.horaFim,
-        atendentes: (t.atendenteIds || []).map((id) => {
-          const c = cks.find((x) => x.userId === id && x.turnoId === t.id);
-          return { id, nome: nomes.get(id) ?? "—", entrou: !!c, como: c?.standNome ?? null };
-        }),
-      }));
+      .map((t) => {
+        // Livre: mostra quem entrou neste turno; antigo: a escala do turno.
+        const ids = livre ? cks.filter((x) => x.turnoId === t.id).map((x) => x.userId) : t.atendenteIds || [];
+        return {
+          id: t.id,
+          horaInicio: t.horaInicio,
+          horaFim: t.horaFim,
+          atendentes: ids.map((id) => {
+            const c = cks.find((x) => x.userId === id && x.turnoId === t.id);
+            return { id, nome: nomes.get(id) ?? "—", entrou: !!c, como: c?.standNome ?? null, bloqueado: bloq.has(id) };
+          }),
+        };
+      });
+    const corretores = livre
+      ? (await this.users.find({ order: { name: "ASC" } })).filter((u) => this.elegivel(u) && !bloq.has(u.id)).map((u) => ({ id: u.id, nome: u.name }))
+      : [];
     return {
       raio: RAIO_CHECKIN,
       checkinObrigatorio: cfg?.checkinObrigatorio !== false,
@@ -285,6 +383,9 @@ export class PlantaoService implements OnModuleInit {
       faltamLocalizar: stands.filter((s) => !s.localizado).length,
       turnoAtivo: turno ? { id: turno.id, horaInicio: turno.horaInicio, horaFim: turno.horaFim, atendentes: turno.atendenteIds.length } : null,
       stands,
+      modoLivre: livre,
+      plantaoLivreDesde: cfg?.plantaoLivreDesde ?? null,
+      corretores,
       turnosHoje,
       checkinsHoje: cks.map((c) => ({
         nome: nomes.get(c.userId) ?? "—",
@@ -300,15 +401,17 @@ export class PlantaoService implements OnModuleInit {
   async status(user: User) {
     const regraAtiva = await this.exigeCheckin();
     const { hhmm, turnos } = await this.escala.turnosDoDia(new Date());
-    const e = escolherTurno(turnos.filter((t) => (t.atendenteIds || []).includes(user.id)), hhmm);
+    const e = escolherTurno(this.meusTurnos(user, turnos, await this.modoLivre()), hhmm);
     if (!e) return { regraAtiva, turnoAtivo: false, naEscala: false, checkin: null };
     const ck = await this.checkins.findOne({ where: { userId: user.id, turnoId: e.turno.id, data: hojeSP() } });
+    const bl = await this.bloqueios.findOne({ where: { userId: user.id } });
     return {
       regraAtiva,
       turnoAtivo: true,
       turno: { horaInicio: e.turno.horaInicio, horaFim: e.turno.horaFim },
       naEscala: true,
       janela: e.janela,
+      bloqueado: bl ? { por: bl.porNome } : null,
       checkin: ck ? { stand: ck.standNome, distancia: ck.distancia, hora: ck.createdAt } : null,
     };
   }
@@ -316,8 +419,10 @@ export class PlantaoService implements OnModuleInit {
   /** Check-in: GPS do celular precisa estar a até 200 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Não consegui ler sua localização.");
+    const bl = await this.bloqueios.findOne({ where: { userId: user.id } });
+    if (bl) throw new BadRequestException(`Você está bloqueado no plantão (por ${bl.porNome}). Fale com seu gestor.`);
     const { hhmm, turnos } = await this.escala.turnosDoDia(new Date());
-    const e = escolherTurno(turnos.filter((t) => (t.atendenteIds || []).includes(user.id)), hhmm);
+    const e = escolherTurno(this.meusTurnos(user, turnos, await this.modoLivre()), hhmm);
     if (!e) {
       throw new BadRequestException(
         `Agora não tem check-in pra você — ele abre ${ANTECEDENCIA_CHECKIN} min antes do seu turno e vai até a hora do início.`
@@ -360,7 +465,13 @@ export class PlantaoService implements OnModuleInit {
     const { turnos } = await this.escala.turnosDoDia(new Date());
     const turno = turnos.find((t) => t.id === turnoId);
     if (!turno) throw new BadRequestException("Esse turno não é de hoje.");
-    if (!(turno.atendenteIds || []).includes(userId)) throw new BadRequestException("Esse corretor não está na escala deste turno.");
+    if (await this.modoLivre()) {
+      const u = await this.users.findOne({ where: { id: userId } });
+      if (!u || !this.elegivel(u)) throw new BadRequestException("Só corretor ativo entra no plantão.");
+    } else if (!(turno.atendenteIds || []).includes(userId)) {
+      throw new BadRequestException("Esse corretor não está na escala deste turno.");
+    }
+    if (await this.bloqueios.findOne({ where: { userId } })) throw new BadRequestException("Esse corretor está bloqueado no plantão — desbloqueie antes.");
     const data = hojeSP();
     const ja = await this.checkins.findOne({ where: { userId, turnoId, data } });
     if (ja) return { ok: true, jaFeito: true };
@@ -371,13 +482,6 @@ export class PlantaoService implements OnModuleInit {
     return { ok: true };
   }
 
-  /** Dos atendentes do turno, quem fez check-in nele hoje (a fila só usa esses). */
-  async comCheckin(turnoId: string, ids: string[]): Promise<string[]> {
-    if (!ids.length) return [];
-    const cks = await this.checkins.find({ where: { turnoId, data: hojeSP(), userId: In(ids) } });
-    const feitos = new Set(cks.map((c) => c.userId));
-    return ids.filter((id) => feitos.has(id));
-  }
 }
 
 // Evita aviso de import não usado em alguns builds.
