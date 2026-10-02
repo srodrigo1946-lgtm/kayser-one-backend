@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsNumber, IsOptional } from "class-validator";
+import { IsNumber, IsOptional, IsString } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -17,6 +17,14 @@ class LocalizacaoDto {
 
   @IsOptional() @Type(() => Number) @IsNumber()
   precisao?: number;
+}
+
+class LiberarDto {
+  @IsString()
+  userId: string;
+
+  @IsString()
+  turnoId: string;
 }
 
 @ApiTags("Plantão (check-in)")
@@ -44,6 +52,14 @@ export class PlantaoController {
   @ApiOperation({ summary: "Stands e check-ins de hoje (Diretor)" })
   painel() {
     return this.plantao.painel();
+  }
+
+  @Post("liberar")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Liberar corretor no plantão sem GPS (Diretor)" })
+  liberar(@Body() dto: LiberarDto, @Request() req: any) {
+    return this.plantao.liberar(req.user, dto.userId, dto.turnoId);
   }
 
   @Post("localizar-stands")

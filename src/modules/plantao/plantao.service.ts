@@ -264,6 +264,20 @@ export class PlantaoService implements OnModuleInit {
     );
     const turno = await this.escala.turnoAtivo(new Date());
     const cfg: any = await this.settings.get().catch(() => null);
+    const { turnos } = await this.escala.turnosDoDia(new Date());
+    const idsEscala = [...new Set(turnos.flatMap((t) => t.atendenteIds || []))].filter((id) => !nomes.has(id));
+    if (idsEscala.length) (await this.users.find({ where: { id: In(idsEscala) } })).forEach((u) => nomes.set(u.id, u.name));
+    const turnosHoje = turnos
+      .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio))
+      .map((t) => ({
+        id: t.id,
+        horaInicio: t.horaInicio,
+        horaFim: t.horaFim,
+        atendentes: (t.atendenteIds || []).map((id) => {
+          const c = cks.find((x) => x.userId === id && x.turnoId === t.id);
+          return { id, nome: nomes.get(id) ?? "—", entrou: !!c, como: c?.standNome ?? null };
+        }),
+      }));
     return {
       raio: RAIO_CHECKIN,
       checkinObrigatorio: cfg?.checkinObrigatorio !== false,
@@ -271,6 +285,7 @@ export class PlantaoService implements OnModuleInit {
       faltamLocalizar: stands.filter((s) => !s.localizado).length,
       turnoAtivo: turno ? { id: turno.id, horaInicio: turno.horaInicio, horaFim: turno.horaFim, atendentes: turno.atendenteIds.length } : null,
       stands,
+      turnosHoje,
       checkinsHoje: cks.map((c) => ({
         nome: nomes.get(c.userId) ?? "—",
         stand: c.standNome,
@@ -338,6 +353,22 @@ export class PlantaoService implements OnModuleInit {
     );
     this.logger.log(`Check-in: ${user.name} no stand ${r.stand.nome} (${r.distancia} m).`);
     return { ok: true, stand: r.stand.nome, distancia: r.distancia };
+  }
+
+  /** Diretor libera o corretor no plantão sem GPS (vale como check-in do turno de hoje). */
+  async liberar(diretor: User, userId: string, turnoId: string) {
+    const { turnos } = await this.escala.turnosDoDia(new Date());
+    const turno = turnos.find((t) => t.id === turnoId);
+    if (!turno) throw new BadRequestException("Esse turno não é de hoje.");
+    if (!(turno.atendenteIds || []).includes(userId)) throw new BadRequestException("Esse corretor não está na escala deste turno.");
+    const data = hojeSP();
+    const ja = await this.checkins.findOne({ where: { userId, turnoId, data } });
+    if (ja) return { ok: true, jaFeito: true };
+    await this.checkins.save(
+      this.checkins.create({ userId, turnoId, data, standNome: `Liberado por ${diretor.name}`, lat: 0, lng: 0, distancia: 0 })
+    );
+    this.logger.log(`Plantão liberado manualmente: ${userId} no turno ${turno.horaInicio} por ${diretor.name}.`);
+    return { ok: true };
   }
 
   /** Dos atendentes do turno, quem fez check-in nele hoje (a fila só usa esses). */
