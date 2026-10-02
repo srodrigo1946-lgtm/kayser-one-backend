@@ -5,6 +5,7 @@ import { Cron } from "@nestjs/schedule";
 import { PlantaoCheckin } from "./plantao-checkin.entity";
 import { PlantaoBloqueio } from "./plantao-bloqueio.entity";
 import { UsersService } from "../users/users.service";
+import { descendantIds, HierUser } from "../../common/hierarchy";
 import { Property } from "../properties/property.entity";
 import { User, UserRole } from "../users/user.entity";
 import { EscalaService } from "../escala/escala.service";
@@ -90,6 +91,27 @@ export function escolherTurno<T extends { horaInicio: string; horaFim: string }>
   return rolando ? { turno: rolando, janela: "fechada" } : null;
 }
 
+export type BloqueioEfetivo = { por: string; porDiretor: boolean; via: string | null; viaId: string | null };
+
+/**
+ * Bloqueio em cascata: bloquear um gerente bloqueia ele e TODA a equipe abaixo dele.
+ * Bloqueio direto da pessoa vence o herdado (via = null).
+ */
+export function bloqueiosEfetivos(
+  users: (HierUser & { name?: string })[],
+  rows: { userId: string; porNome: string; porDiretor: boolean }[]
+): Map<string, BloqueioEfetivo> {
+  const m = new Map<string, BloqueioEfetivo>();
+  const nome = new Map(users.map((u) => [u.id, u.name ?? ""]));
+  for (const r of rows) m.set(r.userId, { por: r.porNome, porDiretor: r.porDiretor, via: null, viaId: null });
+  for (const r of rows) {
+    for (const id of descendantIds(users, r.userId)) {
+      if (!m.has(id)) m.set(id, { por: r.porNome, porDiretor: r.porDiretor, via: nome.get(r.userId) || "gerente", viaId: r.userId });
+    }
+  }
+  return m;
+}
+
 /** Stand mais perto + se está dentro do raio (tolera até 50 m de erro do GPS). */
 export function standMaisPerto<T extends { lat: number; lng: number }>(
   lat: number,
@@ -137,8 +159,18 @@ export class PlantaoService implements OnModuleInit {
     return u.role === UserRole.CORRETOR && u.active !== false && u.approved !== false && !u.empresaId;
   }
 
+  private async mapaBloqueios(): Promise<Map<string, BloqueioEfetivo>> {
+    const rows = await this.bloqueios.find();
+    if (!rows.length) return new Map();
+    return bloqueiosEfetivos(await this.users.find({ select: ["id", "managerId", "name"] as any }), rows);
+  }
+
   private async bloqueadosIds(): Promise<Set<string>> {
-    return new Set((await this.bloqueios.find()).map((b) => b.userId));
+    return new Set((await this.mapaBloqueios()).keys());
+  }
+
+  private textoBloqueio(b: BloqueioEfetivo): string {
+    return b.via ? `${b.por}, junto com a equipe de ${b.via}` : b.por;
   }
 
   /** Turnos de hoje que valem pro usuário: livre = todos (se for corretor); antigo = os da escala dele. */
@@ -168,15 +200,25 @@ export class PlantaoService implements OnModuleInit {
   async equipe(user: User) {
     if (user.role === UserRole.CORRETOR) throw new ForbiddenException("Só gestores bloqueiam no plantão.");
     const escopo = await this.usersService.getScopeIds(user);
-    const us = (await this.users.find({ order: { name: "ASC" } })).filter((u) => this.elegivel(u) && (!escopo || escopo.includes(u.id)));
-    const bl = new Map((await this.bloqueios.find()).map((b) => [b.userId, b]));
+    const us = (await this.users.find({ order: { name: "ASC" } })).filter(
+      (u) =>
+        u.id !== user.id &&
+        u.role !== UserRole.DIRETOR &&
+        u.active !== false &&
+        u.approved !== false &&
+        !u.empresaId &&
+        (!escopo || escopo.includes(u.id))
+    );
+    const bl = await this.mapaBloqueios();
     return us.map((u) => {
       const b = bl.get(u.id);
       return {
         id: u.id,
         nome: u.name,
-        bloqueado: b ? { por: b.porNome, porDiretor: b.porDiretor, desde: b.createdAt } : null,
-        podeDesbloquear: !!b && (user.role === UserRole.DIRETOR || !b.porDiretor),
+        cargo: u.role,
+        bloqueado: b ? { por: b.por, porDiretor: b.porDiretor, via: b.via } : null,
+        // Herdado do gerente: desbloqueia o gerente, não a pessoa.
+        podeDesbloquear: !!b && !b.via && (user.role === UserRole.DIRETOR || !b.porDiretor),
       };
     });
   }
@@ -184,7 +226,8 @@ export class PlantaoService implements OnModuleInit {
   private async confereEscopo(user: User, alvoId: string) {
     if (user.role === UserRole.CORRETOR) throw new ForbiddenException("Só gestores bloqueiam no plantão.");
     const escopo = await this.usersService.getScopeIds(user);
-    if (escopo && !escopo.includes(alvoId)) throw new ForbiddenException("Esse corretor não é da sua equipe.");
+    if (alvoId === user.id) throw new ForbiddenException("Você não pode se bloquear.");
+    if (escopo && !escopo.includes(alvoId)) throw new ForbiddenException("Essa pessoa não é da sua equipe.");
   }
 
   async bloquear(user: User, alvoId: string) {
@@ -404,14 +447,14 @@ export class PlantaoService implements OnModuleInit {
     const e = escolherTurno(this.meusTurnos(user, turnos, await this.modoLivre()), hhmm);
     if (!e) return { regraAtiva, turnoAtivo: false, naEscala: false, checkin: null };
     const ck = await this.checkins.findOne({ where: { userId: user.id, turnoId: e.turno.id, data: hojeSP() } });
-    const bl = await this.bloqueios.findOne({ where: { userId: user.id } });
+    const bl = (await this.mapaBloqueios()).get(user.id);
     return {
       regraAtiva,
       turnoAtivo: true,
       turno: { horaInicio: e.turno.horaInicio, horaFim: e.turno.horaFim },
       naEscala: true,
       janela: e.janela,
-      bloqueado: bl ? { por: bl.porNome } : null,
+      bloqueado: bl ? { por: this.textoBloqueio(bl) } : null,
       checkin: ck ? { stand: ck.standNome, distancia: ck.distancia, hora: ck.createdAt } : null,
     };
   }
@@ -419,8 +462,8 @@ export class PlantaoService implements OnModuleInit {
   /** Check-in: GPS do celular precisa estar a até 200 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Não consegui ler sua localização.");
-    const bl = await this.bloqueios.findOne({ where: { userId: user.id } });
-    if (bl) throw new BadRequestException(`Você está bloqueado no plantão (por ${bl.porNome}). Fale com seu gestor.`);
+    const bl = (await this.mapaBloqueios()).get(user.id);
+    if (bl) throw new BadRequestException(`Você está bloqueado no plantão (por ${this.textoBloqueio(bl)}). Fale com seu gestor.`);
     const { hhmm, turnos } = await this.escala.turnosDoDia(new Date());
     const e = escolherTurno(this.meusTurnos(user, turnos, await this.modoLivre()), hhmm);
     if (!e) {
@@ -471,7 +514,7 @@ export class PlantaoService implements OnModuleInit {
     } else if (!(turno.atendenteIds || []).includes(userId)) {
       throw new BadRequestException("Esse corretor não está na escala deste turno.");
     }
-    if (await this.bloqueios.findOne({ where: { userId } })) throw new BadRequestException("Esse corretor está bloqueado no plantão — desbloqueie antes.");
+    if ((await this.mapaBloqueios()).has(userId)) throw new BadRequestException("Esse corretor está bloqueado no plantão — desbloqueie antes.");
     const data = hojeSP();
     const ja = await this.checkins.findOne({ where: { userId, turnoId, data } });
     if (ja) return { ok: true, jaFeito: true };

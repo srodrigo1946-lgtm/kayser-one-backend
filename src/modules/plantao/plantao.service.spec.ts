@@ -1,4 +1,4 @@
-import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno, PlantaoService } from "./plantao.service";
+import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno, PlantaoService, bloqueiosEfetivos } from "./plantao.service";
 
 describe("Check-in do plantão (geolocalização)", () => {
   const stand = { nome: "Stand Sky", lat: -22.7556, lng: -43.4603 };
@@ -78,6 +78,21 @@ describe("Check-in do plantão (geolocalização)", () => {
     it("livre marcado pra amanhã ainda usa a escala", async () => {
       expect(await montar("2999-01-01", []).idsDoTurno(turno)).toEqual(["A"]);
     });
+  });
+
+  it("bloquear o gerente bloqueia o time todo (cascata)", () => {
+    const users = [
+      { id: "G", managerId: "D", name: "Gerente Ana" },
+      { id: "C1", managerId: "G" },
+      { id: "Co", managerId: "G" }, // coordenador
+      { id: "C2", managerId: "Co" },
+      { id: "X", managerId: "D" }, // outro time
+    ];
+    const m = bloqueiosEfetivos(users, [{ userId: "G", porNome: "Rodrigo", porDiretor: true }]);
+    expect([...m.keys()].sort()).toEqual(["C1", "C2", "Co", "G"]);
+    expect(m.get("G")?.via).toBeNull();
+    expect(m.get("C2")?.via).toBe("Gerente Ana");
+    expect(m.has("X")).toBe(false);
   });
 
   it("dia em Brasília", () => {
