@@ -26,6 +26,23 @@ export function hojeSP(d = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(d);
 }
 
+/**
+ * Limpa o endereço pro serviço de mapa: tira "Loja A"/"Sala 3"/"Bloco B", expande
+ * "R." → "Rua", "Av." → "Avenida", "Estr." → "Estrada", troca travessões.
+ */
+export function limparEndereco(e: string): string {
+  return (e || "")
+    .replace(/[–—]/g, "-")
+    .replace(/,?\s*\b(loja|lj|sala|sl|bloco|bl|lote|qd|quadra|apto|ap)\.?\s*[\w-]+/gi, "")
+    .replace(/\bR\.\s*/g, "Rua ")
+    .replace(/\bAv\.?\s+/gi, "Avenida ")
+    .replace(/\bEstr\.?\s+/gi, "Estrada ")
+    .replace(/\bPça\.?\s+/gi, "Praça ")
+    .replace(/\s*,\s*,/g, ",")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Stand mais perto + se está dentro do raio (tolera até 50 m de erro do GPS). */
 export function standMaisPerto<T extends { lat: number; lng: number }>(
   lat: number,
@@ -88,12 +105,26 @@ export class PlantaoService implements OnModuleInit {
   }
 
   /** Busca a coordenada de um endereço (OpenStreetMap/Nominatim). */
-  private async geocodificar(endereco: string): Promise<{ lat: number; lng: number } | null> {
-    const limpo = endereco.replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
-    const tentativas = [limpo, limpo.replace(/,?\s*-?\s*[A-Z]{2}\s*$/, "")];
+  private async geocodificar(
+    endereco: string,
+    extra: { cep?: string; cidade?: string; estado?: string } = {}
+  ): Promise<{ lat: number; lng: number } | null> {
+    const limpo = limparEndereco(endereco);
+    // "Rua Lopo Saraiva, 179" (antes do bairro) pra busca estruturada com CEP/cidade.
+    const ruaNum = limpo.split(/\s-\s/)[0].trim();
+    const tentativas: string[] = [];
+    if (extra.cep || extra.cidade) {
+      tentativas.push(
+        `STRUCT:street=${encodeURIComponent(ruaNum)}${extra.cidade ? `&city=${encodeURIComponent(extra.cidade)}` : ""}${extra.estado ? `&state=${encodeURIComponent(extra.estado)}` : ""}${extra.cep ? `&postalcode=${encodeURIComponent(extra.cep)}` : ""}&country=Brasil`
+      );
+    }
+    tentativas.push(limpo, limpo.replace(/,?\s*-?\s*[A-Z]{2}\s*$/, ""));
+    if (extra.cidade) tentativas.push(`${ruaNum}, ${extra.cidade}${extra.estado ? " - " + extra.estado : ""}`);
     for (const q of tentativas) {
       try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`;
+        const url = q.startsWith("STRUCT:")
+          ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&${q.slice(7)}`
+          : `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`;
         const r = await fetch(url, { headers: { "User-Agent": "KayserOneCRM/1.0 (stands de plantao)", "Accept-Language": "pt-BR" } });
         if (r.ok) {
           const j: any[] = await r.json();
@@ -106,7 +137,7 @@ export class PlantaoService implements OnModuleInit {
     }
     // 2ª tentativa: Photon (OpenStreetMap, aceita endereço mais "solto").
     try {
-      const r = await fetch(`https://photon.komoot.io/api/?limit=1&lang=pt&q=${encodeURIComponent(limpo + ", Brasil")}`, {
+      const r = await fetch(`https://photon.komoot.io/api/?limit=1&lang=pt&q=${encodeURIComponent(limpo + (extra.cidade && !limpo.includes(extra.cidade) ? ", " + extra.cidade : "") + ", Brasil")}`, {
         headers: { "User-Agent": "KayserOneCRM/1.0 (stands de plantao)" },
       });
       if (r.ok) {
@@ -131,7 +162,7 @@ export class PlantaoService implements OnModuleInit {
     for (const p of pendentes) {
       const end = p.standAddress.trim();
       if (!cache.has(end)) {
-        cache.set(end, await this.geocodificar(end));
+        cache.set(end, await this.geocodificar(end, { cep: p.cep, cidade: p.cidade, estado: p.estado }));
         await new Promise((res) => setTimeout(res, 1100));
       }
       const c = cache.get(end);
