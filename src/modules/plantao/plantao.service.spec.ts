@@ -1,4 +1,4 @@
-import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno, PlantaoService, bloqueiosEfetivos } from "./plantao.service";
+import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno, PlantaoService, bloqueiosEfetivos, ordemSorteio } from "./plantao.service";
 
 describe("Check-in do plantão (geolocalização)", () => {
   const stand = { nome: "Stand Sky", lat: -22.7556, lng: -43.4603 };
@@ -71,12 +71,62 @@ describe("Check-in do plantão (geolocalização)", () => {
       expect(await montar(null, []).idsDoTurno(turno)).toEqual(["A"]);
     });
 
-    it("plantão livre: qualquer um que fez check-in, menos bloqueados", async () => {
-      expect(await montar("2026-01-01", ["D"]).idsDoTurno(turno)).toEqual(["C", "A"]);
+    it("plantão livre: qualquer um que fez check-in, menos bloqueados (ordem sorteada)", async () => {
+      const ids = await montar("2026-01-01", ["D"]).idsDoTurno(turno);
+      expect([...ids].sort()).toEqual(["A", "C"]);
+      expect(ids).toEqual(ordemSorteio(["C", "A"], "T" + hojeSP()));
     });
 
     it("livre marcado pra amanhã ainda usa a escala", async () => {
       expect(await montar("2999-01-01", []).idsDoTurno(turno)).toEqual(["A"]);
+    });
+  });
+
+  it("sorteio: estável no turno, muda entre turnos, quem chega depois só se encaixa", () => {
+    const ids = Array.from({ length: 12 }, (_, i) => "c" + i);
+    const a = ordemSorteio(ids, "T1-2026-10-03");
+    expect(ordemSorteio([...ids].reverse(), "T1-2026-10-03")).toEqual(a); // não depende da ordem de chegada
+    expect(ordemSorteio(ids, "T2-2026-10-03")).not.toEqual(a); // outro turno, outra ordem
+    const comNovo = ordemSorteio([...ids, "novo"], "T1-2026-10-03").filter((x) => x !== "novo");
+    expect(comNovo).toEqual(a); // os de antes mantêm a ordem
+  });
+
+  describe("gerente bloqueia/desbloqueia o time dele", () => {
+    const gerente = { id: "G", name: "Gerente Ana", role: "gerente" } as any;
+    const diretor = { id: "D", name: "Rodrigo", role: "diretor" } as any;
+    const montar = (linhas: any[]) => {
+      const repo = {
+        findOne: async ({ where }: any) => linhas.find((l) => l.userId === where.userId) ?? null,
+        create: (x: any) => x,
+        save: async (x: any) => (linhas.push(x), x),
+        delete: async ({ userId }: any) => linhas.splice(linhas.findIndex((l) => l.userId === userId), 1),
+      };
+      const users = { getScopeIds: async (u: any) => (u.role === "diretor" ? null : ["G", "C1", "C2"]) };
+      return new PlantaoService({} as any, {} as any, {} as any, repo as any, {} as any, {} as any, users as any);
+    };
+
+    it("bloqueia e desbloqueia corretor do time", async () => {
+      const linhas: any[] = [];
+      const s = montar(linhas);
+      await s.bloquear(gerente, "C1");
+      expect(linhas).toEqual([expect.objectContaining({ userId: "C1", porNome: "Gerente Ana", porDiretor: false })]);
+      await s.desbloquear(gerente, "C1");
+      expect(linhas).toEqual([]);
+    });
+
+    it("não mexe em quem é de fora do time nem em si mesmo", async () => {
+      const s = montar([]);
+      await expect(s.bloquear(gerente, "X")).rejects.toThrow("não é da sua equipe");
+      await expect(s.bloquear(gerente, "G")).rejects.toThrow("não pode se bloquear");
+    });
+
+    it("bloqueio do Diretor só o Diretor desbloqueia", async () => {
+      const linhas: any[] = [];
+      const s = montar(linhas);
+      await s.bloquear(diretor, "C2");
+      await expect(s.desbloquear(gerente, "C2")).rejects.toThrow("só ele desbloqueia");
+      await s.desbloquear(diretor, "C2");
+      expect(linhas).toEqual([]);
     });
   });
 

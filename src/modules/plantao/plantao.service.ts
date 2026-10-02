@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleIn
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, Not, Repository } from "typeorm";
 import { Cron } from "@nestjs/schedule";
+import { createHash } from "crypto";
 import { PlantaoCheckin } from "./plantao-checkin.entity";
 import { PlantaoBloqueio } from "./plantao-bloqueio.entity";
 import { UsersService } from "../users/users.service";
@@ -89,6 +90,16 @@ export function escolherTurno<T extends { horaInicio: string; horaFim: string }>
   if (aberto) return { turno: aberto, janela: "aberta" };
   const rolando = meus.find((t) => t.horaInicio <= hhmm && hhmm < t.horaFim);
   return rolando ? { turno: rolando, janela: "fechada" } : null;
+}
+
+/**
+ * Ordem de sorteio do turno: cada corretor ganha um número "da sorte" fixo pro
+ * turno do dia (hash de turno+dia+id). Muda a cada turno, mas fica estável durante
+ * ele — quem entra depois só se encaixa, sem embaralhar o rodízio de quem já está.
+ */
+export function ordemSorteio(ids: string[], semente: string): string[] {
+  const n = (id: string) => createHash("md5").update(semente + ":" + id).digest("hex");
+  return [...ids].sort((a, b) => n(a).localeCompare(n(b)));
 }
 
 export type BloqueioEfetivo = { por: string; porDiretor: boolean; via: string | null; viaId: string | null };
@@ -193,6 +204,8 @@ export class PlantaoService implements OnModuleInit {
     } else if (livre) {
       ids = (await this.users.find({ order: { name: "ASC" } })).filter((u) => this.elegivel(u)).map((u) => u.id);
     } else ids = turno.atendenteIds || [];
+    // Plantão livre: ordem do rodízio por sorteio automático (escala antiga mantém a ordem da escala).
+    if (livre) ids = ordemSorteio(ids, turno.id + hojeSP());
     return ids.filter((id) => !bloq.has(id));
   }
 
