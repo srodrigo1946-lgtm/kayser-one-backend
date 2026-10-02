@@ -74,7 +74,17 @@ export class PlantaoService implements OnModuleInit {
   async exigeCheckin(): Promise<boolean> {
     const s: any = await this.settings.get().catch(() => null);
     if (s && s.checkinObrigatorio === false) return false; // Diretor desligou a regra
-    return (await this.props.count({ where: { active: true, standLat: Not(IsNull()) } as any })) > 0;
+    const { total, faltam } = await this.contagemStands();
+    // Só vale quando TODOS os stands estão no mapa — senão o corretor de um stand ainda
+    // sem localização ficaria sem conseguir check-in (e sem lead).
+    return total > 0 && faltam === 0;
+  }
+
+  /** Quantos stands (endereço de stand dos imóveis ativos) existem e quantos faltam localizar. */
+  private async contagemStands(): Promise<{ total: number; faltam: number }> {
+    const ps = await this.props.find({ where: { active: true } });
+    const comStand = ps.filter((p) => (p.standAddress || "").trim());
+    return { total: comStand.length, faltam: comStand.filter((p) => p.standLat == null).length };
   }
 
   /** Busca a coordenada de um endereço (OpenStreetMap/Nominatim). */
@@ -93,6 +103,20 @@ export class PlantaoService implements OnModuleInit {
         /* tenta a próxima */
       }
       await new Promise((res) => setTimeout(res, 1100)); // Nominatim: 1 consulta/s
+    }
+    // 2ª tentativa: Photon (OpenStreetMap, aceita endereço mais "solto").
+    try {
+      const r = await fetch(`https://photon.komoot.io/api/?limit=1&lang=pt&q=${encodeURIComponent(limpo + ", Brasil")}`, {
+        headers: { "User-Agent": "KayserOneCRM/1.0 (stands de plantao)" },
+      });
+      if (r.ok) {
+        const j: any = await r.json();
+        const c = j?.features?.[0]?.geometry?.coordinates;
+        const pais = j?.features?.[0]?.properties?.countrycode;
+        if (Array.isArray(c) && (!pais || pais === "BR")) return { lat: Number(c[1]), lng: Number(c[0]) };
+      }
+    } catch {
+      /* sem localização */
     }
     return null;
   }
@@ -161,7 +185,8 @@ export class PlantaoService implements OnModuleInit {
     return {
       raio: RAIO_CHECKIN,
       checkinObrigatorio: cfg?.checkinObrigatorio !== false,
-      regraAtiva: cfg?.checkinObrigatorio !== false && stands.some((s) => s.localizado),
+      regraAtiva: cfg?.checkinObrigatorio !== false && stands.length > 0 && stands.every((s) => s.localizado),
+      faltamLocalizar: stands.filter((s) => !s.localizado).length,
       turnoAtivo: turno ? { id: turno.id, horaInicio: turno.horaInicio, horaFim: turno.horaFim, atendentes: turno.atendenteIds.length } : null,
       stands,
       checkinsHoje: cks.map((c) => ({
