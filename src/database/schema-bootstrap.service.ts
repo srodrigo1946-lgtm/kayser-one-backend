@@ -281,6 +281,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoIncluirDiretor" boolean NOT NULL DEFAULT true`);
     // Limite diário de leads do Corujão por corretor (01/10/2026 — pedido do Rodrigo: 20).
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoLimiteDia" int NOT NULL DEFAULT 20`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "checkinObrigatorio" boolean NOT NULL DEFAULT true`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoLastRun" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoAutoQtd" int NOT NULL DEFAULT 0`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoAgendadoPara" timestamp`);
@@ -381,6 +382,25 @@ export class SchemaBootstrapService implements OnModuleInit {
   /** Endereço do stand de vendas do empreendimento (cartão da visita pro cliente). */
   private async ensurePropertyStandAddress() {
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standAddress" varchar`);
+    // Check-in do plantão por GPS (01/10/2026): coordenada do stand + tabela de check-ins.
+    await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standLat" double precision`);
+    await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standLng" double precision`);
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS plantao_checkins (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "userId" varchar NOT NULL,
+        "turnoId" varchar NOT NULL,
+        data varchar(10) NOT NULL,
+        "propertyId" varchar,
+        "standNome" varchar,
+        lat double precision NOT NULL,
+        lng double precision NOT NULL,
+        distancia int NOT NULL,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
+    await this.dataSource.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_plantao_checkin_unico ON plantao_checkins ("userId", "turnoId", data)`
+    );
 
     // Endereços dos stands passados pelo Rodrigo (27/09/2026). Casa pelo nome do
     // imóvel e SÓ preenche se estiver vazio — edição feita na tela de Imóveis vence.

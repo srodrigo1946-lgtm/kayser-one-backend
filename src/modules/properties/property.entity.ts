@@ -40,6 +40,12 @@ export class Property {
   // Endereço do STAND DE VENDAS (onde o corretor recebe a visita). Vazio = usa o endereço do imóvel.
   @Column({ nullable: true })
   standAddress: string;
+
+  // Localização do stand no mapa (check-in do plantão por GPS).
+  @Column({ type: "float", nullable: true })
+  standLat: number;
+  @Column({ type: "float", nullable: true })
+  standLng: number;
   @Column({ nullable: true })
   bairro: string;
   @Column({ nullable: true })

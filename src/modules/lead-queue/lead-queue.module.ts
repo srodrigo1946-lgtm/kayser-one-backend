@@ -1,4 +1,5 @@
 import { Module, forwardRef } from "@nestjs/common";
+import { PlantaoModule } from "../plantao/plantao.module";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { LeadQueueSettings } from "./lead-queue-settings.entity";
 import { LeadQueueAssignment } from "./lead-queue-assignment.entity";
@@ -13,7 +14,7 @@ import { ConversationsModule } from "../conversations/conversations.module";
 import { WhatsappModule } from "../whatsapp/whatsapp.module";
 
 @Module({
-  imports: [
+  imports: [PlantaoModule, 
     TypeOrmModule.forFeature([LeadQueueSettings, LeadQueueAssignment, Conversation, User, Lead, Appointment]),
     EscalaModule,
     ConversationsModule,

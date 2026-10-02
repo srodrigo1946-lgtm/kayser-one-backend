@@ -112,6 +112,10 @@ export class Settings {
   @Column({ default: true })
   corujaoIncluirDiretor: boolean;
 
+  // Check-in por GPS no stand obrigatório pra receber lead do plantão.
+  @Column({ default: true })
+  checkinObrigatorio: boolean;
+
   // Máximo de leads do Corujão que cada corretor pega por dia (0 = sem limite).
   @Column({ type: "int", default: 20 })
   corujaoLimiteDia: number;

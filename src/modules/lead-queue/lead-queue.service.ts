@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, Inject, forwardRef } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, Inject, forwardRef, Optional } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, LessThan, Like, MoreThan, Repository } from "typeorm";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -21,6 +21,7 @@ export function formatarVisita(d: Date): string {
   return `${dia} às ${hora}`;
 }
 import { EscalaService } from "../escala/escala.service";
+import { PlantaoService } from "../plantao/plantao.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
 import { ConfigService } from "@nestjs/config";
@@ -46,7 +47,8 @@ export class LeadQueueService {
     private readonly conversations: ConversationsService,
     @Inject(forwardRef(() => WhatsappService))
     private readonly whatsapp: WhatsappService,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    @Optional() private readonly plantao?: PlantaoService
   ) {}
 
   /**
@@ -177,7 +179,14 @@ export class LeadQueueService {
   /** Atendentes de plantão AGORA = turno ativo ∩ usuários válidos. Vazio fora de plantão. */
   private async atendentesDoTurno(now = new Date()): Promise<string[]> {
     const turno = await this.escala.turnoAtivo(now);
-    return turno ? this.filtrarAtivos(turno.atendenteIds) : [];
+    if (!turno) return [];
+    const ativos = await this.filtrarAtivos(turno.atendenteIds);
+    // Check-in por GPS no stand: sem check-in neste turno, não recebe lead (regra do
+    // Rodrigo). Só vale quando já existe stand localizado (senão travaria a fila toda).
+    if (this.plantao && (await this.plantao.exigeCheckin().catch(() => false))) {
+      return this.plantao.comCheckin(turno.id, ativos);
+    }
+    return ativos;
   }
 
   /** Próximo do rodízio (avança o ponteiro em `s`; caller salva `s`). */

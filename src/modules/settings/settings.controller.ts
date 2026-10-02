@@ -67,6 +67,9 @@ class UpdateSettingsDto {
   @IsOptional() @IsString()
   metaAdAccountIds?: string;
 
+  @IsOptional() @IsBoolean()
+  checkinObrigatorio?: boolean;
+
   @IsOptional() @IsString()
   metaPageToken?: string;
 
