@@ -60,14 +60,18 @@ export class EscalaService implements OnModuleInit {
    * O fim é exclusivo: 13:00 já pertence ao turno da tarde, não ao da manhã.
    */
   async turnoAtivo(now: Date): Promise<EscalaTurno | null> {
+    const { hhmm, turnos } = await this.turnosDoDia(now);
+    return turnos.find((t) => t.horaInicio <= hhmm && hhmm < t.horaFim) ?? null;
+  }
+
+  /** Turnos de hoje (Brasília) + hora atual "HH:MM". */
+  async turnosDoDia(now: Date): Promise<{ hhmm: string; turnos: EscalaTurno[] }> {
     const p = Object.fromEntries(
       EscalaService.FMT.formatToParts(now).map((x) => [x.type, x.value])
     );
     const dia = EscalaService.DIAS[p.weekday];
     const hh = p.hour === "24" ? "00" : p.hour; // Intl pode devolver "24" à meia-noite
-    const hhmm = `${hh}:${p.minute}`;
-    const turnos = await this.repo.find({ where: { diaSemana: dia } });
-    return turnos.find((t) => t.horaInicio <= hhmm && hhmm < t.horaFim) ?? null;
+    return { hhmm: `${hh}:${p.minute}`, turnos: await this.repo.find({ where: { diaSemana: dia } }) };
   }
 
   async setAtendentes(id: string, atendenteIds: string[]): Promise<EscalaTurno> {

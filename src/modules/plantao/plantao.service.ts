@@ -69,6 +69,25 @@ export function confereEndereco(endereco: string, resultado: string): boolean {
   return palavras.length > 0 && palavras.every((w) => r.includes(w));
 }
 
+/** Check-in abre 60 min antes do turno e fecha na hora do início (09:00 ok, 09:01 não). */
+export const ANTECEDENCIA_CHECKIN = 60;
+const minutos = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/**
+ * Dos turnos do corretor hoje, qual vale pro check-in agora:
+ * "aberta" = dentro do prazo (até a hora do início); "fechada" = turno já começou e o prazo passou.
+ */
+export function escolherTurno<T extends { horaInicio: string; horaFim: string }>(
+  meus: T[],
+  hhmm: string
+): { turno: T; janela: "aberta" | "fechada" } | null {
+  const agora = minutos(hhmm);
+  const aberto = meus.find((t) => agora >= minutos(t.horaInicio) - ANTECEDENCIA_CHECKIN && agora <= minutos(t.horaInicio));
+  if (aberto) return { turno: aberto, janela: "aberta" };
+  const rolando = meus.find((t) => t.horaInicio <= hhmm && hhmm < t.horaFim);
+  return rolando ? { turno: rolando, janela: "fechada" } : null;
+}
+
 /** Stand mais perto + se está dentro do raio (tolera até 50 m de erro do GPS). */
 export function standMaisPerto<T extends { lat: number; lng: number }>(
   lat: number,
@@ -264,18 +283,17 @@ export class PlantaoService implements OnModuleInit {
 
   /** Situação do corretor agora: está na escala? já fez check-in neste turno? */
   async status(user: User) {
-    const turno = await this.escala.turnoAtivo(new Date());
     const regraAtiva = await this.exigeCheckin();
-    if (!turno) return { regraAtiva, turnoAtivo: false, naEscala: false, checkin: null };
-    const naEscala = (turno.atendenteIds || []).includes(user.id);
-    const ck = naEscala
-      ? await this.checkins.findOne({ where: { userId: user.id, turnoId: turno.id, data: hojeSP() } })
-      : null;
+    const { hhmm, turnos } = await this.escala.turnosDoDia(new Date());
+    const e = escolherTurno(turnos.filter((t) => (t.atendenteIds || []).includes(user.id)), hhmm);
+    if (!e) return { regraAtiva, turnoAtivo: false, naEscala: false, checkin: null };
+    const ck = await this.checkins.findOne({ where: { userId: user.id, turnoId: e.turno.id, data: hojeSP() } });
     return {
       regraAtiva,
       turnoAtivo: true,
-      turno: { horaInicio: turno.horaInicio, horaFim: turno.horaFim },
-      naEscala,
+      turno: { horaInicio: e.turno.horaInicio, horaFim: e.turno.horaFim },
+      naEscala: true,
+      janela: e.janela,
       checkin: ck ? { stand: ck.standNome, distancia: ck.distancia, hora: ck.createdAt } : null,
     };
   }
@@ -283,14 +301,20 @@ export class PlantaoService implements OnModuleInit {
   /** Check-in: GPS do celular precisa estar a até 200 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Não consegui ler sua localização.");
-    const turno = await this.escala.turnoAtivo(new Date());
-    if (!turno) throw new BadRequestException("Não tem plantão rolando agora — o check-in abre no horário do seu turno.");
-    if (!(turno.atendenteIds || []).includes(user.id)) {
-      throw new BadRequestException("Você não está na escala deste turno.");
+    const { hhmm, turnos } = await this.escala.turnosDoDia(new Date());
+    const e = escolherTurno(turnos.filter((t) => (t.atendenteIds || []).includes(user.id)), hhmm);
+    if (!e) {
+      throw new BadRequestException(
+        `Agora não tem check-in pra você — ele abre ${ANTECEDENCIA_CHECKIN} min antes do seu turno e vai até a hora do início.`
+      );
     }
+    const turno = e.turno;
     const data = hojeSP();
     const ja = await this.checkins.findOne({ where: { userId: user.id, turnoId: turno.id, data } });
     if (ja) return { ok: true, jaFeito: true, stand: ja.standNome, distancia: ja.distancia };
+    if (e.janela === "fechada") {
+      throw new BadRequestException(`Check-in encerrado: era até as ${turno.horaInicio}. Você não entra neste plantão.`);
+    }
     const stands = await this.stands();
     if (!stands.length) throw new BadRequestException("Nenhum stand localizado ainda — avise o Diretor.");
     const r = standMaisPerto(lat, lng, stands, precisao);

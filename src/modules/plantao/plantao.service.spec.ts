@@ -1,4 +1,4 @@
-import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco } from "./plantao.service";
+import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco, escolherTurno } from "./plantao.service";
 
 describe("Check-in do plantão (geolocalização)", () => {
   const stand = { nome: "Stand Sky", lat: -22.7556, lng: -43.4603 };
@@ -40,6 +40,18 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(confereEndereco(end, "Praça Professora Heley Batista, Barra Olímpica")).toBe(true);
     expect(confereEndereco("R. Lopo Saraiva, 179, Loja A – Pechincha", "179, Rua Lopo Saraiva, Pechincha, Rio de Janeiro")).toBe(true);
     expect(confereEndereco("Av. Mário Guimarães, 517 – Centro", "Avenida Mario Guimaraes, Centro, Nova Iguaçu")).toBe(true);
+  });
+
+  it("prazo do check-in: até a hora do início (09:00 ok, 09:01 não)", () => {
+    const manha = { id: "m", horaInicio: "09:00", horaFim: "13:00" };
+    const tarde = { id: "t", horaInicio: "13:00", horaFim: "17:00" };
+    expect(escolherTurno([manha], "07:59")).toBeNull(); // cedo demais
+    expect(escolherTurno([manha], "08:00")).toEqual({ turno: manha, janela: "aberta" });
+    expect(escolherTurno([manha], "09:00")).toEqual({ turno: manha, janela: "aberta" });
+    expect(escolherTurno([manha], "09:01")).toEqual({ turno: manha, janela: "fechada" });
+    expect(escolherTurno([manha], "13:00")).toBeNull(); // turno acabou
+    // nos dois turnos: 12:30 já é o check-in da tarde
+    expect(escolherTurno([manha, tarde], "12:30")?.turno.id).toBe("t");
   });
 
   it("dia em Brasília", () => {
