@@ -43,6 +43,32 @@ export function limparEndereco(e: string): string {
     .trim();
 }
 
+const semAcento = (t: string) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/**
+ * Identidade do stand: rua/praça sem número, "s/n", acento e pontuação.
+ * "Praça Professora Heley Batista, s/n – Barra…" e "…, s/n – Barra…/RJ" = mesmo stand.
+ */
+export function chaveStand(endereco: string): string {
+  return semAcento(limparEndereco(endereco).split(/\s-\s/)[0])
+    .replace(/\bs\/?n\b/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\b\d+\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * O resultado do mapa é mesmo essa rua? Todas as palavras "de verdade" do nome
+ * (ex.: "heley", "batista") têm que aparecer — evita pegar outra praça qualquer.
+ */
+export function confereEndereco(endereco: string, resultado: string): boolean {
+  const genericas = new Set(["rua", "avenida", "praca", "estrada", "travessa", "alameda", "largo", "rodovia", "professor", "professora", "doutor", "doutora", "das", "dos", "del"]);
+  const palavras = chaveStand(endereco).split(" ").filter((w) => w.length >= 3 && !genericas.has(w));
+  const r = semAcento(resultado);
+  return palavras.length > 0 && palavras.every((w) => r.includes(w));
+}
+
 /** Stand mais perto + se está dentro do raio (tolera até 50 m de erro do GPS). */
 export function standMaisPerto<T extends { lat: number; lng: number }>(
   lat: number,
@@ -128,7 +154,7 @@ export class PlantaoService implements OnModuleInit {
         const r = await fetch(url, { headers: { "User-Agent": "KayserOneCRM/1.0 (stands de plantao)", "Accept-Language": "pt-BR" } });
         if (r.ok) {
           const j: any[] = await r.json();
-          if (j?.[0]?.lat) return { lat: Number(j[0].lat), lng: Number(j[0].lon) };
+          if (j?.[0]?.lat && confereEndereco(endereco, j[0].display_name || "")) return { lat: Number(j[0].lat), lng: Number(j[0].lon) };
         }
       } catch {
         /* tenta a próxima */
@@ -143,8 +169,10 @@ export class PlantaoService implements OnModuleInit {
       if (r.ok) {
         const j: any = await r.json();
         const c = j?.features?.[0]?.geometry?.coordinates;
-        const pais = j?.features?.[0]?.properties?.countrycode;
-        if (Array.isArray(c) && (!pais || pais === "BR")) return { lat: Number(c[1]), lng: Number(c[0]) };
+        const pr = j?.features?.[0]?.properties || {};
+        const pais = pr.countrycode;
+        if (Array.isArray(c) && (!pais || pais === "BR") && confereEndereco(endereco, `${pr.name || ""} ${pr.street || ""}`))
+          return { lat: Number(c[1]), lng: Number(c[0]) };
       }
     } catch {
       /* sem localização */
@@ -159,13 +187,16 @@ export class PlantaoService implements OnModuleInit {
     let localizados = 0;
     const semLocalizacao: string[] = [];
     const cache = new Map<string, { lat: number; lng: number } | null>();
+    // Stand já localizado (ex.: Diretor colou do Maps) vale pros outros imóveis do mesmo stand.
+    for (const p of ps) if (p.standLat != null && p.standAddress) cache.set(chaveStand(p.standAddress), { lat: p.standLat, lng: p.standLng });
     for (const p of pendentes) {
       const end = p.standAddress.trim();
-      if (!cache.has(end)) {
-        cache.set(end, await this.geocodificar(end, { cep: p.cep, cidade: p.cidade, estado: p.estado }));
+      const k = chaveStand(end);
+      if (!cache.has(k)) {
+        cache.set(k, await this.geocodificar(end, { cep: p.cep, cidade: p.cidade, estado: p.estado }));
         await new Promise((res) => setTimeout(res, 1100));
       }
-      const c = cache.get(end);
+      const c = cache.get(k);
       if (c) {
         await this.props.update(p.id, { standLat: c.lat, standLng: c.lng } as any);
         localizados++;
@@ -186,8 +217,9 @@ export class PlantaoService implements OnModuleInit {
     const p = await this.props.findOne({ where: { id: propertyId } });
     if (!p) throw new BadRequestException("Imóvel não encontrado.");
     // Mesmo endereço de stand = mesmo stand: atualiza todos os imóveis daquele stand.
-    const iguais = p.standAddress
-      ? (await this.props.find({ where: { standAddress: p.standAddress } })).map((x) => x.id)
+    const k = p.standAddress ? chaveStand(p.standAddress) : "";
+    const iguais = k
+      ? (await this.props.find()).filter((x) => x.standAddress && chaveStand(x.standAddress) === k).map((x) => x.id)
       : [p.id];
     await this.props.update({ id: In(iguais) }, { standLat: lat, standLng: lng } as any);
     return { ok: true, atualizados: iguais.length };

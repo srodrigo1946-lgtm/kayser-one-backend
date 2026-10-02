@@ -422,6 +422,12 @@ export class SchemaBootstrapService implements OnModuleInit {
         [endereco, nome]
       );
     }
+    // 01/10: o mapa reserva (Photon) pôs o stand da Pça Heley Batista (Barra Olímpica)
+    // numa praça de São Cristóvão. Barra Olímpica fica a oeste de -43,3 → apaga o ponto errado.
+    await this.dataSource.query(
+      `UPDATE properties SET "standLat" = NULL, "standLng" = NULL
+        WHERE "standAddress" ILIKE '%heley%' AND "standLng" > -43.3`
+    );
   }
 
   /** Reuniões em vídeo (aba Reuniões). */

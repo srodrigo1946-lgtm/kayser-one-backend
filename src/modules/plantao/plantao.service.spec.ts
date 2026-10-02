@@ -1,4 +1,4 @@
-import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco } from "./plantao.service";
+import { distanciaMetros, standMaisPerto, hojeSP, RAIO_CHECKIN, limparEndereco, chaveStand, confereEndereco } from "./plantao.service";
 
 describe("Check-in do plantão (geolocalização)", () => {
   const stand = { nome: "Stand Sky", lat: -22.7556, lng: -43.4603 };
@@ -25,6 +25,21 @@ describe("Check-in do plantão (geolocalização)", () => {
   it("limpa o endereço pro mapa (Loja A, R., travessão)", () => {
     expect(limparEndereco("R. Lopo Saraiva, 179, Loja A – Pechincha, Rio de Janeiro – RJ")).toBe("Rua Lopo Saraiva, 179 - Pechincha, Rio de Janeiro - RJ");
     expect(limparEndereco("AV Mário Guimarães, 517 – Centro")).toBe("Avenida Mário Guimarães, 517 - Centro");
+  });
+
+  it("mesmo stand com endereço escrito diferente", () => {
+    const a = chaveStand("Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro – RJ, 22783-116");
+    expect(a).toBe("praca professora heley batista");
+    expect(chaveStand("Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro/RJ")).toBe(a);
+    expect(chaveStand("R. Lopo Saraiva, 179, Loja A – Pechincha")).not.toBe(a);
+  });
+
+  it("recusa resultado do mapa que é outra rua", () => {
+    const end = "Praça Professora Heley Batista, s/n – Barra Olímpica, Rio de Janeiro – RJ";
+    expect(confereEndereco(end, "Praça Professora Alice Brasil")).toBe(false);
+    expect(confereEndereco(end, "Praça Professora Heley Batista, Barra Olímpica")).toBe(true);
+    expect(confereEndereco("R. Lopo Saraiva, 179, Loja A – Pechincha", "179, Rua Lopo Saraiva, Pechincha, Rio de Janeiro")).toBe(true);
+    expect(confereEndereco("Av. Mário Guimarães, 517 – Centro", "Avenida Mario Guimaraes, Centro, Nova Iguaçu")).toBe(true);
   });
 
   it("dia em Brasília", () => {
