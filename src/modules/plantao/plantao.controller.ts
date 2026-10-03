@@ -46,7 +46,7 @@ export class PlantaoController {
   }
 
   @Post("checkin")
-  @ApiOperation({ summary: "Check-in no plantão pela localização do celular (até 500 m do stand)" })
+  @ApiOperation({ summary: "Check-in no plantão pela localização do celular (até 1500 m do stand)" })
   checkin(@Body() dto: LocalizacaoDto, @Request() req: any) {
     return this.plantao.checkin(req.user, dto.lat, dto.lng, dto.precisao);
   }
@@ -55,6 +55,14 @@ export class PlantaoController {
   @ApiOperation({ summary: "Registrar falha de check-in do lado do celular (GPS negado/desligado)" })
   tentativa(@Body() dto: TentativaDto, @Request() req: any) {
     return this.plantao.registrarTentativa(req.user, dto.motivo).then(() => ({ ok: true }));
+  }
+
+  @Post("tentativa/:id/usar-como-stand")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "A posição de quem tentou vira a do stand (Diretor confirma que ele está lá)" })
+  usarComoStand(@Param("id", ParseUUIDPipe) id: string) {
+    return this.plantao.usarPosicaoComoStand(id);
   }
 
   @Get("painel")

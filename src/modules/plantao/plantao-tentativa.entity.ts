@@ -30,6 +30,17 @@ export class PlantaoTentativa {
   @Column({ type: "int", nullable: true })
   precisao: number | null;
 
+  // Onde o celular estava + qual stand era o mais perto (pro Diretor corrigir o stand
+  // com a posição de quem está lá). Apagado após 90 dias (LGPD).
+  @Column({ type: "float", nullable: true })
+  lat: number | null;
+
+  @Column({ type: "float", nullable: true })
+  lng: number | null;
+
+  @Column({ type: "varchar", nullable: true })
+  propertyId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

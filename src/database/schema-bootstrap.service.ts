@@ -426,6 +426,9 @@ export class SchemaBootstrapService implements OnModuleInit {
         "createdAt" timestamp NOT NULL DEFAULT now()
       )`);
     await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_plantao_tentativas_data ON plantao_tentativas (data)`);
+    await this.dataSource.query(`ALTER TABLE plantao_tentativas ADD COLUMN IF NOT EXISTS lat double precision`);
+    await this.dataSource.query(`ALTER TABLE plantao_tentativas ADD COLUMN IF NOT EXISTS lng double precision`);
+    await this.dataSource.query(`ALTER TABLE plantao_tentativas ADD COLUMN IF NOT EXISTS "propertyId" varchar`);
 
     // Endereços dos stands passados pelo Rodrigo (27/09/2026). Casa pelo nome do
     // imóvel e SÓ preenche se estiver vazio — edição feita na tela de Imóveis vence.

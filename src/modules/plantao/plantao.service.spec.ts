@@ -11,10 +11,11 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(d).toBeLessThan(120);
   });
 
-  it("libera dentro de 500 m e barra longe", () => {
+  it("libera dentro de 1500 m e barra longe", () => {
     expect(standMaisPerto(stand.lat + 0.001, stand.lng, [stand])?.dentro).toBe(true); // ~111 m
-    expect(standMaisPerto(stand.lat + 0.01, stand.lng, [stand])?.dentro).toBe(false); // ~1,1 km
-    expect(RAIO_CHECKIN).toBe(500);
+    expect(standMaisPerto(stand.lat + 0.02, stand.lng, [stand])?.dentro).toBe(false); // ~2,2 km
+    expect(RAIO_CHECKIN).toBe(1500);
+    expect(standMaisPerto(stand.lat + 0.0125, stand.lng, [stand])?.dentro).toBe(true); // ~1,4 km (caso da Anita)
     expect(standMaisPerto(stand.lat + 0.004, stand.lng, [stand])?.dentro).toBe(true); // ~445 m
   });
 
@@ -163,6 +164,7 @@ describe("Check-in do plantão (geolocalização)", () => {
     await expect(s.checkin(user, -22.95, -43.3597, 12)).rejects.toThrow("Chegue no stand");
     expect(salvos).toEqual([expect.objectContaining({ userId: "U", standNome: "Villa Santé", precisao: 12 })]);
     expect(salvos[0].distancia).toBeGreaterThan(2000);
+    expect(salvos[0]).toEqual(expect.objectContaining({ lat: -22.95, lng: -43.3597, propertyId: "P" }));
   });
 
   it("dia em Brasília", () => {

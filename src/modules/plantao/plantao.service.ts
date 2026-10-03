@@ -13,8 +13,8 @@ import { User, UserRole } from "../users/user.entity";
 import { EscalaService } from "../escala/escala.service";
 import { SettingsService } from "../settings/settings.service";
 
-/** Raio do check-in (m) — pedido do Rodrigo: 500 m (era 200 até 03/10). */
-export const RAIO_CHECKIN = 500;
+/** Raio do check-in (m) — pedido do Rodrigo: 1500 m (03/10; antes 500 e 200). */
+export const RAIO_CHECKIN = 1500;
 
 /** Distância em metros entre dois pontos (fórmula de Haversine). */
 export function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -387,7 +387,11 @@ export class PlantaoService implements OnModuleInit {
   }
 
   /** Grava uma tentativa de check-in que deu errado (pro painel do Diretor). */
-  async registrarTentativa(user: User, motivo: string, extra: { distancia?: number; standNome?: string; precisao?: number } = {}) {
+  async registrarTentativa(
+    user: User,
+    motivo: string,
+    extra: { distancia?: number; standNome?: string; precisao?: number; lat?: number; lng?: number; propertyId?: string } = {}
+  ) {
     await this.tentativas
       .save(
         this.tentativas.create({
@@ -397,6 +401,9 @@ export class PlantaoService implements OnModuleInit {
           distancia: extra.distancia ?? null,
           standNome: extra.standNome ?? null,
           precisao: isFinite(Number(extra.precisao)) ? Math.round(Number(extra.precisao)) : null,
+          lat: extra.lat ?? null,
+          lng: extra.lng ?? null,
+          propertyId: extra.propertyId ?? null,
         })
       )
       .catch(() => {});
@@ -494,6 +501,9 @@ export class PlantaoService implements OnModuleInit {
       else porPessoa.set(t.userId, { ultima: t, vezes: 1 });
     }
     return [...porPessoa.entries()].map(([userId, { ultima, vezes }]) => ({
+      id: ultima.id,
+      // Dá pra usar a posição dele como o stand (Diretor confirma que ele está lá).
+      podeUsarPosicao: ultima.lat != null && ultima.lng != null && !!ultima.propertyId,
       nome: nomes.get(userId) ?? "—",
       vezes,
       hora: ultima.createdAt,
@@ -503,6 +513,15 @@ export class PlantaoService implements OnModuleInit {
       // Conseguiu entrar depois (GPS ou liberado)?
       entrou: cks.some((c) => c.userId === userId && c.createdAt > ultima.createdAt),
     }));
+  }
+
+  /** Diretor: "ele está no stand" — a posição da última tentativa vira a do stand (e de quem divide o stand). */
+  async usarPosicaoComoStand(tentativaId: string) {
+    const t = await this.tentativas.findOne({ where: { id: tentativaId } });
+    if (!t || t.lat == null || t.lng == null || !t.propertyId) throw new BadRequestException("Essa tentativa não tem posição do GPS.");
+    const r = await this.definirLocalizacao(t.propertyId, t.lat, t.lng);
+    this.logger.log(`Stand ${t.standNome} corrigido pela posição de ${t.userId} (tentativa ${t.id}).`);
+    return { ...r, stand: t.standNome };
   }
 
   /** Situação do corretor agora: está na escala? já fez check-in neste turno? */
@@ -524,9 +543,9 @@ export class PlantaoService implements OnModuleInit {
     };
   }
 
-  /** Check-in: GPS do celular precisa estar a até 500 m de um stand cadastrado. */
+  /** Check-in: GPS do celular precisa estar a até 1500 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
-    const info: { distancia?: number; standNome?: string } = {};
+    const info: { distancia?: number; standNome?: string; lat?: number; lng?: number; propertyId?: string } = {};
     try {
       return await this.fazerCheckin(user, lat, lng, precisao, info);
     } catch (e) {
@@ -535,7 +554,13 @@ export class PlantaoService implements OnModuleInit {
     }
   }
 
-  private async fazerCheckin(user: User, lat: number, lng: number, precisao: number | undefined, info: { distancia?: number; standNome?: string }) {
+  private async fazerCheckin(
+    user: User,
+    lat: number,
+    lng: number,
+    precisao: number | undefined,
+    info: { distancia?: number; standNome?: string; lat?: number; lng?: number; propertyId?: string }
+  ) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Não consegui ler sua localização.");
     const bl = (await this.mapaBloqueios()).get(user.id);
     if (bl) throw new BadRequestException(`Você está bloqueado no plantão (por ${this.textoBloqueio(bl)}). Fale com seu gestor.`);
@@ -556,7 +581,7 @@ export class PlantaoService implements OnModuleInit {
     const stands = await this.stands();
     if (!stands.length) throw new BadRequestException("Nenhum stand localizado ainda — avise o Diretor.");
     const r = standMaisPerto(lat, lng, stands, precisao);
-    if (r) Object.assign(info, { distancia: r.distancia, standNome: r.stand.nome });
+    if (r) Object.assign(info, { distancia: r.distancia, standNome: r.stand.nome, lat, lng, propertyId: r.stand.propertyId });
     if (!r || !r.dentro) {
       const km = r ? (r.distancia >= 1000 ? `${(r.distancia / 1000).toFixed(1)} km` : `${r.distancia} m`) : "?";
       throw new BadRequestException(
