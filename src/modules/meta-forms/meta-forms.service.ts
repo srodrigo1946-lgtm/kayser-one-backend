@@ -365,6 +365,9 @@ export class MetaFormsService {
    * leads de formulário das últimas 72h que ficaram SEM nenhuma mensagem. Poucos por
    * vez (3 a cada 10 min) pra não ser bloqueado de novo.
    */
+  /** leadId → até quando pular (1ª mensagem falhou). Em memória: restart zera, sem problema. */
+  private falhouContato = new Map<string, number>();
+
   @Cron("*/10 * * * *", { timeZone: "America/Sao_Paulo" })
   async contatarPendentes(limite = 3) {
     if (await this.whatsapp.pausado()) return { enviados: 0, motivo: "pausado" };
@@ -381,15 +384,25 @@ export class MetaFormsService {
     const msgRepo = this.leadsRepo.manager.getRepository(Message);
     const filaRepo = this.leadsRepo.manager.getRepository(LeadQueueAssignment);
     let enviados = 0;
+    let falhas = 0;
     for (const lead of leads) {
       if (enviados >= limite) break;
+      // Falhou há pouco (ex.: número sem WhatsApp)? Pula por 2h — senão esse lead
+      // travava a fila e ninguém depois dele recebia a 1ª mensagem (Chico, 30/09).
+      if ((this.falhouContato.get(lead.id) ?? 0) > Date.now()) continue;
       const conv = await convRepo.findOne({ where: { leadId: lead.id } });
       if (!conv) continue;
       if ((await msgRepo.count({ where: { conversationId: conv.id } })) > 0) continue;
       const atrib = await filaRepo.findOne({ where: { conversationId: conv.id }, order: { assignedAt: "DESC" } });
       if (enviados > 0) await this.whatsapp.pausaEntreDisparos();
-      if (await this.primeiroContato(conv.id, lead, atrib)) enviados++;
-      else break; // falhou (WhatsApp ainda com problema): tenta de novo na próxima rodada
+      if (await this.primeiroContato(conv.id, lead, atrib)) {
+        enviados++;
+        this.falhouContato.delete(lead.id);
+      } else {
+        this.falhouContato.set(lead.id, Date.now() + 2 * 3600_000);
+        // 2 falhas na rodada = o problema é o WhatsApp: tenta de novo na próxima.
+        if (++falhas >= 2) break;
+      }
     }
     if (enviados) this.logger.log(`WhatsApp de volta: 1ª mensagem enviada a ${enviados} lead(s) pendente(s).`);
     return { enviados };
