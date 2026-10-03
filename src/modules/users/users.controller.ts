@@ -67,7 +67,7 @@ export class UsersController {
 
   @Post("me/avatar")
   @ApiOperation({ summary: "Enviar/atualizar a foto de perfil (arquivo de imagem)" })
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
   setAvatar(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
     return this.usersService.setAvatar(req.user.id, file);
   }

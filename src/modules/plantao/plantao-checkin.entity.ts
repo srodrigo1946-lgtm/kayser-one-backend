@@ -37,6 +37,10 @@ export class PlantaoCheckin {
   @Column({ type: "int" })
   distancia: number;
 
+  // Precisão (m) informada pelo celular. GPS falso costuma vir com 0–1 m.
+  @Column({ type: "int", nullable: true })
+  precisao: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

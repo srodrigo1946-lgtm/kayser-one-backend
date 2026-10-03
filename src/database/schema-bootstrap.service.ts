@@ -402,6 +402,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_plantao_checkin_unico ON plantao_checkins ("userId", "turnoId", data)`
     );
+    // Precisão (m) que o celular informou — GPS falso costuma vir com 0–1 m (02/10/2026).
+    await this.dataSource.query(`ALTER TABLE plantao_checkins ADD COLUMN IF NOT EXISTS precisao int`);
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS plantao_bloqueios (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

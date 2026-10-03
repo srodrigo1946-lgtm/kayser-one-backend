@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsNumber, IsOptional, IsString } from "class-validator";
+import { IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -9,10 +9,10 @@ import { UserRole } from "../users/user.entity";
 import { PlantaoService } from "./plantao.service";
 
 class LocalizacaoDto {
-  @Type(() => Number) @IsNumber()
+  @Type(() => Number) @IsNumber() @Min(-90) @Max(90)
   lat: number;
 
-  @Type(() => Number) @IsNumber()
+  @Type(() => Number) @IsNumber() @Min(-180) @Max(180)
   lng: number;
 
   @IsOptional() @Type(() => Number) @IsNumber()
@@ -70,13 +70,13 @@ export class PlantaoController {
 
   @Post("bloquear/:userId")
   @ApiOperation({ summary: "Bloquear corretor no plantão (hierarquia)" })
-  bloquear(@Param("userId") userId: string, @Request() req: any) {
+  bloquear(@Param("userId", ParseUUIDPipe) userId: string, @Request() req: any) {
     return this.plantao.bloquear(req.user, userId);
   }
 
   @Post("desbloquear/:userId")
   @ApiOperation({ summary: "Desbloquear corretor no plantão (hierarquia)" })
-  desbloquear(@Param("userId") userId: string, @Request() req: any) {
+  desbloquear(@Param("userId", ParseUUIDPipe) userId: string, @Request() req: any) {
     return this.plantao.desbloquear(req.user, userId);
   }
 
@@ -92,7 +92,7 @@ export class PlantaoController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Diretor no stand grava a localização exata (Diretor)" })
-  definir(@Param("propertyId") propertyId: string, @Body() dto: LocalizacaoDto) {
+  definir(@Param("propertyId", ParseUUIDPipe) propertyId: string, @Body() dto: LocalizacaoDto) {
     return this.plantao.definirLocalizacao(propertyId, dto.lat, dto.lng);
   }
 }

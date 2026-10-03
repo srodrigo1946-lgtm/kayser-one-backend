@@ -70,6 +70,9 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean()
   checkinObrigatorio?: boolean;
 
+  @IsOptional() @IsInt() @Min(0)
+  corujaoLimiteDia?: number;
+
   @IsOptional() @IsString()
   plantaoLivreDesde?: string | null;
 
@@ -129,7 +132,7 @@ export class SettingsController {
   @Post("direcional-image")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
   @ApiOperation({ summary: "Enviar a imagem de condições comerciais (somente Diretor)" })
   setDirecionalImage(@UploadedFile() file: Express.Multer.File) {
     return this.settingsService.setDirecionalImage(file);

@@ -13,6 +13,10 @@ import { LeadQueueAssignment } from "../lead-queue/lead-queue-assignment.entity"
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { User, UserRole } from "../users/user.entity";
+
+// Mesmo critério do ehGestor do Kanban (não importa de lá: kanban.service já importa este arquivo).
+const ehGestor = (u?: User | null) =>
+  !!u && [UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE].includes(u.role);
 import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
@@ -284,6 +288,7 @@ export class LeadsService {
         throw new ForbiddenException("Você só pode atribuir o lead a alguém da sua equipe.");
       }
     }
+    if (dto.status !== undefined && dto.status !== lead.status) await this.checarColunaGestores(dto.status, user);
     const prevResponsavelId = lead.responsavelId ?? null;
     const prevStatus = lead.status;
     Object.assign(lead, dto);
@@ -306,7 +311,7 @@ export class LeadsService {
       }
     }
     if (saved.status === LeadStatus.VENDA_PERDIDA && prevStatus !== LeadStatus.VENDA_PERDIDA) {
-      await this.arquivarSemInteresse(saved);
+      await this.arquivarSemInteresse(saved, user);
     }
     return saved;
   }
@@ -314,6 +319,7 @@ export class LeadsService {
   async updateStatus(id: string, status: string, order?: number, user?: User) {
     const lead = await this.findOne(id, user);
     const fromStatus = lead.status;
+    if (status !== fromStatus) await this.checarColunaGestores(status, user);
     lead.status = status as LeadStatus;
     if (order !== undefined) lead.kanbanOrder = order;
     // Ao fechar a venda, grava a DATA (só se ainda não tiver — não sobrescreve edição).
@@ -337,7 +343,7 @@ export class LeadsService {
           .update({ leadId: saved.id, status: "pendente" }, { status: "atendido" })
           .catch(() => {});
       }
-      if (saved.status === LeadStatus.VENDA_PERDIDA) await this.arquivarSemInteresse(saved);
+      if (saved.status === LeadStatus.VENDA_PERDIDA) await this.arquivarSemInteresse(saved, user);
     }
     return saved;
   }
@@ -346,7 +352,9 @@ export class LeadsService {
    * "Cliente sem interesse" (venda_perdida): o lead volta pro Diretor como
    * responsável (sai da carteira do corretor) e o histórico é apagado.
    */
-  async arquivarSemInteresse(lead: Lead) {
+  async arquivarSemInteresse(lead: Lead, user?: User) {
+    // O histórico some (regra do Rodrigo) — fica no log do servidor quem moveu.
+    this.logger.log(`Sem interesse: lead ${lead.id} (${lead.name}) movido por ${user?.name ?? "sistema"} — histórico apagado.`);
     try {
       const diretor = await this.leadsRepo.manager.getRepository(User).findOne({
         where: { role: UserRole.DIRETOR, empresaId: IsNull() },
@@ -386,6 +394,15 @@ export class LeadsService {
     return { message: "Lead removido." };
   }
 
+  /** Coluna "só gerentes": vale em qualquer rota (Kanban, PUT /leads/:id e /status), não só no Kanban. */
+  private async checarColunaGestores(status: string, user?: User) {
+    if (!user || ehGestor(user)) return;
+    const col: any[] = await this.leadsRepo.manager
+      .query(`SELECT "somenteGestores" FROM kanban_columns WHERE key = $1`, [status])
+      .catch(() => []);
+    if (col[0]?.somenteGestores) throw new ForbiddenException("Essa coluna é só para gerentes.");
+  }
+
   /** Coluna do Kanban válida pra quem importa (+ dono forçado: "sem interesse" = Diretor). */
   private async resolverColuna(status: string | undefined, user: User): Promise<{ key?: string; dono?: string }> {
     if (!status || !status.trim()) return {};
@@ -393,7 +410,7 @@ export class LeadsService {
       .query(`SELECT key, "somenteGestores" FROM kanban_columns WHERE key = $1`, [status.trim()])
       .catch(() => []);
     if (!col.length) throw new BadRequestException("Coluna do Kanban não encontrada.");
-    if (col[0].somenteGestores && user.role === UserRole.CORRETOR) {
+    if (col[0].somenteGestores && !ehGestor(user)) {
       throw new BadRequestException("Essa coluna é só para gerentes.");
     }
     if (col[0].key === LeadStatus.VENDA_PERDIDA) {
@@ -594,8 +611,14 @@ export class LeadsService {
     if (user.role !== UserRole.DIRETOR && imp[0].userId !== user.id) {
       throw new ForbiddenException("Você só pode apagar as planilhas que você subiu.");
     }
+    // Diretor apaga a planilha toda; os outros cargos só os leads que AINDA estão com eles
+    // (os já repassados pra outra pessoa ficam — só o Diretor apaga lead de vez).
+    const soMeus = user.role !== UserRole.DIRETOR;
     const ids: string[] = (
-      await this.leadsRepo.manager.query(`SELECT id FROM leads WHERE "importLote" = $1`, [importId])
+      await this.leadsRepo.manager.query(
+        `SELECT id FROM leads WHERE "importLote" = $1${soMeus ? ` AND "responsavelId" = $2` : ""}`,
+        soMeus ? [importId, user.id] : [importId]
+      )
     ).map((r: any) => r.id);
     if (ids.length) {
       const m = this.leadsRepo.manager;
@@ -605,9 +628,11 @@ export class LeadsService {
       await m.query(`DELETE FROM appointments WHERE "leadId" = ANY($1)`, [ids]);
       await m.query(`DELETE FROM leads WHERE id = ANY($1)`, [ids]);
     }
-    await this.leadsRepo.manager.query(`UPDATE lead_imports SET apagado = true WHERE id = $1`, [importId]);
-    this.logger.log(`Planilha ${importId} apagada por ${user.name}: ${ids.length} lead(s).`);
-    return { removidos: ids.length };
+    const resto: any[] = await this.leadsRepo.manager.query(`SELECT COUNT(*)::int AS n FROM leads WHERE "importLote" = $1`, [importId]);
+    const mantidos = Number(resto[0]?.n) || 0;
+    if (!mantidos) await this.leadsRepo.manager.query(`UPDATE lead_imports SET apagado = true WHERE id = $1`, [importId]);
+    this.logger.log(`Planilha ${importId} apagada por ${user.name}: ${ids.length} lead(s); ${mantidos} mantido(s).`);
+    return { removidos: ids.length, mantidos };
   }
 
   async exportToExcel(user: User) {

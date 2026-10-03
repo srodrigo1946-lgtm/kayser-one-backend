@@ -95,7 +95,7 @@ export class DocumentsController {
   }
 
   @Post("docs/:token/upload")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 20 * 1024 * 1024 } }))
   @ApiOperation({ summary: "Upload público de um documento" })
   uploadPublic(
     @Param("token") token: string,

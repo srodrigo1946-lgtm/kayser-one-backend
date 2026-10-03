@@ -375,6 +375,14 @@ export class PlantaoService implements OnModuleInit {
     await this.localizarStands().catch(() => {});
   }
 
+  /** LGPD: a localização do corretor só fica 90 dias (o check-in continua, sem lat/lng). */
+  @Cron("45 6 * * *", { timeZone: "America/Sao_Paulo" })
+  async apagarLocalizacoesAntigas() {
+    await this.checkins
+      .query(`UPDATE plantao_checkins SET lat = 0, lng = 0 WHERE "createdAt" < now() - interval '90 days' AND (lat <> 0 OR lng <> 0)`)
+      .catch(() => {});
+  }
+
   /** Diretor no stand: grava a localização exata do stand (mais preciso que o endereço). */
   async definirLocalizacao(propertyId: string, lat: number, lng: number) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Localização inválida.");
@@ -447,6 +455,7 @@ export class PlantaoService implements OnModuleInit {
         nome: nomes.get(c.userId) ?? "—",
         stand: c.standNome,
         distancia: c.distancia,
+        precisao: c.precisao ?? null,
         hora: c.createdAt,
         doTurnoAtual: !!turno && c.turnoId === turno.id,
       })),
@@ -510,6 +519,7 @@ export class PlantaoService implements OnModuleInit {
         lat,
         lng,
         distancia: r.distancia,
+        precisao: isFinite(Number(precisao)) ? Math.round(Number(precisao)) : null,
       })
     );
     this.logger.log(`Check-in: ${user.name} no stand ${r.stand.nome} (${r.distancia} m).`);

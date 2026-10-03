@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  ParseUUIDPipe,
   Query,
   UseGuards,
   Request,
@@ -124,7 +125,7 @@ export class LeadsController {
 
   @Delete("import/:importId")
   @ApiOperation({ summary: "Apagar todos os leads de uma planilha importada" })
-  apagarImportacao(@Param("importId") importId: string, @Request() req: any) {
+  apagarImportacao(@Param("importId", ParseUUIDPipe) importId: string, @Request() req: any) {
     return this.leadsService.apagarImportacao(importId, req.user);
   }
 

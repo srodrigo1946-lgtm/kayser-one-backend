@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Request, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 import { CorujaoService } from "./corujao.service";
@@ -37,7 +37,7 @@ export class CorujaoController {
 
   @Post("aceitar/:leadId")
   @ApiOperation({ summary: "Aceitar a sugestão: o lead vira do corretor e volta pro fluxo" })
-  aceitar(@Param("leadId") leadId: string, @Request() req: any) {
+  aceitar(@Param("leadId", ParseUUIDPipe) leadId: string, @Request() req: any) {
     return this.corujao.aceitar(leadId, req.user);
   }
 
