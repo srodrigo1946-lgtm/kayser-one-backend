@@ -36,7 +36,8 @@ export class DashboardService {
 
   async getMetrics(user: User) {
     // Lead cadastrado pelos TIMES (source "time") não conta no painel.
-    const base = { ...(await this.scopeWhere(user)), source: Not(In(FORA_DO_PAINEL)) };
+    const escopo = await this.scopeWhere(user);
+    const base = { ...escopo, source: Not(In(FORA_DO_PAINEL)) };
     const now = new Date();
 
     const [leadsHoje, leadsSemana, leadsMes, visitas, vendas, semAtendimento, semContato] =
@@ -44,8 +45,9 @@ export class DashboardService {
         this.leadsRepo.count({ where: { ...base, createdAt: Between(startOfDay(now), now) } }),
         this.leadsRepo.count({ where: { ...base, createdAt: Between(startOfWeek(now), now) } }),
         this.leadsRepo.count({ where: { ...base, createdAt: Between(startOfMonth(now), now) } }),
-        this.leadsRepo.count({ where: { ...base, status: LeadStatus.VISITA_REALIZADA } }),
-        this.leadsRepo.count({ where: { ...base, status: LeadStatus.VENDA_GANHA } }),
+        // Visita/venda conta de QUALQUER origem (time e planilha também) — só a contagem de leads separa.
+        this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VISITA_REALIZADA } }),
+        this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VENDA_GANHA } }),
         this.leadsRepo.count({ where: { ...base, status: LeadStatus.NOVO_LEAD, lastContactAt: IsNull() } }),
         this.leadsRepo.count({
           where: { ...base, lastContactAt: LessThan(subDays(now, 3)) },
@@ -239,7 +241,8 @@ export class DashboardService {
   }
 
   async getMonthlyData(user: User, year?: number) {
-    const base = { ...(await this.scopeWhere(user)), source: Not(In(FORA_DO_PAINEL)) };
+    const escopo = await this.scopeWhere(user);
+    const base = { ...escopo, source: Not(In(FORA_DO_PAINEL)) };
     const targetYear = year || new Date().getFullYear();
     const months = [];
     // Jan–Dez do ano escolhido (12 meses).
@@ -249,8 +252,9 @@ export class DashboardService {
 
       const [leads, vendas, visitas] = await Promise.all([
         this.leadsRepo.count({ where: { ...base, createdAt: Between(start, end) } }),
-        this.leadsRepo.count({ where: { ...base, status: LeadStatus.VENDA_GANHA, dataVenda: Between(start, end) as any } }),
-        this.leadsRepo.count({ where: { ...base, status: LeadStatus.VISITA_REALIZADA, updatedAt: Between(start, end) } }),
+        // Venda/visita de qualquer origem (lead de time que vendeu é venda — 03/10/2026).
+        this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VENDA_GANHA, dataVenda: Between(start, end) as any } }),
+        this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VISITA_REALIZADA, updatedAt: Between(start, end) } }),
       ]);
 
       months.push({
