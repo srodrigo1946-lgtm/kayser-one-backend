@@ -308,6 +308,12 @@ export class LeadsService {
       const newResponsavelId = saved.responsavelId ?? null;
       if (newResponsavelId !== prevResponsavelId) {
         await this.convRepo.update({ leadId: saved.id }, { assignedToId: newResponsavelId });
+        // Mandado por outra pessoa → aviso "chegou lead" na tela de quem recebeu.
+        if (newResponsavelId && user && newResponsavelId !== user.id) {
+          await this.leadsRepo
+            .update(saved.id, { transferidoEm: new Date(), transferidoPorId: user.id } as any)
+            .catch(() => {});
+        }
       }
     }
     if (saved.status === LeadStatus.VENDA_PERDIDA && prevStatus !== LeadStatus.VENDA_PERDIDA) {

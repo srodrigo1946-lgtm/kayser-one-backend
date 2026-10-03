@@ -598,12 +598,27 @@ export class LeadQueueService {
     const rows = await this.assignRepo.find({ where: { status: "pendente", assignedToId: userId }, order: { assignedAt: "DESC" } });
     const ids = rows.map((r) => r.leadId).filter(Boolean) as string[];
     const leads = ids.length ? await this.leadsRepo.find({ where: { id: In(ids) } }) : [];
-    return rows
+    const daFila = rows
       .filter((r) => !!r.leadId)
       .map((r) => {
         const l = leads.find((x) => x.id === r.leadId);
-        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, dueAt: r.dueAt };
+        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, dueAt: r.dueAt as Date | null, transferido: false };
       });
+    // Transferidos pra ele nas últimas 12 h (gestor mandou o lead).
+    const transf = await this.leadsRepo.find({
+      where: { responsavelId: userId, transferidoEm: MoreThan(new Date(Date.now() - 12 * 3600_000)) } as any,
+    });
+    const deTransferencia = transf
+      .filter((l) => !ids.includes(l.id))
+      .map((l) => ({
+        id: `t-${l.id}-${new Date((l as any).transferidoEm).getTime()}`,
+        leadId: l.id,
+        nome: l.name ?? "Lead",
+        empreendimento: l.empreendimento ?? null,
+        dueAt: null as Date | null,
+        transferido: true,
+      }));
+    return [...daFila, ...deTransferencia];
   }
 
   async getPendentes(): Promise<{ leadId: string; dueAt: Date }[]> {

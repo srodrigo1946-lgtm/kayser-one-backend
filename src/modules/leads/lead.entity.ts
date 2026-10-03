@@ -154,6 +154,14 @@ export class Lead {
   @Column({ nullable: true })
   kanbanOrder: number;
 
+  // Transferência manual (gestor mandou o lead pra alguém): dispara o aviso com
+  // fogos na tela de quem recebeu.
+  @Column({ type: "timestamp", nullable: true })
+  transferidoEm: Date | null;
+
+  @Column({ type: "varchar", nullable: true })
+  transferidoPorId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
