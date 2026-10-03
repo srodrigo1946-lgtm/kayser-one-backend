@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsNumber, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -17,6 +17,11 @@ class LocalizacaoDto {
 
   @IsOptional() @Type(() => Number) @IsNumber()
   precisao?: number;
+}
+
+class TentativaDto {
+  @IsString() @MaxLength(300)
+  motivo: string;
 }
 
 class LiberarDto {
@@ -44,6 +49,12 @@ export class PlantaoController {
   @ApiOperation({ summary: "Check-in no plantão pela localização do celular (até 500 m do stand)" })
   checkin(@Body() dto: LocalizacaoDto, @Request() req: any) {
     return this.plantao.checkin(req.user, dto.lat, dto.lng, dto.precisao);
+  }
+
+  @Post("tentativa")
+  @ApiOperation({ summary: "Registrar falha de check-in do lado do celular (GPS negado/desligado)" })
+  tentativa(@Body() dto: TentativaDto, @Request() req: any) {
+    return this.plantao.registrarTentativa(req.user, dto.motivo).then(() => ({ ok: true }));
   }
 
   @Get("painel")

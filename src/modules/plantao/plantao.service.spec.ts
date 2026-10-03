@@ -63,6 +63,7 @@ describe("Check-in do plantão (geolocalização)", () => {
         { find: async () => [{ standAddress: "Rua X, 1", standLat: -22.9 }] } as any, // stands todos localizados
         { find: async () => [] } as any,
         { find: async () => bloqueados.map((userId) => ({ userId })) } as any,
+        {} as any, // tentativas
         {} as any,
         { get: async () => ({ checkinObrigatorio: true, plantaoLivreDesde: livreDesde }) } as any,
         {} as any
@@ -103,7 +104,7 @@ describe("Check-in do plantão (geolocalização)", () => {
         delete: async ({ userId }: any) => linhas.splice(linhas.findIndex((l) => l.userId === userId), 1),
       };
       const users = { getScopeIds: async (u: any) => (u.role === "diretor" ? null : ["G", "C1", "C2"]) };
-      return new PlantaoService({} as any, {} as any, {} as any, repo as any, {} as any, {} as any, users as any);
+      return new PlantaoService({} as any, {} as any, {} as any, repo as any, {} as any, {} as any, {} as any, users as any);
     };
 
     it("bloqueia e desbloqueia corretor do time", async () => {
@@ -144,6 +145,24 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(m.get("G")?.via).toBeNull();
     expect(m.get("C2")?.via).toBe("Gerente Ana");
     expect(m.has("X")).toBe(false);
+  });
+
+  it("check-in que falha fica gravado como tentativa (com distância)", async () => {
+    const salvos: any[] = [];
+    const s = new PlantaoService(
+      { findOne: async () => null } as any,
+      { find: async () => [{ id: "P", name: "Villa Santé", standAddress: "Rua X", standLat: -22.9269, standLng: -43.3597, active: true }] } as any,
+      {} as any,
+      { find: async () => [] } as any,
+      { create: (x: any) => x, save: async (x: any) => (salvos.push(x), x) } as any,
+      { turnosDoDia: async () => ({ hhmm: "08:30", turnos: [{ id: "T", horaInicio: "09:00", horaFim: "12:00", atendenteIds: ["U"] }] }) } as any,
+      { get: async () => ({ checkinObrigatorio: true }) } as any,
+      {} as any
+    );
+    const user = { id: "U", name: "Ana", role: "corretor" } as any;
+    await expect(s.checkin(user, -22.95, -43.3597, 12)).rejects.toThrow("Chegue no stand");
+    expect(salvos).toEqual([expect.objectContaining({ userId: "U", standNome: "Villa Santé", precisao: 12 })]);
+    expect(salvos[0].distancia).toBeGreaterThan(2000);
   });
 
   it("dia em Brasília", () => {

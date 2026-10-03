@@ -5,6 +5,7 @@ import { Cron } from "@nestjs/schedule";
 import { createHash } from "crypto";
 import { PlantaoCheckin } from "./plantao-checkin.entity";
 import { PlantaoBloqueio } from "./plantao-bloqueio.entity";
+import { PlantaoTentativa } from "./plantao-tentativa.entity";
 import { UsersService } from "../users/users.service";
 import { descendantIds, HierUser } from "../../common/hierarchy";
 import { Property } from "../properties/property.entity";
@@ -151,6 +152,7 @@ export class PlantaoService implements OnModuleInit {
     @InjectRepository(Property) private readonly props: Repository<Property>,
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(PlantaoBloqueio) private readonly bloqueios: Repository<PlantaoBloqueio>,
+    @InjectRepository(PlantaoTentativa) private readonly tentativas: Repository<PlantaoTentativa>,
     private readonly escala: EscalaService,
     private readonly settings: SettingsService,
     private readonly usersService: UsersService
@@ -381,6 +383,23 @@ export class PlantaoService implements OnModuleInit {
     await this.checkins
       .query(`UPDATE plantao_checkins SET lat = 0, lng = 0 WHERE "createdAt" < now() - interval '90 days' AND (lat <> 0 OR lng <> 0)`)
       .catch(() => {});
+    await this.tentativas.query(`DELETE FROM plantao_tentativas WHERE "createdAt" < now() - interval '90 days'`).catch(() => {});
+  }
+
+  /** Grava uma tentativa de check-in que deu errado (pro painel do Diretor). */
+  async registrarTentativa(user: User, motivo: string, extra: { distancia?: number; standNome?: string; precisao?: number } = {}) {
+    await this.tentativas
+      .save(
+        this.tentativas.create({
+          userId: user.id,
+          data: hojeSP(),
+          motivo: (motivo || "").slice(0, 300),
+          distancia: extra.distancia ?? null,
+          standNome: extra.standNome ?? null,
+          precisao: isFinite(Number(extra.precisao)) ? Math.round(Number(extra.precisao)) : null,
+        })
+      )
+      .catch(() => {});
   }
 
   /** Diretor no stand: grava a localização exata do stand (mais preciso que o endereço). */
@@ -451,6 +470,7 @@ export class PlantaoService implements OnModuleInit {
       plantaoLivreDesde: cfg?.plantaoLivreDesde ?? null,
       corretores,
       turnosHoje,
+      tentativasHoje: await this.tentativasHoje(data, cks),
       checkinsHoje: cks.map((c) => ({
         nome: nomes.get(c.userId) ?? "—",
         stand: c.standNome,
@@ -460,6 +480,29 @@ export class PlantaoService implements OnModuleInit {
         doTurnoAtual: !!turno && c.turnoId === turno.id,
       })),
     };
+  }
+
+  /** Tentativas que deram errado hoje, uma linha por pessoa (a última + quantas vezes). */
+  private async tentativasHoje(data: string, cks: PlantaoCheckin[]) {
+    const ts = await this.tentativas.find({ where: { data }, order: { createdAt: "DESC" } });
+    if (!ts.length) return [];
+    const nomes = new Map((await this.users.find({ where: { id: In([...new Set(ts.map((t) => t.userId))]) } })).map((u) => [u.id, u.name]));
+    const porPessoa = new Map<string, { ultima: PlantaoTentativa; vezes: number }>();
+    for (const t of ts) {
+      const p = porPessoa.get(t.userId);
+      if (p) p.vezes++;
+      else porPessoa.set(t.userId, { ultima: t, vezes: 1 });
+    }
+    return [...porPessoa.entries()].map(([userId, { ultima, vezes }]) => ({
+      nome: nomes.get(userId) ?? "—",
+      vezes,
+      hora: ultima.createdAt,
+      motivo: ultima.motivo,
+      distancia: ultima.distancia,
+      stand: ultima.standNome,
+      // Conseguiu entrar depois (GPS ou liberado)?
+      entrou: cks.some((c) => c.userId === userId && c.createdAt > ultima.createdAt),
+    }));
   }
 
   /** Situação do corretor agora: está na escala? já fez check-in neste turno? */
@@ -483,6 +526,16 @@ export class PlantaoService implements OnModuleInit {
 
   /** Check-in: GPS do celular precisa estar a até 500 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
+    const info: { distancia?: number; standNome?: string } = {};
+    try {
+      return await this.fazerCheckin(user, lat, lng, precisao, info);
+    } catch (e) {
+      if (e instanceof BadRequestException) await this.registrarTentativa(user, e.message, { ...info, precisao });
+      throw e;
+    }
+  }
+
+  private async fazerCheckin(user: User, lat: number, lng: number, precisao: number | undefined, info: { distancia?: number; standNome?: string }) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Não consegui ler sua localização.");
     const bl = (await this.mapaBloqueios()).get(user.id);
     if (bl) throw new BadRequestException(`Você está bloqueado no plantão (por ${this.textoBloqueio(bl)}). Fale com seu gestor.`);
@@ -503,6 +556,7 @@ export class PlantaoService implements OnModuleInit {
     const stands = await this.stands();
     if (!stands.length) throw new BadRequestException("Nenhum stand localizado ainda — avise o Diretor.");
     const r = standMaisPerto(lat, lng, stands, precisao);
+    if (r) Object.assign(info, { distancia: r.distancia, standNome: r.stand.nome });
     if (!r || !r.dentro) {
       const km = r ? (r.distancia >= 1000 ? `${(r.distancia / 1000).toFixed(1)} km` : `${r.distancia} m`) : "?";
       throw new BadRequestException(

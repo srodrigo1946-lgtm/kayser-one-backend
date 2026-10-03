@@ -414,6 +414,18 @@ export class SchemaBootstrapService implements OnModuleInit {
         "createdAt" timestamp NOT NULL DEFAULT now()
       )`);
     await this.dataSource.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_plantao_bloqueio_user ON plantao_bloqueios ("userId")`);
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS plantao_tentativas (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "userId" varchar NOT NULL,
+        data varchar(10) NOT NULL,
+        motivo text NOT NULL,
+        distancia int,
+        "standNome" varchar,
+        precisao int,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
+    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_plantao_tentativas_data ON plantao_tentativas (data)`);
 
     // Endereços dos stands passados pelo Rodrigo (27/09/2026). Casa pelo nome do
     // imóvel e SÓ preenche se estiver vazio — edição feita na tela de Imóveis vence.
