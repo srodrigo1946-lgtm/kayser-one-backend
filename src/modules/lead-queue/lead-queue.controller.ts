@@ -49,6 +49,12 @@ export class LeadQueueController {
     return this.queue.getPendentes();
   }
 
+  @Get("meus")
+  @ApiOperation({ summary: "Leads da fila esperando eu atender (aviso na tela)" })
+  meus(@Request() req: any) {
+    return this.queue.getMeusPendentes(req.user.id);
+  }
+
   @Get("ordem")
   @ApiOperation({ summary: "Ordem da fila agora (todos os cargos VEEM, só leitura)" })
   ordem(@Request() req: any) {

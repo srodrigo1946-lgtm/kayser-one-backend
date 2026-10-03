@@ -593,6 +593,19 @@ export class LeadQueueService {
   }
 
   /** Atribuições pendentes (leadId + prazo) — para o relógio de contagem no card. */
+  /** Leads da fila esperando ESTE corretor atender (pro aviso com fogos na tela dele). */
+  async getMeusPendentes(userId: string) {
+    const rows = await this.assignRepo.find({ where: { status: "pendente", assignedToId: userId }, order: { assignedAt: "DESC" } });
+    const ids = rows.map((r) => r.leadId).filter(Boolean) as string[];
+    const leads = ids.length ? await this.leadsRepo.find({ where: { id: In(ids) } }) : [];
+    return rows
+      .filter((r) => !!r.leadId)
+      .map((r) => {
+        const l = leads.find((x) => x.id === r.leadId);
+        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, dueAt: r.dueAt };
+      });
+  }
+
   async getPendentes(): Promise<{ leadId: string; dueAt: Date }[]> {
     const rows = await this.assignRepo.find({ where: { status: "pendente" } });
     return rows
