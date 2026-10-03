@@ -12,8 +12,8 @@ import { User, UserRole } from "../users/user.entity";
 import { EscalaService } from "../escala/escala.service";
 import { SettingsService } from "../settings/settings.service";
 
-/** Raio do check-in (m) — pedido do Rodrigo: 200 m. */
-export const RAIO_CHECKIN = 200;
+/** Raio do check-in (m) — pedido do Rodrigo: 500 m (era 200 até 03/10). */
+export const RAIO_CHECKIN = 500;
 
 /** Distância em metros entre dois pontos (fórmula de Haversine). */
 export function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -472,7 +472,7 @@ export class PlantaoService implements OnModuleInit {
     };
   }
 
-  /** Check-in: GPS do celular precisa estar a até 200 m de um stand cadastrado. */
+  /** Check-in: GPS do celular precisa estar a até 500 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
     if (!isFinite(lat) || !isFinite(lng)) throw new BadRequestException("Não consegui ler sua localização.");
     const bl = (await this.mapaBloqueios()).get(user.id);

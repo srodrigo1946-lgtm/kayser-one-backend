@@ -11,10 +11,11 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(d).toBeLessThan(120);
   });
 
-  it("libera dentro de 200 m e barra longe", () => {
+  it("libera dentro de 500 m e barra longe", () => {
     expect(standMaisPerto(stand.lat + 0.001, stand.lng, [stand])?.dentro).toBe(true); // ~111 m
     expect(standMaisPerto(stand.lat + 0.01, stand.lng, [stand])?.dentro).toBe(false); // ~1,1 km
-    expect(RAIO_CHECKIN).toBe(200);
+    expect(RAIO_CHECKIN).toBe(500);
+    expect(standMaisPerto(stand.lat + 0.004, stand.lng, [stand])?.dentro).toBe(true); // ~445 m
   });
 
   it("escolhe o stand mais perto", () => {

@@ -41,7 +41,7 @@ export class PlantaoController {
   }
 
   @Post("checkin")
-  @ApiOperation({ summary: "Check-in no plantão pela localização do celular (até 200 m do stand)" })
+  @ApiOperation({ summary: "Check-in no plantão pela localização do celular (até 500 m do stand)" })
   checkin(@Body() dto: LocalizacaoDto, @Request() req: any) {
     return this.plantao.checkin(req.user, dto.lat, dto.lng, dto.precisao);
   }
