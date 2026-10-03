@@ -26,6 +26,9 @@ import { ConversationsService } from "../conversations/conversations.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
 import { ConfigService } from "@nestjs/config";
 
+// Origem paga (anúncio / formulário Meta): o aviso na tela usa frase própria.
+const ANUNCIO = ["anuncio", "formulario_meta"];
+
 @Injectable()
 export class LeadQueueService {
   private readonly logger = new Logger(LeadQueueService.name);
@@ -602,7 +605,7 @@ export class LeadQueueService {
       .filter((r) => !!r.leadId)
       .map((r) => {
         const l = leads.find((x) => x.id === r.leadId);
-        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, dueAt: r.dueAt as Date | null, transferido: false };
+        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, anuncio: ANUNCIO.includes(l?.source ?? ""), dueAt: r.dueAt as Date | null, transferido: false };
       });
     // Transferidos pra ele nas últimas 12 h (gestor mandou o lead).
     const transf = await this.leadsRepo.find({
@@ -615,6 +618,7 @@ export class LeadQueueService {
         leadId: l.id,
         nome: l.name ?? "Lead",
         empreendimento: l.empreendimento ?? null,
+        anuncio: ANUNCIO.includes(l.source ?? ""),
         dueAt: null as Date | null,
         transferido: true,
       }));
