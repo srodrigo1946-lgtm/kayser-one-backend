@@ -479,6 +479,9 @@ export class PlantaoService implements OnModuleInit {
       turnosHoje,
       tentativasHoje: await this.tentativasHoje(data, cks),
       checkinsHoje: cks.map((c) => ({
+        id: c.id,
+        // Check-in por GPS (não liberado à mão) pode virar a posição exata do stand.
+        podeUsarPosicao: !!c.propertyId && !(c.lat === 0 && c.lng === 0),
         nome: nomes.get(c.userId) ?? "—",
         stand: c.standNome,
         distancia: c.distancia,
@@ -522,6 +525,15 @@ export class PlantaoService implements OnModuleInit {
     const r = await this.definirLocalizacao(t.propertyId, t.lat, t.lng);
     this.logger.log(`Stand ${t.standNome} corrigido pela posição de ${t.userId} (tentativa ${t.id}).`);
     return { ...r, stand: t.standNome };
+  }
+
+  /** Diretor: a posição de um check-in feito no stand vira a localização do stand. */
+  async usarCheckinComoStand(checkinId: string) {
+    const c = await this.checkins.findOne({ where: { id: checkinId } });
+    if (!c || !c.propertyId || (c.lat === 0 && c.lng === 0)) throw new BadRequestException("Esse check-in não tem posição do GPS.");
+    const r = await this.definirLocalizacao(c.propertyId, c.lat, c.lng);
+    this.logger.log(`Stand ${c.standNome} ajustado pela posição do check-in ${c.id}.`);
+    return { ...r, stand: c.standNome };
   }
 
   /** Situação do corretor agora: está na escala? já fez check-in neste turno? */

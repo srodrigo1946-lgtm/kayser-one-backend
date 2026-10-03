@@ -65,6 +65,14 @@ export class PlantaoController {
     return this.plantao.usarPosicaoComoStand(id);
   }
 
+  @Post("checkin/:id/usar-como-stand")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "A posição de um check-in vira a do stand (Diretor)" })
+  usarCheckinComoStand(@Param("id", ParseUUIDPipe) id: string) {
+    return this.plantao.usarCheckinComoStand(id);
+  }
+
   @Get("painel")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)
