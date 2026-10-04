@@ -1,5 +1,5 @@
 import { UnauthorizedException, BadRequestException } from "@nestjs/common";
-import * as bcrypt from "bcrypt";
+import * as bcrypt from "bcryptjs";
 import { AuthService } from "./auth.service";
 
 jest.setTimeout(30000);
