@@ -7,6 +7,7 @@ import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
+import { IaOneService, IA_ONE_INSTANCIA } from "./ia-one.service";
 
 /**
  * O cliente mandou ÁUDIO → a resposta vira voz. Texto pra ser FALADO é diferente do
@@ -96,7 +97,8 @@ export class WhatsappFlowService {
     private readonly whatsapp: WhatsappService,
     private readonly leadQueue: LeadQueueService,
     private readonly users: UsersService,
-    private readonly knowledge: KnowledgeService
+    private readonly knowledge: KnowledgeService,
+    private readonly iaOne: IaOneService
   ) {}
 
   /** Catálogo dos empreendimentos pro prompt (não derruba a resposta se falhar). */
@@ -214,6 +216,11 @@ export class WhatsappFlowService {
 
       const { remoteJid, remoteJidFull, isGroup, text, mediaType, fromMe, pushName, instanceName, ad } = parsed;
       if (!text) return { ignored: true };
+
+      // Número da IA One (só equipe): não vira lead nem conversa de cliente.
+      if (instanceName === IA_ONE_INSTANCIA) {
+        return this.iaOne.receber(payload, { remoteJid, isGroup, text, mediaType, fromMe, pushName });
+      }
 
       // A instância se chama "user_<id>": é o dono do número que recebeu a mensagem.
       const receivingUserId = instanceName?.startsWith("user_")

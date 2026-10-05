@@ -48,6 +48,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureLeadImports", () => this.ensureLeadImports()],
       ["corujaoParaPrimeiroContato", () => this.corujaoParaPrimeiroContato()],
       ["corujaoMarcaEntrada", () => this.corujaoMarcaEntrada()],
+      ["ensureIaOne", () => this.ensureIaOne()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -458,6 +459,25 @@ export class SchemaBootstrapService implements OnModuleInit {
       `UPDATE properties SET "standLat" = NULL, "standLng" = NULL
         WHERE "standAddress" ILIKE '%heley%' AND "standLng" > -43.3`
     );
+  }
+
+  /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */
+  private async ensureIaOne() {
+    for (const c of ["ioneClaudeKey", "ioneOpenaiKey", "ionePlanilhaUrl", "ioneUnidadesUrl", "ioneUnidadesCsv", "ionePrecosUrl", "ioneInfo"]) {
+      await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "${c}" text`);
+    }
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "ioneAtivo" boolean NOT NULL DEFAULT true`);
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS ia_one_mensagens (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        phone varchar NOT NULL,
+        "userId" varchar,
+        nome varchar,
+        direction varchar(3) NOT NULL,
+        content text NOT NULL,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
+    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_ia_one_phone ON ia_one_mensagens (phone, "createdAt")`);
   }
 
   /** Reuniões em vídeo (aba Reuniões). */

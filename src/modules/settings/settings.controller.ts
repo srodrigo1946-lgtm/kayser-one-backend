@@ -35,6 +35,27 @@ class UpdateSettingsDto {
   audioApiKey?: string;
 
   @IsOptional() @IsString()
+  ioneClaudeKey?: string;
+
+  @IsOptional() @IsString()
+  ioneOpenaiKey?: string;
+
+  @IsOptional() @IsString()
+  ionePlanilhaUrl?: string;
+
+  @IsOptional() @IsString()
+  ioneUnidadesUrl?: string;
+
+  @IsOptional() @IsString()
+  ionePrecosUrl?: string;
+
+  @IsOptional() @IsString()
+  ioneInfo?: string;
+
+  @IsOptional() @IsBoolean()
+  ioneAtivo?: boolean;
+
+  @IsOptional() @IsString()
   masterPrompt?: string;
 
   @IsOptional() @IsBoolean()

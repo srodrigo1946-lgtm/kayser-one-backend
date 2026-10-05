@@ -35,6 +35,35 @@ export class Settings {
   @Column({ nullable: true })
   audioApiKey: string;
 
+  // IA One (assistente da equipe, número próprio) — chaves SEPARADAS das do atendimento.
+  @Column({ type: "text", nullable: true })
+  ioneClaudeKey: string | null;
+
+  @Column({ type: "text", nullable: true })
+  ioneOpenaiKey: string | null;
+
+  // Planilha do Simulador Pro Soluto (Google Sheets, compartilhada por link).
+  @Column({ type: "text", nullable: true })
+  ionePlanilhaUrl: string | null;
+
+  // Planilha da tabela de unidades (se houver) — senão usa o CSV enviado.
+  @Column({ type: "text", nullable: true })
+  ioneUnidadesUrl: string | null;
+
+  @Column({ type: "text", nullable: true })
+  ioneUnidadesCsv: string | null;
+
+  // Link do painel de preços (Data Studio) que a One manda pro corretor.
+  @Column({ type: "text", nullable: true })
+  ionePrecosUrl: string | null;
+
+  // Materiais (links de book/vídeo) e informações extras escritas pelo Diretor.
+  @Column({ type: "text", nullable: true })
+  ioneInfo: string | null;
+
+  @Column({ default: true })
+  ioneAtivo: boolean;
+
   // Permite sobrescrever o prompt mestre padrão.
   @Column({ type: "text", nullable: true })
   masterPrompt: string;
