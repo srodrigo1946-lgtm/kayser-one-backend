@@ -212,7 +212,7 @@ export class IaOneService {
     const emps = d.simulador.empreendimentos
       .map(
         (e) =>
-          `- ${e.nome} (módulo ${e.modulo}): a partir de R$ ${e.valorVenda.toLocaleString("pt-BR")} · avaliação R$ ${e.avaliacao.toLocaleString("pt-BR")} · ${e.estoque} em estoque · ${
+          `- ${e.nome} (módulo ${e.modulo}): ${e.valorVenda ? `a partir de R$ ${e.valorVenda.toLocaleString("pt-BR")} · avaliação R$ ${e.avaliacao.toLocaleString("pt-BR")}` : "valor NÃO informado na planilha"} · ${e.estoque} em estoque · ${
             e.mesesEntrega ? `entrega em ${e.mesesEntrega} meses` : "pronto/entregue"
           }`
       )

@@ -21,11 +21,12 @@ describe("IA One — planilhas e simulação", () => {
       "Nome do Empreendimento,Módulo,Meses para Entrega,Entrega PJ,Valor de Venda,Estoque,Avaliação",
       "Ilhamar Beach & Home,1,33,33,475.548,279,514.000",
       "Vibe Sunset,1,0,0,508.300,7,504.100",
+      "Oceanside Recreio,1,0,0,0,70,0",
       ",,,,,,",
     ].join("\n");
     const r = lerSimulador(lerCsv(csv));
     expect(r.campanha).toContain("CAMPANHA G");
-    expect(r.empreendimentos).toHaveLength(2);
+    expect(r.empreendimentos).toHaveLength(3); // Oceanside entra mesmo sem valor
     expect(r.empreendimentos[0]).toEqual(expect.objectContaining({ nome: "Ilhamar Beach & Home", mesesEntrega: 33, valorVenda: 475548 }));
   });
 

@@ -71,8 +71,9 @@ export function lerSimulador(linhas: string[][]): { campanha: string; empreendim
     for (const l of linhas.slice(i + 1)) {
       const nome = (l[0] || "").trim();
       if (!nome) break;
+      // Sem valor na planilha (ex.: Oceanside) também entra — estoque/entrega ainda servem.
       const valorVenda = numBR(l[4]);
-      if (!valorVenda) continue;
+      if (!valorVenda && !numBR(l[5])) continue;
       empreendimentos.push({
         nome,
         modulo: (l[1] || "").trim(),
