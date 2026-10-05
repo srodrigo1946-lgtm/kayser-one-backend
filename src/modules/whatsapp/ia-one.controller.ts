@@ -13,6 +13,15 @@ class TestarDto {
   mensagem: string;
 }
 
+class UnidadesArquivoDto {
+  @IsString() @MaxLength(300)
+  nome: string;
+
+  // Arquivo em base64 (Excel .xlsx/.xls ou .csv).
+  @IsString() @MaxLength(20_000_000)
+  base64: string;
+}
+
 class UnidadesCsvDto {
   @IsString() @MaxLength(5_000_000)
   csv: string;
@@ -59,6 +68,12 @@ export class IaOneController {
   async unidadesCsv(@Body() dto: UnidadesCsvDto) {
     await this.settings.update({ ioneUnidadesCsv: dto.csv } as any);
     return this.one.resumoDados();
+  }
+
+  @Post("unidades-arquivo")
+  @ApiOperation({ summary: "Sobe unidades em Excel/CSV (tabela completa ou lista do simulador de um empreendimento)" })
+  unidadesArquivo(@Body() dto: UnidadesArquivoDto) {
+    return this.one.importarUnidades(dto.nome, dto.base64);
   }
 
   @Post("testar")

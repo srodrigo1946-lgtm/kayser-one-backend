@@ -55,3 +55,30 @@ describe("IA One — vínculo do WhatsApp pelo e-mail", () => {
     expect((await s.resetarSenha(u, "ana@x.com")).erro).toContain("24 h");
   });
 });
+
+describe("IA One — importar unidades em Excel", () => {
+  const XLSX = require("xlsx");
+  it("lista do simulador sem nome dentro usa o nome do arquivo e junta com o que já tinha", async () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["DADOS DAS UNIDADES"],
+      ["STATUS DA UNIDADE", "IDENTIFICADOR", "VALOR DE VENDA", "AVALIAÇÃO", "MÓDULO", "ENTREGA PJ", "ENTREGA OBRA"],
+      ["Disponível", "BL02-0205", 475548, 514000, 1, 33, 33],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Planilha1");
+    const base64 = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+    const salvos: any[] = [];
+    const settings = {
+      get: async () => ({ ioneUnidadesCsv: salvos.length ? salvos[salvos.length - 1].ioneUnidadesCsv : 'PRODUTO,BLOCO,UNIDADE,STATUS,DATA DE ENTREGA,VAGA,TIPO,ÁREA,PREÇO,AVALIAÇÃO\n"Vibe Sunset","1","BL01-0101","Disponível","01/2027","","","0","500000","500000"' }),
+      update: async (d: any) => salvos.push(d),
+    };
+    const s: any = new IaOneService({} as any, {} as any, settings as any, {} as any, {} as any);
+    s.dados = async () => ({ simulador: { empreendimentos: [{ nome: "Ilhamar Beach & Home" }] }, unidades: [], promocoes: [] });
+    s.resumoDados = async () => ({});
+    const r = await s.importarUnidades("ilhamar.xlsx", base64);
+    expect(r).toEqual(expect.objectContaining({ importadas: 1, empreendimento: "Ilhamar Beach & Home" }));
+    expect(salvos[0].ioneUnidadesCsv).toContain("Vibe Sunset"); // o que já tinha continua
+    expect(salvos[0].ioneUnidadesCsv).toContain('"Ilhamar Beach & Home","2","BL02-0205","Disponível"');
+    expect(salvos[0].ioneUnidadesCsv).toContain('"475548"');
+  });
+});

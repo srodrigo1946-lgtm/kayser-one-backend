@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import Anthropic from "@anthropic-ai/sdk";
 import * as bcrypt from "bcryptjs";
+import * as XLSX from "xlsx";
 import { IaOneMensagem } from "./ia-one-mensagem.entity";
 import { User, UserRole } from "../users/user.entity";
 import { SettingsService } from "../settings/settings.service";
@@ -14,6 +15,8 @@ import {
   lerSimulador,
   lerUnidades,
   lerUnidadesSimulador,
+  juntarUnidades,
+  unidadesParaCsv,
   lerPromocoes,
   abasDoHtmlview,
   acharPorNome,
@@ -96,19 +99,56 @@ export class IaOneService {
         this.logger.warn(`IA One: não li as unidades promocionais (${(e as Error).message}).`);
       }
     }
+    // Arquivos enviados e a planilha de unidades SOMAM às do simulador (por empreendimento).
+    if (s.ioneUnidadesCsv) unidades = juntarUnidades(unidades, lerUnidades(lerCsv(s.ioneUnidadesCsv)));
     if (s.ioneUnidadesUrl) {
       try {
-        const u = lerUnidades(lerCsv(await baixar(s.ioneUnidadesUrl)));
-        if (u.length) unidades = u;
+        unidades = juntarUnidades(unidades, lerUnidades(lerCsv(await baixar(s.ioneUnidadesUrl))));
       } catch (e) {
         this.logger.warn(`IA One: não li a planilha de unidades (${(e as Error).message}).`);
       }
-    } else if (s.ioneUnidadesCsv) {
-      const u = lerUnidades(lerCsv(s.ioneUnidadesCsv));
-      if (u.length) unidades = u;
     }
     this.cache = { em: Date.now(), simulador, unidades, promocoes };
     return this.cache;
+  }
+
+  /**
+   * Diretor sobe um arquivo de unidades (Excel ou CSV): a tabela completa (com PRODUTO)
+   * ou a lista do simulador de UM empreendimento (sem nome dentro — usa o nome do arquivo,
+   * ex.: "ilhamar.xlsx"). Junta com o que já foi enviado.
+   */
+  async importarUnidades(nomeArquivo: string, base64: string) {
+    const buf = Buffer.from(base64.includes(",") ? base64.split(",")[1] : base64, "base64");
+    const abas: string[][][] = [];
+    if (/\.(xlsx|xls)$/i.test(nomeArquivo)) {
+      const wb = XLSX.read(buf, { type: "buffer" });
+      for (const n of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json<any[]>(wb.Sheets[n], { header: 1, raw: true, defval: "" });
+        abas.push(rows.map((r) => r.map((v) => (typeof v === "number" ? String(v).replace(".", ",") : String(v ?? "")))));
+      }
+    } else abas.push(lerCsv(buf.toString("utf8")));
+
+    const { simulador } = await this.dados();
+    const base = nomeArquivo.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+    const emp = acharPorNome(simulador.empreendimentos, base, (x) => x.nome);
+    let novas: Unidade[] = [];
+    for (const linhas of abas) {
+      novas = lerUnidades(linhas);
+      if (!novas.length) novas = lerUnidadesSimulador(linhas, new Date(), emp?.nome || "");
+      if (novas.length) break;
+    }
+    if (!novas.length) {
+      throw new BadRequestException(
+        emp
+          ? "Não achei a tabela de unidades no arquivo (cabeçalho STATUS DA UNIDADE / IDENTIFICADOR ou PRODUTO / UNIDADE / PREÇO)."
+          : `Não sei de qual empreendimento é "${nomeArquivo}". Renomeie o arquivo com o nome do empreendimento (ex.: ilhamar.xlsx).`
+      );
+    }
+    const s: any = await this.settings.get();
+    const atuais = s.ioneUnidadesCsv ? lerUnidades(lerCsv(s.ioneUnidadesCsv)) : [];
+    await this.settings.update({ ioneUnidadesCsv: unidadesParaCsv(juntarUnidades(atuais, novas)) } as any);
+    this.logger.log(`IA One: ${novas.length} unidade(s) de ${novas[0].produto} importadas de ${nomeArquivo}.`);
+    return { importadas: novas.length, empreendimento: novas[0].produto, ...(await this.resumoDados()) };
   }
 
   /** Resumo pro painel do Diretor conferir o que a IA One está lendo. */

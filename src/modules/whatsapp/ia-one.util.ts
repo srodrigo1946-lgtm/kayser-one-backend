@@ -232,10 +232,10 @@ export function textoSimulacao(s: Simulacao, rotulo: string): string {
  * AVALIAÇÃO | MÓDULO | ENTREGA PJ | ENTREGA OBRA"): só do empreendimento SELECIONADO
  * no simulador (bloco "DADOS DA UNIDADE"). Entrega em meses → "MM/AAAA".
  */
-export function lerUnidadesSimulador(linhas: string[][], hoje = new Date()): Unidade[] {
+export function lerUnidadesSimulador(linhas: string[][], hoje = new Date(), produtoForcado = ""): Unidade[] {
   const iDados = linhas.findIndex((l) => semAcento(l[0] || "") === "dados da unidade");
-  let produto = "";
-  if (iDados >= 0) {
+  let produto = produtoForcado;
+  if (!produto && iDados >= 0) {
     const l = linhas.slice(iDados, iDados + 6).find((x) => (x[0] || "").trim() && semAcento(x[1] || "").startsWith("meses para entrega"));
     produto = (l?.[0] || "").trim();
   }
@@ -275,4 +275,17 @@ export function lerPromocoes(linhas: string[][]): string[] {
 /** Abas de uma planilha pública (nome → gid), lidas do htmlview. */
 export function abasDoHtmlview(html: string): { nome: string; gid: string }[] {
   return [...html.matchAll(/name: "([^"]+)", pageUrl: "[^"]*?gid=(\d+)/g)].map((m) => ({ nome: m[1], gid: m[2] }));
+}
+
+/** Unidades no formato único guardado no banco (CSV com PRODUTO), pra juntar vários arquivos. */
+export function unidadesParaCsv(lista: Unidade[]): string {
+  const q = (v: string | number) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const linhas = lista.map((u) => [u.produto, u.bloco, u.unidade, u.status, u.entrega, u.vaga, u.tipo, String(u.area).replace(".", ","), u.preco, u.avaliacao].map(q).join(","));
+  return ["PRODUTO,BLOCO,UNIDADE,STATUS,DATA DE ENTREGA,VAGA,TIPO,ÁREA,PREÇO,AVALIAÇÃO", ...linhas].join("\n");
+}
+
+/** Junta: as unidades novas substituem as do MESMO empreendimento; as outras ficam. */
+export function juntarUnidades(atuais: Unidade[], novas: Unidade[]): Unidade[] {
+  const produtos = new Set(novas.map((u) => u.produto));
+  return [...atuais.filter((u) => !produtos.has(u.produto)), ...novas];
 }
