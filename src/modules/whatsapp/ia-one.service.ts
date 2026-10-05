@@ -12,6 +12,9 @@ import {
   linkCsv,
   lerSimulador,
   lerUnidades,
+  lerUnidadesSimulador,
+  lerPromocoes,
+  abasDoHtmlview,
   acharPorNome,
   mesesAte,
   simularPagamento,
@@ -43,7 +46,7 @@ const final8 = (t: string) => (t || "").replace(/\D/g, "").slice(-8);
 @Injectable()
 export class IaOneService {
   private readonly logger = new Logger(IaOneService.name);
-  private cache: { em: number; simulador: ReturnType<typeof lerSimulador>; unidades: Unidade[] } | null = null;
+  private cache: { em: number; simulador: ReturnType<typeof lerSimulador>; unidades: Unidade[]; promocoes: string[] } | null = null;
 
   constructor(
     @InjectRepository(IaOneMensagem) private readonly msgs: Repository<IaOneMensagem>,
@@ -66,13 +69,27 @@ export class IaOneService {
     };
     let simulador = { campanha: "", empreendimentos: [] as Empreendimento[] };
     let unidades: Unidade[] = [];
+    let promocoes: string[] = [];
     if (s.ionePlanilhaUrl) {
       try {
         const linhas = lerCsv(await baixar(s.ionePlanilhaUrl));
         simulador = lerSimulador(linhas);
-        unidades = lerUnidades(linhas); // se a mesma planilha tiver a tabela de unidades
+        // Tabela completa de unidades (se houver) ou as do empreendimento selecionado no simulador.
+        unidades = lerUnidades(linhas);
+        if (!unidades.length) unidades = lerUnidadesSimulador(linhas);
       } catch (e) {
         this.logger.warn(`IA One: não li a planilha do simulador (${(e as Error).message}).`);
+      }
+      // Aba "UNIDADES PROMOCIONAIS" da mesma planilha (acha o gid pelo nome da aba).
+      try {
+        const id = String(s.ionePlanilhaUrl).match(/spreadsheets\/d\/([\w-]+)/)?.[1];
+        if (id) {
+          const html = await (await fetch(`https://docs.google.com/spreadsheets/d/${id}/htmlview`)).text();
+          const aba = abasDoHtmlview(html).find((a) => /promoc/i.test(a.nome));
+          if (aba) promocoes = lerPromocoes(lerCsv(await baixar(`https://docs.google.com/spreadsheets/d/${id}/edit#gid=${aba.gid}`)));
+        }
+      } catch (e) {
+        this.logger.warn(`IA One: não li as unidades promocionais (${(e as Error).message}).`);
       }
     }
     if (s.ioneUnidadesUrl) {
@@ -86,7 +103,7 @@ export class IaOneService {
       const u = lerUnidades(lerCsv(s.ioneUnidadesCsv));
       if (u.length) unidades = u;
     }
-    this.cache = { em: Date.now(), simulador, unidades };
+    this.cache = { em: Date.now(), simulador, unidades, promocoes };
     return this.cache;
   }
 
@@ -105,6 +122,7 @@ export class IaOneService {
       campanha: d.simulador.campanha,
       empreendimentos: d.simulador.empreendimentos,
       unidades: d.unidades.length,
+      promocoes: d.promocoes.length,
       disponiveisPorProduto: [...porProduto.entries()].map(([produto, v]) => ({
         produto,
         disponiveis: v.qtd,
@@ -213,16 +231,19 @@ O QUE VOCÊ FAZ:
 - Check-in do plantão: automático pelo GPS ao abrir o Kayser no stand; até 1,5 km do stand; abre 1 h antes e fecha na hora do início do turno (09:00 ok, 09:01 fora). Precisa PERMITIR a localização. GPS demorando → ligar Localização e Wi-Fi, ir pra perto da janela. Não deu → o Diretor vê o motivo no painel e pode liberar.
 - Bloqueado no plantão → falar com o gestor (bloqueio do Diretor só o Diretor tira).
 - Lead novo: aviso com fogos, 15 min pro primeiro contato, "Atender agora" abre a conversa. Kanban: mover as etapas; "Cliente sem interesse" volta pro Diretor. Corujão: até 20 leads/dia.
-2) PRODUTOS: use a tabela abaixo e as ferramentas. Para unidade/preço exato use buscar_unidades. NUNCA invente preço, unidade ou data.
+2) PRODUTOS E PREÇOS: responda com os dados abaixo e as ferramentas (buscar_unidades traz unidade, status, entrega e preço). NUNCA invente preço, unidade ou data.
 3) SIMULAÇÃO DE PAGAMENTO: use SEMPRE a ferramenta simular_pagamento (não faça conta de cabeça) e mande o texto que ela devolver.
    - Tabela padrão: 10% ato · 20% durante a obra · 70% pós-obra em 120x.
    - Tabela investidor: 10% ato · 90% durante a obra até a entrega.
    - Financiamento Caixa: pergunte o valor aprovado e FGTS/subsídio se o corretor não informou.
-4) MATERIAIS: para mandar FOTOS de um empreendimento escreva [FOTOS: Nome do empreendimento] numa linha. Para mandar as CONDIÇÕES DO MÊS (imagem) escreva [CONDICOES]. Links de book/vídeo/tabelas: use os da seção MATERIAIS.
-${s.ionePrecosUrl ? `- Tabela completa de preços e disponibilidade (Data Studio): ${s.ionePrecosUrl}` : ""}
+4) MATERIAIS: para mandar FOTOS de um empreendimento escreva [FOTOS: Nome do empreendimento] numa linha. Para mandar as CONDIÇÕES DO MÊS (imagem) escreva [CONDICOES].
+5) NÃO MANDE LINK NENHUM (nem de tabela, planilha, painel ou site): responda direto com a informação. Preço que não estiver nos dados abaixo → diga que vai confirmar com o gestor.
 
 ${d.simulador.campanha ? `CAMPANHA / BASE: ${d.simulador.campanha}\n` : ""}EMPREENDIMENTOS (planilha atualizada):
 ${emps || "(planilha ainda não configurada)"}
+
+UNIDADES PROMOCIONAIS (planilha):
+${d.promocoes.join("\n") || "(nenhuma)"}
 
 MATERIAIS E INFORMAÇÕES EXTRAS (do Diretor):
 ${(s.ioneInfo || "").trim() || "(nenhum)"}

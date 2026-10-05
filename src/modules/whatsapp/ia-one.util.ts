@@ -225,3 +225,53 @@ export function textoSimulacao(s: Simulacao, rotulo: string): string {
     .join("\n");
   return `*${nomes[s.tabela]} — ${rotulo}*\nValor: ${brl(s.preco)} · obra: ${s.mesesObra} ${s.mesesObra === 1 ? "mês" : "meses"}\n${corpo}\n_${s.observacao}_`;
 }
+
+/**
+ * Unidades da aba do simulador ("STATUS DA UNIDADE | IDENTIFICADOR | VALOR DE VENDA |
+ * AVALIAÇÃO | MÓDULO | ENTREGA PJ | ENTREGA OBRA"): só do empreendimento SELECIONADO
+ * no simulador (bloco "DADOS DA UNIDADE"). Entrega em meses → "MM/AAAA".
+ */
+export function lerUnidadesSimulador(linhas: string[][], hoje = new Date()): Unidade[] {
+  const iDados = linhas.findIndex((l) => semAcento(l[0] || "") === "dados da unidade");
+  let produto = "";
+  if (iDados >= 0) {
+    const l = linhas.slice(iDados, iDados + 6).find((x) => (x[0] || "").trim() && semAcento(x[1] || "").startsWith("meses para entrega"));
+    produto = (l?.[0] || "").trim();
+  }
+  const iCab = linhas.findIndex((l) => semAcento(l[0] || "") === "status da unidade" && semAcento(l[1] || "") === "identificador");
+  if (iCab < 0 || !produto) return [];
+  const mesAno = (meses: number) => {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + meses, 1);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  };
+  return linhas
+    .slice(iCab + 1)
+    .filter((l) => (l[0] || "").trim() && (l[1] || "").trim())
+    .map((l) => ({
+      produto,
+      bloco: (l[1].match(/BL(\d+)/i)?.[1] || "").replace(/^0+/, ""),
+      unidade: l[1].trim(),
+      status: l[0].trim(),
+      entrega: mesAno(numBR(l[6])),
+      vaga: "",
+      tipo: "",
+      area: 0,
+      preco: numBR(l[2]),
+      avaliacao: numBR(l[3]),
+    }));
+}
+
+/** Aba "UNIDADES PROMOCIONAIS": linhas da tabela da esquerda, em texto curto pro prompt. */
+export function lerPromocoes(linhas: string[][]): string[] {
+  const i = linhas.findIndex((l) => semAcento(l[0] || "") === "nome do empreendimento" && semAcento(l[1] || "").startsWith("valor minimo"));
+  if (i < 0) return [];
+  return linhas
+    .slice(i + 1)
+    .filter((l) => (l[0] || "").trim() && (l[5] || "").trim())
+    .map((l) => `${l[0].trim()} ${l[5].trim()} (${(l[6] || "").trim()}): mínimo ${l[1]} · bruto ${l[4]} · desconto ato em triplo ${l[2]} · volta ao caixa ${l[3]}`);
+}
+
+/** Abas de uma planilha pública (nome → gid), lidas do htmlview. */
+export function abasDoHtmlview(html: string): { nome: string; gid: string }[] {
+  return [...html.matchAll(/name: "([^"]+)", pageUrl: "[^"]*?gid=(\d+)/g)].map((m) => ({ nome: m[1], gid: m[2] }));
+}

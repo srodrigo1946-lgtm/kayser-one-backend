@@ -70,3 +70,25 @@ describe("IA One — planilhas e simulação", () => {
     expect(s.linhas.find((l) => l.item.startsWith("Entrada restante"))).toEqual(expect.objectContaining({ parcelas: 1, total: 20000 }));
   });
 });
+
+describe("IA One — abas extras da planilha", () => {
+  const { lerUnidadesSimulador, lerPromocoes, abasDoHtmlview } = require("./ia-one.util");
+
+  it("unidades do empreendimento selecionado no simulador", () => {
+    const csv = [
+      "DADOS DA UNIDADE,,,",
+      ",Modulo,1",
+      "Marine Barra Residence,Meses para entrega,8,Qtde disponíveis,55",
+      "STATUS DA UNIDADE,IDENTIFICADOR,VALOR DE VENDA,AVALIAÇÃO,MÓDULO,ENTREGA PJ,ENTREGA OBRA",
+      "Disponível,BL01-0306,487.800,544.600,1,12,8",
+    ].join("\n");
+    const u = lerUnidadesSimulador(lerCsv(csv), new Date(2026, 9, 4));
+    expect(u).toEqual([expect.objectContaining({ produto: "Marine Barra Residence", unidade: "BL01-0306", preco: 487800, entrega: "06/2027", bloco: "1" })]);
+  });
+
+  it("unidades promocionais e abas da planilha", () => {
+    const p = lerPromocoes(lerCsv("UNIDADES PROMOCIONAIS\nNome do Empreendimento,Valor Mínimo,Desconto Ato em Triplo,Volta ao Caixa,Valor de Venda Bruto,Identificador,Status da Unidade\nInn Barra Olímpica,R$ 247.940,R$ 5.060,R$ 0,R$ 253.000,BL02-0404,Disponível"));
+    expect(p[0]).toContain("Inn Barra Olímpica BL02-0404 (Disponível)");
+    expect(abasDoHtmlview('items.push({name: "UNIDADES PROMOCIONAIS", pageUrl: "https:\/\/x\/sheet?headers\x3dtrue&gid=91735735", gid:')).toEqual([{ nome: "UNIDADES PROMOCIONAIS", gid: "91735735" }]);
+  });
+});
