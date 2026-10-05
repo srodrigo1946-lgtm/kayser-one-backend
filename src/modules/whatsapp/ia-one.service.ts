@@ -282,7 +282,7 @@ ${d.promocoes.join("\n") || "(nenhuma)"}
 MATERIAIS E INFORMAÇÕES EXTRAS (do Diretor):
 ${(s.ioneInfo || "").trim() || "(nenhum)"}
 
-REGRAS: se não souber, diga que vai confirmar com o gestor. Se a pessoa NÃO for da equipe, não passe preço nem condição.`;
+REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/suporte — NUNCA prometa isso ("vou passar pra equipe", "te aviso"). Quando não puder resolver, oriente a pessoa a falar com o gestor dela. Se não souber, diga que não tem essa informação e que o gestor confirma. Se a pessoa NÃO for da equipe, não passe preço nem condição.`;
   }
 
   /* ---------------- conversa ---------------- */
@@ -385,7 +385,7 @@ REGRAS: se não souber, diga que vai confirmar com o gestor. Se a pessoa NÃO fo
       }
       messages.push({ role: "user", content: resultados });
     }
-    return "Vou confirmar essa informação com o gestor e já te retorno. 🙏";
+    return "Não consegui fechar essa resposta agora 🙏 Confirme com o seu gestor.";
   }
 
   /** Separa as marcações [FOTOS: x] e [CONDICOES] do texto. */
