@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import Anthropic from "@anthropic-ai/sdk";
+import * as bcrypt from "bcryptjs";
 import { IaOneMensagem } from "./ia-one-mensagem.entity";
 import { User, UserRole } from "../users/user.entity";
 import { SettingsService } from "../settings/settings.service";
@@ -46,6 +47,9 @@ const final8 = (t: string) => (t || "").replace(/\D/g, "").slice(-8);
 @Injectable()
 export class IaOneService {
   private readonly logger = new Logger(IaOneService.name);
+  // Anti-abuso: no máximo 1 reset de senha por usuário por hora pela One.
+  private ultimoReset = new Map<string, number>();
+
   private cache: { em: number; simulador: ReturnType<typeof lerSimulador>; unidades: Unidade[]; promocoes: string[] } | null = null;
 
   constructor(
@@ -200,6 +204,27 @@ export class IaOneService {
     return { texto: textoSimulacao(s, rotulo || "unidade"), simulacao: s };
   }
 
+  /**
+   * Reset de senha pedido pelo próprio corretor no WhatsApp da One. Só reseta a conta
+   * do TELEFONE que está falando e só se o e-mail informado bater com o cadastro dela.
+   * Senha volta pra 123456789 e o sistema pede uma nova no próximo acesso.
+   */
+  private async resetarSenha(user: User | null, email: string) {
+    if (!user) return { erro: "Número não cadastrado: não dá pra resetar." };
+    if (user.role === UserRole.DIRETOR) return { erro: "Conta de Diretor não é resetada pela One." };
+    if (user.active === false) return { erro: "Conta desativada: precisa falar com o gestor pra reativar." };
+    if (user.approved === false) return { erro: "Cadastro ainda aguardando aprovação do gestor (a senha não é o problema)." };
+    if ((email || "").trim().toLowerCase() !== (user.email || "").trim().toLowerCase()) {
+      return { erro: "O e-mail informado NÃO confere com o cadastro deste telefone. Peça pra conferir o e-mail ou falar com o gestor. Não revele o e-mail cadastrado." };
+    }
+    const ultimo = this.ultimoReset.get(user.id) || 0;
+    if (Date.now() - ultimo < 60 * 60_000) return { erro: "A senha já foi resetada há menos de 1 hora. Use a 123456789 ou fale com o gestor." };
+    await this.users.update(user.id, { passwordHash: await bcrypt.hash("123456789", 12), firstLogin: true } as any);
+    this.ultimoReset.set(user.id, Date.now());
+    this.logger.log(`IA One: senha de ${user.name} (${user.id}) resetada a pedido pelo WhatsApp.`);
+    return { ok: true, senhaProvisoria: "123456789", proximoPasso: "Entrar em kayserone.com.br com o e-mail e a senha 123456789; o sistema pede pra criar a senha nova." };
+  }
+
   /* ---------------- prompt ---------------- */
 
   private statusConta(u: User | null) {
@@ -234,7 +259,8 @@ QUEM ESTÁ FALANDO: ${this.statusConta(user)}
 O QUE VOCÊ FAZ:
 1) SUPORTE do Kayser One (sistema):
 - Instalar: abrir kayserone.com.br no celular → "Adicionar à tela inicial".
-- Primeiro acesso: senha padrão 123456789; o sistema pede pra criar a senha nova. Esqueceu a senha → o gestor redefine em Configurações → Equipe (volta pra 123456789).
+- Primeiro acesso: senha padrão 123456789; o sistema pede pra criar a senha nova.
+- NÃO CONSEGUE ENTRAR / ESQUECEU A SENHA: peça o E-MAIL cadastrado no Kayser One e use a ferramenta resetar_senha com ele. Deu certo → diga pra entrar em kayserone.com.br com o e-mail e a senha 123456789 e criar a senha nova. Deu erro → explique o motivo (sem revelar o e-mail cadastrado). Se a conta estiver aguardando aprovação ou desativada, o problema não é a senha: fale com o gestor.
 - Cadastro novo precisa ser APROVADO pelo gestor (sino 🔔). Conta desativada → falar com o gestor.
 - Check-in do plantão: automático pelo GPS ao abrir o Kayser no stand; até 1,5 km do stand; abre 1 h antes e fecha na hora do início do turno (09:00 ok, 09:01 fora). Precisa PERMITIR a localização. GPS demorando → ligar Localização e Wi-Fi, ir pra perto da janela. Não deu → o Diretor vê o motivo no painel e pode liberar.
 - Bloqueado no plantão → falar com o gestor (bloqueio do Diretor só o Diretor tira).
@@ -290,6 +316,15 @@ REGRAS: se não souber, diga que vai confirmar com o gestor. Se a pessoa NÃO fo
         },
       },
       {
+        name: "resetar_senha",
+        description: "Reseta a senha do Kayser One de QUEM ESTÁ FALANDO pra 123456789, se o e-mail informado bater com o cadastro. Use quando não conseguir entrar ou esqueceu a senha.",
+        input_schema: {
+          type: "object",
+          properties: { email: { type: "string", description: "E-mail cadastrado no Kayser One, informado pelo corretor" } },
+          required: ["email"],
+        },
+      },
+      {
         name: "simular_pagamento",
         description: "Simula o fluxo de pagamento. Use sempre que pedirem simulação/fluxo/parcelas.",
         input_schema: {
@@ -337,7 +372,12 @@ REGRAS: se não souber, diga que vai confirmar com o gestor. Se a pessoa NÃO fo
       for (const u of usos) {
         let r: any;
         try {
-          r = u.name === "buscar_unidades" ? await this.buscarUnidades(u.input) : await this.simular(u.input);
+          r =
+            u.name === "buscar_unidades"
+              ? await this.buscarUnidades(u.input)
+              : u.name === "resetar_senha"
+              ? await this.resetarSenha(user, u.input?.email)
+              : await this.simular(u.input);
         } catch (e) {
           r = { erro: (e as Error).message };
         }
