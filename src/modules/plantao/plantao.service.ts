@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, IsNull, Not, Repository } from "typeorm";
+import { In, IsNull, Not, Repository, MoreThan } from "typeorm";
 import { Cron } from "@nestjs/schedule";
 import { createHash } from "crypto";
 import { PlantaoCheckin } from "./plantao-checkin.entity";
@@ -13,8 +13,29 @@ import { User, UserRole } from "../users/user.entity";
 import { EscalaService } from "../escala/escala.service";
 import { SettingsService } from "../settings/settings.service";
 
-/** Raio do check-in (m) — pedido do Rodrigo: 1500 m (03/10; antes 500 e 200). */
-export const RAIO_CHECKIN = 1500;
+/** Raio do check-in (m) — pedido do Rodrigo: 500 m (05/10, com os stands recalibrados pelos check-ins; antes 1500/500/200). */
+export const RAIO_CHECKIN = 500;
+
+/**
+ * Centro de um stand a partir de check-ins com GPS bom: 1 ponto por pessoa (o mais
+ * preciso), mediana de lat e de lng — quem fez check-in de longe não puxa o ponto.
+ * Null se houver menos de 2 pessoas.
+ */
+export function centroDosCheckins(pontos: { userId: string; lat: number; lng: number; precisao: number }[]) {
+  const melhor = new Map<string, { lat: number; lng: number; precisao: number }>();
+  for (const p of pontos) {
+    const m = melhor.get(p.userId);
+    if (!m || p.precisao < m.precisao) melhor.set(p.userId, p);
+  }
+  const lista = [...melhor.values()];
+  if (lista.length < 2) return null;
+  const mediana = (v: number[]) => {
+    const o = [...v].sort((a, b) => a - b);
+    const m = Math.floor(o.length / 2);
+    return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+  };
+  return { lat: mediana(lista.map((p) => p.lat)), lng: mediana(lista.map((p) => p.lng)), pessoas: lista.length };
+}
 
 /** Distância em metros entre dois pontos (fórmula de Haversine). */
 export function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -527,6 +548,34 @@ export class PlantaoService implements OnModuleInit {
     return { ...r, stand: t.standNome };
   }
 
+  /**
+   * Diretor: recalibra TODOS os stands pelos check-ins por GPS dos últimos 7 dias
+   * (precisão até 30 m, pelo menos 2 pessoas por stand). Devolve quanto cada um andou.
+   */
+  async recalibrarStands() {
+    const desde = new Date(Date.now() - 7 * 86_400_000);
+    const cks = (await this.checkins.find({ where: { createdAt: MoreThan(desde) } as any })).filter(
+      (c) => c.propertyId && !(c.lat === 0 && c.lng === 0) && c.precisao != null && c.precisao <= 30
+    );
+    const porStand = new Map<string, PlantaoCheckin[]>();
+    for (const c of cks) porStand.set(c.propertyId, [...(porStand.get(c.propertyId) || []), c]);
+    const stands = await this.stands();
+    const resultado: { stand: string; pessoas: number; moveuMetros: number | null; motivo?: string }[] = [];
+    for (const st of stands) {
+      const lista = porStand.get(st.propertyId) || [];
+      const centro = centroDosCheckins(lista.map((c) => ({ userId: c.userId, lat: c.lat, lng: c.lng, precisao: c.precisao as number })));
+      if (!centro) {
+        if (lista.length) resultado.push({ stand: st.nome, pessoas: new Set(lista.map((c) => c.userId)).size, moveuMetros: null, motivo: "menos de 2 pessoas com GPS bom" });
+        continue;
+      }
+      const moveu = distanciaMetros(st.lat, st.lng, centro.lat, centro.lng);
+      await this.definirLocalizacao(st.propertyId, centro.lat, centro.lng);
+      resultado.push({ stand: st.nome, pessoas: centro.pessoas, moveuMetros: moveu });
+    }
+    this.logger.log(`Stands recalibrados pelos check-ins: ${JSON.stringify(resultado)}`);
+    return resultado;
+  }
+
   /** Diretor: a posição de um check-in feito no stand vira a localização do stand. */
   async usarCheckinComoStand(checkinId: string) {
     const c = await this.checkins.findOne({ where: { id: checkinId } });
@@ -555,7 +604,7 @@ export class PlantaoService implements OnModuleInit {
     };
   }
 
-  /** Check-in: GPS do celular precisa estar a até 1500 m de um stand cadastrado. */
+  /** Check-in: GPS do celular precisa estar a até 500 m de um stand cadastrado. */
   async checkin(user: User, lat: number, lng: number, precisao?: number) {
     const info: { distancia?: number; standNome?: string; lat?: number; lng?: number; propertyId?: string } = {};
     try {

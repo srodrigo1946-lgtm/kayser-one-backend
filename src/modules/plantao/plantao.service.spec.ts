@@ -11,11 +11,12 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(d).toBeLessThan(120);
   });
 
-  it("libera dentro de 1500 m e barra longe", () => {
+  it("libera dentro de 500 m e barra longe", () => {
     expect(standMaisPerto(stand.lat + 0.001, stand.lng, [stand])?.dentro).toBe(true); // ~111 m
     expect(standMaisPerto(stand.lat + 0.02, stand.lng, [stand])?.dentro).toBe(false); // ~2,2 km
-    expect(RAIO_CHECKIN).toBe(1500);
-    expect(standMaisPerto(stand.lat + 0.0125, stand.lng, [stand])?.dentro).toBe(true); // ~1,4 km (caso da Anita)
+    expect(RAIO_CHECKIN).toBe(500);
+    expect(standMaisPerto(stand.lat + 0.004, stand.lng, [stand])?.dentro).toBe(true); // ~445 m
+    expect(standMaisPerto(stand.lat + 0.0125, stand.lng, [stand])?.dentro).toBe(false); // ~1,4 km
     expect(standMaisPerto(stand.lat + 0.004, stand.lng, [stand])?.dentro).toBe(true); // ~445 m
   });
 
@@ -165,6 +166,20 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(salvos).toEqual([expect.objectContaining({ userId: "U", standNome: "Villa Santé", precisao: 12 })]);
     expect(salvos[0].distancia).toBeGreaterThan(2000);
     expect(salvos[0]).toEqual(expect.objectContaining({ lat: -22.95, lng: -43.3597, propertyId: "P" }));
+  });
+
+  it("centro do stand pelos check-ins: mediana, 1 ponto por pessoa, ignora quem estava longe", () => {
+    const { centroDosCheckins } = require("./plantao.service");
+    const c = centroDosCheckins([
+      { userId: "a", lat: -22.9, lng: -43.2, precisao: 10 },
+      { userId: "a", lat: -22.8, lng: -43.1, precisao: 25 }, // mesmo corretor, pior GPS: ignorado
+      { userId: "b", lat: -22.9002, lng: -43.2001, precisao: 12 },
+      { userId: "c", lat: -22.95, lng: -43.25, precisao: 9 }, // estava longe
+    ]);
+    expect(c.pessoas).toBe(3);
+    expect(c.lat).toBe(-22.9002);
+    expect(c.lng).toBe(-43.2001);
+    expect(centroDosCheckins([{ userId: "a", lat: 1, lng: 1, precisao: 5 }])).toBeNull();
   });
 
   it("dia em Brasília", () => {
