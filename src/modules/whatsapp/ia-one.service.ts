@@ -137,15 +137,23 @@ export class IaOneService {
 
   private async buscarUnidades(a: { empreendimento?: string; tipo?: string; preco_max?: number; unidade?: string }) {
     const { unidades } = await this.dados();
-    if (!unidades.length) return { erro: "Tabela de unidades ainda não carregada. Mande o link da tabela de preços." };
+    if (!unidades.length) return { erro: "Tabela de unidades ainda não carregada. Diga que vai confirmar a unidade com o gestor." };
     let lista = unidades.filter((u) => /dispon/i.test(u.status));
     if (a.unidade) {
       const alvo = a.unidade.replace(/\s/g, "").toLowerCase();
       lista = unidades.filter((u) => u.unidade.replace(/\s/g, "").toLowerCase().includes(alvo));
     }
     if (a.empreendimento) {
-      const p = acharPorNome([...new Set(unidades.map((u) => u.produto))], a.empreendimento, (x) => x);
-      if (p) lista = lista.filter((u) => u.produto === p);
+      const produtos = [...new Set(unidades.map((u) => u.produto))];
+      const p = acharPorNome(produtos, a.empreendimento, (x) => x);
+      // Não achou: NÃO devolve unidade de outro empreendimento (a planilha só traz as
+      // unidades do empreendimento selecionado no simulador).
+      if (!p) {
+        return {
+          erro: `A tabela de unidades não tem o ${a.empreendimento}. Hoje ela só traz: ${produtos.join(", ")}. Diga que vai confirmar a unidade com o gestor.`,
+        };
+      }
+      lista = lista.filter((u) => u.produto === p);
     }
     if (a.tipo) {
       const t = a.tipo.toLowerCase().replace(/\s/g, "");
