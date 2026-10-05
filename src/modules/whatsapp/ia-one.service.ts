@@ -205,6 +205,28 @@ export class IaOneService {
   }
 
   /**
+   * Número que a One não conhece: pede o e-mail do Kayser e, se for de um usuário
+   * ativo SEM telefone no cadastro, grava este WhatsApp nele (decisão do Rodrigo 05/10).
+   * Se o cadastro já tem outro telefone, não troca (manda falar com o gestor).
+   */
+  async vincularPorEmail(phone: string, texto: string): Promise<string> {
+    const email = (texto.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [])[0]?.toLowerCase();
+    if (!email) {
+      return "Oi! Eu sou a *One*, assistente da equipe Kayser One. 👋\nNão reconheci este número. Me manda o *e-mail que você usa pra entrar no Kayser One* que eu te identifico.";
+    }
+    const alvo = (await this.users.find()).find((u) => (u.email || "").trim().toLowerCase() === email);
+    if (!alvo || alvo.active === false || alvo.empresaId) {
+      return "Não achei esse e-mail entre os usuários ativos do Kayser One 🤔 Confira o e-mail ou fale com o seu gestor.";
+    }
+    if (final8(alvo.phone) || final8((alvo as any).whatsapp)) {
+      return "Esse e-mail já tem outro telefone no cadastro. Pra usar este número, peça pro seu gestor atualizar o seu telefone no Kayser One. 🙏";
+    }
+    await this.users.update(alvo.id, { whatsapp: phone, whatsappVinculadoEm: new Date() } as any);
+    this.logger.log(`IA One: WhatsApp final ${phone.slice(-4)} vinculado a ${alvo.name} pelo e-mail.`);
+    return `Pronto, ${alvo.name.split(" ")[0]}! ✅ Vinculei este WhatsApp ao seu cadastro do Kayser One.\nComo posso te ajudar? (suporte do sistema, empreendimentos, simulação de pagamento…)`;
+  }
+
+  /**
    * Reset de senha pedido pelo próprio corretor no WhatsApp da One. Só reseta a conta
    * do TELEFONE que está falando e só se o e-mail informado bater com o cadastro dela.
    * Senha volta pra 123456789 e o sistema pede uma nova no próximo acesso.
@@ -216,6 +238,12 @@ export class IaOneService {
     if (user.approved === false) return { erro: "Cadastro ainda aguardando aprovação do gestor (a senha não é o problema)." };
     if ((email || "").trim().toLowerCase() !== (user.email || "").trim().toLowerCase()) {
       return { erro: "O e-mail informado NÃO confere com o cadastro deste telefone. Peça pra conferir o e-mail ou falar com o gestor. Não revele o e-mail cadastrado." };
+    }
+    const vinculo = (user as any).whatsappVinculadoEm ? new Date((user as any).whatsappVinculadoEm).getTime() : 0;
+    if (vinculo && Date.now() - vinculo < 24 * 3600_000) {
+      return {
+        erro: "Este WhatsApp foi vinculado há menos de 24 h: por segurança o reset de senha só fica liberado depois disso. Até lá, o gestor pode redefinir em Configurações → Equipe.",
+      };
     }
     const ultimo = this.ultimoReset.get(user.id) || 0;
     if (Date.now() - ultimo < 60 * 60_000) return { erro: "A senha já foi resetada há menos de 1 hora. Use a 123456789 ou fale com o gestor." };
@@ -451,15 +479,12 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
     }
     await this.salvar(phone, user, p.pushName, "in", texto);
 
-    if (!user || user.active === false) {
-      await this.enviar(
-        phone,
-        user
-          ? "Oi! Sua conta no Kayser One está desativada. Fale com o seu gestor pra reativar. 🙏"
-          : "Oi! Eu sou a *One*, assistente da equipe Kayser One. 👋\nEste número é só pra corretores e gestores cadastrados. Peça pro seu gestor conferir o seu telefone no cadastro do Kayser.",
-        user,
-        p.pushName
-      );
+    if (!user) {
+      await this.enviar(phone, await this.vincularPorEmail(phone, texto), null, p.pushName);
+      return { ok: true };
+    }
+    if (user.active === false) {
+      await this.enviar(phone, "Oi! Sua conta no Kayser One está desativada. Fale com o seu gestor pra reativar. 🙏", user, p.pushName);
       return { ok: true };
     }
 

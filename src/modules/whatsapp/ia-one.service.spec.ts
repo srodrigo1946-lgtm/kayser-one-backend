@@ -27,3 +27,31 @@ describe("IA One — reset de senha pelo WhatsApp", () => {
     expect(updates).toHaveLength(1);
   });
 });
+
+describe("IA One — vínculo do WhatsApp pelo e-mail", () => {
+  const montar = (lista: any[]) => {
+    const updates: any[] = [];
+    const users = { find: async () => lista, update: async (id: string, d: any) => updates.push({ id, ...d }) };
+    return { s: new IaOneService({} as any, users as any, {} as any, {} as any, {} as any) as any, updates };
+  };
+
+  it("pede o e-mail e vincula quando o cadastro não tem telefone", async () => {
+    const { s, updates } = montar([{ id: "u1", name: "Ana Souza", email: "ana@x.com", active: true }]);
+    expect(await s.vincularPorEmail("5521999998888", "oi")).toContain("e-mail");
+    expect(await s.vincularPorEmail("5521999998888", "é ANA@x.com")).toContain("Pronto, Ana");
+    expect(updates[0]).toEqual(expect.objectContaining({ id: "u1", whatsapp: "5521999998888" }));
+  });
+
+  it("não troca telefone já cadastrado nem vincula e-mail desconhecido", async () => {
+    const { s, updates } = montar([{ id: "u1", name: "Ana", email: "ana@x.com", active: true, phone: "21 98888-7777" }]);
+    expect(await s.vincularPorEmail("5521999998888", "ana@x.com")).toContain("já tem outro telefone");
+    expect(await s.vincularPorEmail("5521999998888", "nao@x.com")).toContain("Não achei");
+    expect(updates).toHaveLength(0);
+  });
+
+  it("reset de senha bloqueado nas primeiras 24 h do vínculo", async () => {
+    const { s } = montar([]);
+    const u = { id: "u1", name: "Ana", email: "ana@x.com", role: "corretor", active: true, approved: true, whatsappVinculadoEm: new Date() };
+    expect((await s.resetarSenha(u, "ana@x.com")).erro).toContain("24 h");
+  });
+});

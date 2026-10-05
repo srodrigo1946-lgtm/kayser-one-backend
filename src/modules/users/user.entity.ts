@@ -53,6 +53,10 @@ export class User {
   @Column({ nullable: true })
   whatsapp: string;
 
+  // Quando a IA One vinculou este WhatsApp ao cadastro pelo e-mail (reset de senha só 24 h depois).
+  @Column({ type: "timestamp", nullable: true })
+  whatsappVinculadoEm: Date | null;
+
   @Column({ default: true })
   active: boolean;
 
