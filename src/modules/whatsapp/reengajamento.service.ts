@@ -8,6 +8,7 @@ import { ConversationsService } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { WhatsappService, pedeParar } from "./whatsapp.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
+import { AiService } from "../ai/ai.service";
 
 /** 25 por hora, das 9h às 21h (último lote às 20h) — pedido do Rodrigo 06/10/2026. */
 export const REENGAJAR_POR_HORA = 25;
@@ -38,7 +39,11 @@ export function classificarResposta(texto: string): "sim" | "nao" | "outro" {
   if (pedeParar(texto) || /^(nao|n|nao obrigad\w*|obrigad\w*,? nao|sem interesse|nao tenho interesse|nao quero|ja comprei|ja comprei outro|nao preciso)\b[.!]*/.test(t) || /\b(sem interesse|nao tenho (mais )?interesse|nao quero|ja comprei)\b/.test(t)) {
     return "nao";
   }
-  if (/^(sim|s|ss|quero|tenho|pode|claro|opa|bora|manda|me (manda|conta|passa|envia))\b/.test(t) || /\b(tenho interesse|quero saber|me interessa|gostaria|pode mandar|pode me (mandar|passar)|quais (as )?condic)/.test(t)) {
+  // Qualquer sinal positivo (pedido do Rodrigo 06/10): interesse, mais informação, gostei, valor/condições, visita.
+  if (
+    /^(sim|s|ss|quero|tenho|pode|claro|opa|bora|manda|gostei|legal|show|top|massa|interessante|ok|okay|beleza|blz|me (manda|conta|passa|envia|explica))\b/.test(t) ||
+    /\b(tenho interesse|quero saber|saber mais|me interessa|interessad|gostaria|gostei|pode mandar|pode me (mandar|passar|enviar)|manda (mais )?(as )?(informac|info|detalhe|valor|condic|foto|video|book)|mais informac|mais detalhe|quais (as )?condic|qual (o )?(valor|preco)|quanto (custa|fica|e)|valores|condicoes|como funciona|quero ver|agendar|visita|simulac|financ)/.test(t)
+  ) {
     return "sim";
   }
   return "outro";
@@ -54,7 +59,8 @@ export class ReengajamentoService {
     private readonly conversations: ConversationsService,
     private readonly settings: SettingsService,
     private readonly whatsapp: WhatsappService,
-    private readonly fila: LeadQueueService
+    private readonly fila: LeadQueueService,
+    private readonly ai: AiService
   ) {}
 
   /** Todo dia, de hora em hora das 9h às 20h (termina ~21h): manda pra 25 "sem interesse". */
@@ -110,7 +116,9 @@ export class ReengajamentoService {
     const lead = await this.leads.findOne({ where: { id: leadId } });
     const quando = (lead as any)?.reengajadoEm ? new Date((lead as any).reengajadoEm).getTime() : 0;
     if (!lead || lead.status !== LeadStatus.VENDA_PERDIDA || !quando || Date.now() - quando > 15 * 86_400_000) return false;
-    const r = classificarResposta(texto);
+    // Palavras conhecidas primeiro; o que não der pra saber, a IA decide.
+    let r = classificarResposta(texto);
+    if (r === "outro") r = await this.ai.classificarInteresse(texto);
     if (r === "outro") return false;
     const nome = primeiroNome(lead.name);
     if (r === "nao") {

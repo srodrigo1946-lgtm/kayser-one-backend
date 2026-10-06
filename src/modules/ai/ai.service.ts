@@ -210,6 +210,33 @@ ${extraSystem}` : base;
    * Lê a conversa e diz se o cliente CONFIRMOU uma visita com dia e horário.
    * Devolve a data/hora no horário de Brasília ("YYYY-MM-DDTHH:mm") ou null.
    */
+  /**
+   * Resposta de um cliente "sem interesse" que recebeu o reengajamento: SIM (qualquer
+   * interesse/pergunta sobre imóvel), NAO (recusa) ou OUTRO. Falhou a IA → "outro".
+   */
+  async classificarInteresse(texto: string): Promise<"sim" | "nao" | "outro"> {
+    try {
+      const { provider, model, apiKey } = await this.resolveConfig();
+      const system = `Um cliente que estava sem interesse em comprar imóvel recebeu uma mensagem oferecendo novidades e condições do mês.
+Classifique a RESPOSTA dele:
+- SIM: qualquer sinal positivo ou curiosidade (quer saber mais, pede informação, valor, condições, fotos, visita, gostou, pergunta sobre o imóvel).
+- NAO: recusa, não quer, já comprou, pede pra parar.
+- OUTRO: não dá pra saber (ex.: "quem é?", figurinha, assunto sem relação).
+Responda APENAS uma palavra: SIM, NAO ou OUTRO.`;
+      const msg: ChatMessage = { role: "user", content: texto.slice(0, 1000) };
+      const raw =
+        provider === AiProvider.ANTHROPIC
+          ? (await this.chatAnthropic(apiKey, model, system, [msg])).content
+          : provider === AiProvider.OPENAI
+          ? (await this.chatOpenAI(apiKey, model, system, [msg])).content
+          : (await this.chatGemini(apiKey, model, system, [msg])).content;
+      const r = (raw || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      return /\bSIM\b/.test(r) ? "sim" : /\bNAO\b/.test(r) ? "nao" : "outro";
+    } catch {
+      return "outro";
+    }
+  }
+
   async extrairVisita(
     conversation: string,
     userAi?: UserAiConfig

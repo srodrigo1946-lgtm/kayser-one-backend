@@ -7,7 +7,7 @@ describe("Reengajamento dos clientes 'sem interesse'", () => {
     }
   });
   it("entende SIM (vai pra fila)", () => {
-    for (const t of ["Sim", "tenho interesse", "quero saber", "pode mandar", "me conta", "Opa, quais as condições?"]) {
+    for (const t of ["Sim", "tenho interesse", "quero saber", "pode mandar", "me conta", "Opa, quais as condições?", "manda mais informações", "Gostei, quero saber mais", "qual o valor?", "estou interessada", "dá pra agendar uma visita?"]) {
       expect(classificarResposta(t)).toBe("sim");
     }
   });
