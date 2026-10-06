@@ -164,8 +164,17 @@ export class UsersService {
     return this.clean(saved);
   }
 
-  async update(id: string, dto: UpdateUserDto) {
+  async update(id: string, dto: UpdateUserDto, requester: User) {
     const user = await this.usersRepo.findOneOrFail({ where: { id } });
+    if (dto.role === UserRole.DIRETOR) throw new ForbiddenException("Ninguém vira Diretor por aqui.");
+    if (requester.role !== UserRole.DIRETOR) {
+      // Gestor só edita alguém da própria equipe, não muda cargo nem tira a pessoa do time.
+      await this.assertCanManage(user, requester);
+      if (dto.role !== undefined && dto.role !== user.role) throw new ForbiddenException("Só o Diretor muda o cargo.");
+      if (dto.managerId !== undefined && !(await this.getDescendantIds(requester.id)).includes(dto.managerId as string)) {
+        throw new ForbiddenException("O chefe precisa ser da sua equipe.");
+      }
+    }
     Object.assign(user, dto);
     const saved = await this.usersRepo.save(user);
     return this.clean(saved);

@@ -103,8 +103,8 @@ export class UsersController {
   @Put(":id")
   @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL)
   @ApiOperation({ summary: "Atualizar usuário" })
-  update(@Param("id") id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  update(@Param("id") id: string, @Body() dto: UpdateUserDto, @Request() req: any) {
+    return this.usersService.update(id, dto, req.user);
   }
 
   @Delete(":id")

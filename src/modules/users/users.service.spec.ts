@@ -133,6 +133,48 @@ describe("UsersService.tornarCorretor", () => {
   });
 });
 
+describe("UsersService.update (escopo e cargo)", () => {
+  // Árvore: D (diretor) > S (superintendente) > c1 ; c2 responde direto ao D (fora do time de S)
+  const lista = () => [
+    { id: "D", role: "diretor", managerId: null },
+    { id: "S", role: "superintendente", managerId: "D" },
+    { id: "c1", role: "corretor", managerId: "S" },
+    { id: "c2", role: "corretor", managerId: "D" },
+  ];
+  const montar = () => {
+    const users = lista();
+    const repo: any = {
+      findOneOrFail: async ({ where }: any) => users.find((u) => u.id === where.id),
+      find: async () => users,
+      save: async (u: any) => u,
+    };
+    return new UsersService(repo, {} as any);
+  };
+  const diretor = { id: "D", role: "diretor" } as any;
+  const sup = { id: "S", role: "superintendente" } as any;
+
+  it("Diretor troca o chefe de qualquer um (seletor de chefe)", async () => {
+    const r: any = await montar().update("c2", { managerId: "S" } as any, diretor);
+    expect(r.managerId).toBe("S");
+  });
+  it("ninguém vira Diretor por aqui, nem pelo Diretor", async () => {
+    await expect(montar().update("c1", { role: "diretor" } as any, diretor)).rejects.toThrow("Diretor");
+  });
+  it("gestor edita quem é do time dele", async () => {
+    const r: any = await montar().update("c1", { name: "Novo" } as any, sup);
+    expect(r.name).toBe("Novo");
+  });
+  it("gestor não edita fora do time nem a si mesmo", async () => {
+    await expect(montar().update("c2", { name: "x" } as any, sup)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(montar().update("S", { name: "x" } as any, sup)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+  it("gestor não muda cargo nem tira a pessoa do time", async () => {
+    await expect(montar().update("c1", { role: "gerente" } as any, sup)).rejects.toThrow("Só o Diretor");
+    await expect(montar().update("c1", { managerId: "D" } as any, sup)).rejects.toThrow("equipe");
+    await expect(montar().update("c1", { managerId: null } as any, sup)).rejects.toThrow("equipe");
+  });
+});
+
 describe("UsersService.tornarGestor", () => {
   const montar = (lista: any[]) => {
     const updates: any[] = [];
