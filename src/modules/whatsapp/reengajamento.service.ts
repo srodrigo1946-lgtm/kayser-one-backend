@@ -9,6 +9,8 @@ import { SettingsService } from "../settings/settings.service";
 import { WhatsappService, pedeParar } from "./whatsapp.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { AiService } from "../ai/ai.service";
+import { PropertiesService } from "../properties/properties.service";
+import { acharPorNome } from "./ia-one.util";
 
 /** 25 por hora, das 9h às 21h (último lote às 20h) — pedido do Rodrigo 06/10/2026. */
 export const REENGAJAR_POR_HORA = 25;
@@ -60,7 +62,8 @@ export class ReengajamentoService {
     private readonly settings: SettingsService,
     private readonly whatsapp: WhatsappService,
     private readonly fila: LeadQueueService,
-    private readonly ai: AiService
+    private readonly ai: AiService,
+    private readonly imoveis: PropertiesService
   ) {}
 
   /** Todo dia, de hora em hora das 9h às 20h (termina ~21h): manda pra 25 "sem interesse". */
@@ -80,6 +83,9 @@ export class ReengajamentoService {
     });
     const fila = lote.filter((l) => (l.phone || l.whatsapp || "").replace(/\D/g, "").length >= 10).slice(0, REENGAJAR_POR_HORA);
     if (!fila.length) return;
+    // Só cita empreendimento que EXISTE no cadastro (o campo às vezes guarda resposta de formulário, ex.: "Agende sua visita!").
+    const nomesImoveis = ((await this.imoveis.findAll().catch(() => [])) as any[]).map((p) => p.name as string);
+    const empreendimentoReal = (e?: string | null) => (e ? acharPorNome(nomesImoveis, e, (x) => x) ?? null : null);
     this.rodando = true;
     let enviados = 0;
     try {
@@ -91,7 +97,7 @@ export class ReengajamentoService {
         try {
           const conv = await this.conversations.findOrCreateByPhone(phone, central);
           if (!conv.leadId) await this.conversations.setLead(conv.id, l.id, l.name).catch(() => null);
-          const texto = mensagemReengajar(l.name, l.empreendimento, i + new Date().getHours());
+          const texto = mensagemReengajar(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
           await this.whatsapp.sendText(`user_${central}`, phone, texto);
           await this.conversations.addMessage(conv.id, texto, "out", true);
           enviados++;

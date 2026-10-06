@@ -24,3 +24,12 @@ describe("Reengajamento dos clientes 'sem interesse'", () => {
     expect(a).toContain("responder NÃO");
   });
 });
+
+describe("Reengajamento — só cita empreendimento cadastrado", () => {
+  const { acharPorNome } = require("./ia-one.util");
+  const imoveis = ["Ilha stay home Resort", "Villa Santé", "Sky Mário Guimarães"];
+  it("resposta de formulário não vira nome de empreendimento", () => {
+    expect(acharPorNome(imoveis, "Agende sua visita!", (x: string) => x)).toBeUndefined();
+    expect(acharPorNome(imoveis, "Ilha Stay", (x: string) => x)).toBe("Ilha stay home Resort");
+  });
+});
