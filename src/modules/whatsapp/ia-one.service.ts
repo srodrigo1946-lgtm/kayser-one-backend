@@ -137,6 +137,8 @@ export class IaOneService {
       if (!novas.length) novas = lerUnidadesSimulador(linhas, new Date(), emp?.nome || "");
       if (novas.length) break;
     }
+    const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+    novas = novas.map((u) => ({ ...u, enviadoEm: hoje }));
     if (!novas.length) {
       throw new BadRequestException(
         emp
@@ -154,9 +156,9 @@ export class IaOneService {
   /** Resumo pro painel do Diretor conferir o que a IA One está lendo. */
   async resumoDados() {
     const d = await this.dados(true);
-    const porProduto = new Map<string, { qtd: number; min: number; max: number; entrega: string }>();
+    const porProduto = new Map<string, { qtd: number; min: number; max: number; entrega: string; enviadoEm?: string }>();
     for (const u of d.unidades.filter((x) => /dispon/i.test(x.status))) {
-      const p = porProduto.get(u.produto) || { qtd: 0, min: Infinity, max: 0, entrega: u.entrega };
+      const p = porProduto.get(u.produto) || { qtd: 0, min: Infinity, max: 0, entrega: u.entrega, enviadoEm: u.enviadoEm };
       p.qtd++;
       if (u.preco) p.min = Math.min(p.min, u.preco);
       p.max = Math.max(p.max, u.preco);
@@ -173,6 +175,7 @@ export class IaOneService {
         precoMin: v.min === Infinity ? 0 : v.min,
         precoMax: v.max,
         entrega: v.entrega,
+        enviadoEm: v.enviadoEm ?? null,
       })),
     };
   }

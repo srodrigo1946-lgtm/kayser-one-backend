@@ -98,6 +98,8 @@ export type Unidade = {
   area: number;
   preco: number;
   avaliacao: number;
+  // Dia (AAAA-MM-DD) em que a planilha desse empreendimento foi enviada (atualização mensal).
+  enviadoEm?: string;
 };
 
 /**
@@ -123,6 +125,7 @@ export function lerUnidades(linhas: string[][]): Unidade[] {
     area: col("area"),
     preco: col("preco"),
     avaliacao: col("avaliacao"),
+    enviado: col("enviado"),
   };
   const v = (l: string[], i: number) => (i >= 0 ? (l[i] || "").trim() : "");
   return linhas
@@ -139,6 +142,7 @@ export function lerUnidades(linhas: string[][]): Unidade[] {
       area: numBR(v(l, c.area)),
       preco: numBR(v(l, c.preco)),
       avaliacao: numBR(v(l, c.avaliacao)),
+      ...(v(l, c.enviado) ? { enviadoEm: v(l, c.enviado) } : {}),
     }));
 }
 
@@ -280,8 +284,8 @@ export function abasDoHtmlview(html: string): { nome: string; gid: string }[] {
 /** Unidades no formato único guardado no banco (CSV com PRODUTO), pra juntar vários arquivos. */
 export function unidadesParaCsv(lista: Unidade[]): string {
   const q = (v: string | number) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const linhas = lista.map((u) => [u.produto, u.bloco, u.unidade, u.status, u.entrega, u.vaga, u.tipo, String(u.area).replace(".", ","), u.preco, u.avaliacao].map(q).join(","));
-  return ["PRODUTO,BLOCO,UNIDADE,STATUS,DATA DE ENTREGA,VAGA,TIPO,ÁREA,PREÇO,AVALIAÇÃO", ...linhas].join("\n");
+  const linhas = lista.map((u) => [u.produto, u.bloco, u.unidade, u.status, u.entrega, u.vaga, u.tipo, String(u.area).replace(".", ","), u.preco, u.avaliacao, u.enviadoEm || ""].map(q).join(","));
+  return ["PRODUTO,BLOCO,UNIDADE,STATUS,DATA DE ENTREGA,VAGA,TIPO,ÁREA,PREÇO,AVALIAÇÃO,ENVIADO", ...linhas].join("\n");
 }
 
 /** Junta: as unidades novas substituem as do MESMO empreendimento; as outras ficam. */

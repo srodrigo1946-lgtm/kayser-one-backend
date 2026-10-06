@@ -80,5 +80,6 @@ describe("IA One — importar unidades em Excel", () => {
     expect(salvos[0].ioneUnidadesCsv).toContain("Vibe Sunset"); // o que já tinha continua
     expect(salvos[0].ioneUnidadesCsv).toContain('"Ilhamar Beach & Home","2","BL02-0205","Disponível"');
     expect(salvos[0].ioneUnidadesCsv).toContain('"475548"');
+    expect(salvos[0].ioneUnidadesCsv).toMatch(/"Ilhamar Beach & Home".*"\d{4}-\d{2}-\d{2}"/); // data do envio
   });
 });
