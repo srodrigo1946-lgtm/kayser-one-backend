@@ -132,3 +132,24 @@ describe("UsersService.tornarCorretor", () => {
     await expect(s.tornarCorretor("D2", diretor)).rejects.toThrow("Diretor");
   });
 });
+
+describe("UsersService.tornarGestor", () => {
+  const montar = (lista: any[]) => {
+    const updates: any[] = [];
+    const repo: any = { findOne: async ({ where }: any) => lista.find((u) => u.id === where.id) ?? null, update: async (id: any, d: any) => updates.push({ id, d }) };
+    return { s: new UsersService(repo, {} as any), updates };
+  };
+  const diretor = { id: "D", role: "diretor" } as any;
+  it("corretor vira gerente mantendo o chefe", async () => {
+    const { s, updates } = montar([{ id: "c1", name: "Ana", role: "corretor", managerId: "G" }]);
+    await s.tornarGestor("c1", "gerente", diretor);
+    expect(updates).toEqual([{ id: "c1", d: { role: "gerente", managerId: "G" } }]);
+  });
+  it("não promove a Diretor, nem quem não é corretor, nem empresa parceira", async () => {
+    const { s } = montar([{ id: "c1", role: "corretor" }, { id: "g1", role: "gerente" }, { id: "e1", role: "corretor", empresaId: "X" }]);
+    await expect(s.tornarGestor("c1", "diretor", diretor)).rejects.toThrow("Cargo inválido");
+    await expect(s.tornarGestor("g1", "gerente", diretor)).rejects.toThrow("Só corretor");
+    await expect(s.tornarGestor("e1", "gerente", diretor)).rejects.toThrow("parceira");
+    await expect(s.tornarGestor("c1", "gerente", { id: "G", role: "gerente" } as any)).rejects.toThrow("Só o Diretor");
+  });
+});

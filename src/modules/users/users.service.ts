@@ -263,6 +263,19 @@ export class UsersService {
     };
   }
 
+  /** Corretor vira gestor (só Diretor): Gerente, Gerente geral ou Superintendente. Mantém o chefe. */
+  async tornarGestor(id: string, cargo: string, requester: User) {
+    if (requester.role !== UserRole.DIRETOR) throw new ForbiddenException("Só o Diretor muda o cargo.");
+    const permitidos = [UserRole.GERENTE, UserRole.GERENTE_GERAL, UserRole.SUPERINTENDENTE] as string[];
+    if (!permitidos.includes(cargo)) throw new BadRequestException("Cargo inválido (gerente, gerente_geral ou superintendente).");
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException("Usuário não encontrado.");
+    if (user.role !== UserRole.CORRETOR) throw new BadRequestException("Só corretor pode ser promovido por aqui.");
+    if (user.empresaId) throw new BadRequestException("Empresa parceira não vira gestor.");
+    await this.usersRepo.update(id, { role: cargo as UserRole, managerId: user.managerId || requester.id } as any);
+    return { message: `${user.name} agora é ${cargo.replace("_", " ")}. Coloque os corretores do time dele no seletor de chefe.` };
+  }
+
   async activate(id: string, requester: User) {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException("Usuário não encontrado.");
