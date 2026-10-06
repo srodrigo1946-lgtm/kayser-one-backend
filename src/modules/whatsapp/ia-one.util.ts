@@ -165,7 +165,8 @@ export function mesesAte(entrega: string, hoje = new Date()): number {
   return Math.max(0, meses);
 }
 
-export type Tabela = "padrao" | "investidor" | "caixa";
+// Tabela direta tem 2 regras que saem JUNTAS (06/10): "padrao1" = regra 1, "padrao" = regra 2.
+export type Tabela = "padrao" | "padrao1" | "investidor" | "caixa";
 
 export type Simulacao = {
   tabela: Tabela;
@@ -201,7 +202,11 @@ export function simularPagamento(p: {
     linhas.push({ item, parcelas, valorParcela: r2(total / parcelas), total: r2(total) });
   };
   let observacao = "Valores sem correção (INCC/IPCA), sujeitos à aprovação e à política vigente.";
-  if (p.tabela === "padrao") {
+  if (p.tabela === "padrao1") {
+    add("Ato (10%)", preco * 0.1, 1);
+    add("Durante a obra (20%)", preco * 0.2, meses);
+    add("Pós-obra (70%)", preco * 0.7, 120);
+  } else if (p.tabela === "padrao") {
     add("Ato (6%)", preco * 0.06, 1);
     add("30 dias (2%)", preco * 0.02, 1);
     add("60 dias (2%)", preco * 0.02, 1);
@@ -228,7 +233,7 @@ export function simularPagamento(p: {
 /** Texto curto da simulação pro WhatsApp. */
 export function textoSimulacao(s: Simulacao, rotulo: string): string {
   const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const nomes: Record<Tabela, string> = { padrao: "Tabela direta", investidor: "Tabela investidor", caixa: "Financiamento Caixa" };
+  const nomes: Record<Tabela, string> = { padrao1: "Tabela direta · Regra 1", padrao: "Tabela direta · Regra 2", investidor: "Tabela investidor", caixa: "Financiamento Caixa" };
   const corpo = s.linhas
     .map((l) => (l.parcelas > 1 ? `• ${l.item}: ${l.parcelas}x de ${brl(l.valorParcela)} (total ${brl(l.total)})` : `• ${l.item}: ${brl(l.total)}`))
     .join("\n");

@@ -95,3 +95,15 @@ describe("IA One — abas extras da planilha", () => {
     expect(abasDoHtmlview('items.push({name: "UNIDADES PROMOCIONAIS", pageUrl: "https:\/\/x\/sheet?headers\x3dtrue&gid=91735735", gid:')).toEqual([{ nome: "UNIDADES PROMOCIONAIS", gid: "91735735" }]);
   });
 });
+
+describe("IA One — tabela direta regra 1", () => {
+  const { simularPagamento } = require("./ia-one.util");
+  it("regra 1: 10% ato, 20% na obra, 70% em 120x", () => {
+    const s = simularPagamento({ preco: 500000, tabela: "padrao1", mesesObra: 10 });
+    expect(s.linhas.map((l: any) => [l.item, l.parcelas, l.total])).toEqual([
+      ["Ato (10%)", 1, 50000],
+      ["Durante a obra (20%)", 10, 100000],
+      ["Pós-obra (70%)", 120, 350000],
+    ]);
+  });
+});
