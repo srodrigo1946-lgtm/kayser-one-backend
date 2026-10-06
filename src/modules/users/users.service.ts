@@ -244,6 +244,25 @@ export class UsersService {
     return { message: "Usuário desativado. Os leads dele foram para o Diretor." };
   }
 
+  /**
+   * Gestor deixa a função e vira CORRETOR (só Diretor). O time que respondia a ele
+   * passa direto pro Diretor até ser levado pra outro gerente (pedido do Rodrigo 06/10).
+   */
+  async tornarCorretor(id: string, requester: User) {
+    if (requester.role !== UserRole.DIRETOR) throw new ForbiddenException("Só o Diretor muda o cargo.");
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException("Usuário não encontrado.");
+    if (user.role === UserRole.CORRETOR) throw new BadRequestException("Já é corretor.");
+    if (user.role === UserRole.DIRETOR) throw new BadRequestException("Não dá pra rebaixar um Diretor.");
+    const time = await this.usersRepo.find({ where: { managerId: id } });
+    if (time.length) await this.usersRepo.update({ managerId: id }, { managerId: requester.id });
+    await this.usersRepo.update(id, { role: UserRole.CORRETOR, managerId: user.managerId || requester.id } as any);
+    return {
+      message: `${user.name} agora é corretor. ${time.length} pessoa(s) do time dele passaram pro Diretor.`,
+      timeMovido: time.length,
+    };
+  }
+
   async activate(id: string, requester: User) {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException("Usuário não encontrado.");

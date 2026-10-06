@@ -114,6 +114,13 @@ export class UsersController {
     return this.usersService.deactivate(id, req.user);
   }
 
+  @Post(":id/tornar-corretor")
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Gestor vira corretor; o time dele passa pro Diretor (só Diretor)" })
+  tornarCorretor(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.tornarCorretor(id, req.user);
+  }
+
   @Post(":id/activate")
   @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
   @ApiOperation({ summary: "Reativar usuário (cada gestor na própria equipe)" })

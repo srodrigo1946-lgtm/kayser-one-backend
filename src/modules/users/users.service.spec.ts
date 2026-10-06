@@ -100,3 +100,35 @@ describe("UsersService", () => {
     expect(repo.delete).toHaveBeenCalledWith({ id: "c9" });
   });
 });
+
+describe("UsersService.tornarCorretor", () => {
+  const montar = (lista: any[]) => {
+    const updates: any[] = [];
+    const repo: any = {
+      findOne: async ({ where }: any) => lista.find((u) => u.id === where.id) ?? null,
+      find: async ({ where }: any) => lista.filter((u) => u.managerId === where.managerId),
+      update: async (crit: any, d: any) => updates.push({ crit, d }),
+    };
+    return { s: new UsersService(repo, {} as any), updates };
+  };
+  const diretor = { id: "D", role: "diretor" } as any;
+
+  it("gerente vira corretor e o time dele passa pro Diretor", async () => {
+    const { s, updates } = montar([
+      { id: "G", name: "Gerente Ana", role: "gerente", managerId: "GG" },
+      { id: "c1", role: "corretor", managerId: "G" },
+      { id: "c2", role: "corretor", managerId: "G" },
+    ]);
+    const r = await s.tornarCorretor("G", diretor);
+    expect(r.timeMovido).toBe(2);
+    expect(updates).toContainEqual({ crit: { managerId: "G" }, d: { managerId: "D" } });
+    expect(updates).toContainEqual({ crit: "G", d: { role: "corretor", managerId: "GG" } });
+  });
+
+  it("só o Diretor faz; corretor/Diretor não mudam", async () => {
+    const { s } = montar([{ id: "c1", role: "corretor" }, { id: "D2", role: "diretor" }]);
+    await expect(s.tornarCorretor("c1", { id: "G", role: "gerente" } as any)).rejects.toThrow("Só o Diretor");
+    await expect(s.tornarCorretor("c1", diretor)).rejects.toThrow("Já é corretor");
+    await expect(s.tornarCorretor("D2", diretor)).rejects.toThrow("Diretor");
+  });
+});
