@@ -6,7 +6,7 @@ describe("PropertiesService.update — coordenada do stand", () => {
       findOne: jest.fn().mockResolvedValue({ ...atual }),
       save: jest.fn((p) => Promise.resolve(p)),
     };
-    return new PropertiesService(repo);
+    return new PropertiesService(repo, {} as any);
   };
   const base = { id: "p1", standAddress: "Rua A, 10", standLat: -22.9, standLng: -43.2 };
 

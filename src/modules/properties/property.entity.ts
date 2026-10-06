@@ -92,6 +92,17 @@ export class Property {
   @Column({ type: "jsonb", nullable: true })
   photos: string[];
 
+  // Book do empreendimento (PDF): chave no R2 ("db" = guardado em bookData quando o R2 está desligado).
+  @Column({ type: "varchar", nullable: true })
+  bookKey: string | null;
+
+  @Column({ type: "varchar", nullable: true })
+  bookNome: string | null;
+
+  // PDF em base64 (só se o R2 estiver desligado). Fora das listagens (select: false).
+  @Column({ type: "text", nullable: true, select: false })
+  bookData: string | null;
+
   @Column({ default: true })
   active: boolean;
 

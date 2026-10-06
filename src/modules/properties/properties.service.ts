@@ -1,14 +1,44 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ILike, Repository } from "typeorm";
 import { Property } from "./property.entity";
+import { StorageService } from "../storage/storage.service";
 
 @Injectable()
 export class PropertiesService {
   constructor(
     @InjectRepository(Property)
-    private readonly repo: Repository<Property>
+    private readonly repo: Repository<Property>,
+    private readonly storage: StorageService
   ) {}
+
+  /** Book (PDF) do empreendimento: R2 quando ativo, senão no banco (bookData). */
+  async setBook(id: string, file: Express.Multer.File) {
+    if (!file?.buffer?.length) throw new BadRequestException("Envie o arquivo PDF.");
+    if (!/pdf/i.test(file.mimetype) && !/.pdf$/i.test(file.originalname)) throw new BadRequestException("O book precisa ser PDF.");
+    await this.findOne(id);
+    const key = await this.storage.upload(`books/${id}-${Date.now()}.pdf`, file.buffer, "application/pdf");
+    await this.repo.update(id, {
+      bookKey: key || "db",
+      bookNome: file.originalname || "book.pdf",
+      bookData: key ? null : file.buffer.toString("base64"),
+    } as any);
+    return { ok: true, bookNome: file.originalname };
+  }
+
+  async getBook(id: string): Promise<{ buffer: Buffer; nome: string } | null> {
+    const p = await this.repo.findOne({ where: { id }, select: ["id", "name", "bookKey", "bookNome", "bookData"] as any });
+    if (!p?.bookKey) return null;
+    const nome = p.bookNome || `Book ${p.name}.pdf`;
+    if (p.bookKey === "db") return p.bookData ? { buffer: Buffer.from(p.bookData, "base64"), nome } : null;
+    const o = await this.storage.getObject(p.bookKey);
+    return o ? { buffer: o.buffer, nome } : null;
+  }
+
+  async removeBook(id: string) {
+    await this.repo.update(id, { bookKey: null, bookNome: null, bookData: null } as any);
+    return { ok: true };
+  }
 
   async findAll(search?: string) {
     if (search && search.trim()) {

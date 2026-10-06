@@ -4,7 +4,7 @@ describe("IA One — reset de senha pelo WhatsApp", () => {
   const montar = () => {
     const updates: any[] = [];
     const users = { update: async (id: string, d: any) => updates.push({ id, ...d }) };
-    const s = new IaOneService({} as any, users as any, {} as any, {} as any, {} as any);
+    const s = new IaOneService({} as any, users as any, {} as any, {} as any, {} as any, {} as any);
     return { s: s as any, updates };
   };
   const corretor = { id: "u1", name: "Ana", email: "ana@x.com", role: "corretor", active: true, approved: true } as any;
@@ -32,7 +32,7 @@ describe("IA One — vínculo do WhatsApp pelo e-mail", () => {
   const montar = (lista: any[]) => {
     const updates: any[] = [];
     const users = { find: async () => lista, update: async (id: string, d: any) => updates.push({ id, ...d }) };
-    return { s: new IaOneService({} as any, users as any, {} as any, {} as any, {} as any) as any, updates };
+    return { s: new IaOneService({} as any, users as any, {} as any, {} as any, {} as any, {} as any) as any, updates };
   };
 
   it("pede o e-mail e vincula quando o cadastro não tem telefone", async () => {
@@ -72,7 +72,7 @@ describe("IA One — importar unidades em Excel", () => {
       get: async () => ({ ioneUnidadesCsv: salvos.length ? salvos[salvos.length - 1].ioneUnidadesCsv : 'PRODUTO,BLOCO,UNIDADE,STATUS,DATA DE ENTREGA,VAGA,TIPO,ÁREA,PREÇO,AVALIAÇÃO\n"Vibe Sunset","1","BL01-0101","Disponível","01/2027","","","0","500000","500000"' }),
       update: async (d: any) => salvos.push(d),
     };
-    const s: any = new IaOneService({} as any, {} as any, settings as any, {} as any, {} as any);
+    const s: any = new IaOneService({} as any, {} as any, settings as any, {} as any, {} as any, {} as any);
     s.dados = async () => ({ simulador: { empreendimentos: [{ nome: "Ilhamar Beach & Home" }] }, unidades: [], promocoes: [] });
     s.resumoDados = async () => ({});
     const r = await s.importarUnidades("ilhamar.xlsx", base64);

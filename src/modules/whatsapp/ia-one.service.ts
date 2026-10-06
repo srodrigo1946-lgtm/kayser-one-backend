@@ -9,6 +9,7 @@ import { User, UserRole } from "../users/user.entity";
 import { SettingsService } from "../settings/settings.service";
 import { WhatsappService } from "./whatsapp.service";
 import { KnowledgeService } from "../knowledge/knowledge.service";
+import { PropertiesService } from "../properties/properties.service";
 import {
   lerCsv,
   linkCsv,
@@ -35,6 +36,7 @@ export const IA_ONE_INSTANCIA = "ione";
 const MODELO = "claude-opus-5-5";
 const TAG_FOTOS = /\[FOTOS:\s*([^\]]+)\]/gi;
 const TAG_CONDICOES = /\[CONDICOES\]/gi;
+const TAG_BOOK = /\[BOOK:\s*([^\]]+)\]/gi;
 
 const CARGO: Record<string, string> = {
   diretor: "Diretor",
@@ -60,7 +62,8 @@ export class IaOneService {
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly settings: SettingsService,
     private readonly whatsapp: WhatsappService,
-    private readonly knowledge: KnowledgeService
+    private readonly knowledge: KnowledgeService,
+    private readonly imoveis: PropertiesService
   ) {}
 
   /* ---------------- dados (planilhas) ---------------- */
@@ -321,6 +324,10 @@ export class IaOneService {
           }`
       )
       .join("\n");
+    const books = ((await this.imoveis.findAll().catch(() => [])) as any[])
+      .filter((x) => x.active !== false && x.bookKey)
+      .map((x) => x.name)
+      .join(", ");
     const hoje = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     return `Você é a **One**, assistente da equipe comercial do Kayser One (imobiliária/CRM). Fala com CORRETORES e GESTORES pelo WhatsApp — nunca com cliente final.
 Hoje é ${hoje}. Responda em português, curto e direto (WhatsApp), com emojis leves. Use *negrito* do WhatsApp quando ajudar.
@@ -333,7 +340,7 @@ O QUE VOCÊ FAZ:
 - Primeiro acesso: senha padrão 123456789; o sistema pede pra criar a senha nova.
 - NÃO CONSEGUE ENTRAR / ESQUECEU A SENHA: peça o E-MAIL cadastrado no Kayser One e use a ferramenta resetar_senha com ele. Deu certo → diga pra entrar em kayserone.com.br com o e-mail e a senha 123456789 e criar a senha nova. Deu erro → explique o motivo (sem revelar o e-mail cadastrado). Se a conta estiver aguardando aprovação ou desativada, o problema não é a senha: fale com o gestor.
 - Cadastro novo precisa ser APROVADO pelo gestor (sino 🔔). Conta desativada → falar com o gestor.
-- Check-in do plantão: automático pelo GPS ao abrir o Kayser no stand; até 1,5 km do stand; abre 1 h antes e fecha na hora do início do turno (09:00 ok, 09:01 fora). Precisa PERMITIR a localização. GPS demorando → ligar Localização e Wi-Fi, ir pra perto da janela. Não deu → o Diretor vê o motivo no painel e pode liberar.
+- Check-in do plantão: automático pelo GPS ao abrir o Kayser no stand; até 500 m do stand; abre 1 h antes e fecha na hora do início do turno (09:00 ok, 09:01 fora). Precisa PERMITIR a localização. GPS demorando → ligar Localização e Wi-Fi, ir pra perto da janela. Não deu → o Diretor vê o motivo no painel e pode liberar.
 - Bloqueado no plantão → falar com o gestor (bloqueio do Diretor só o Diretor tira).
 - Lead novo: aviso com fogos, 15 min pro primeiro contato, "Atender agora" abre a conversa. Kanban: mover as etapas; "Cliente sem interesse" volta pro Diretor. Corujão: até 20 leads/dia.
 2) PRODUTOS E PREÇOS: responda com os dados abaixo e as ferramentas (buscar_unidades traz unidade, status, entrega e preço). NUNCA invente preço, unidade ou data.
@@ -341,7 +348,7 @@ O QUE VOCÊ FAZ:
    - Tabela padrão: 10% ato · 20% durante a obra · 70% pós-obra em 120x.
    - Tabela investidor: 10% ato · 90% durante a obra até a entrega.
    - Financiamento Caixa: pergunte o valor aprovado e FGTS/subsídio se o corretor não informou.
-4) MATERIAIS: para mandar FOTOS de um empreendimento escreva [FOTOS: Nome do empreendimento] numa linha. Para mandar as CONDIÇÕES DO MÊS (imagem) escreva [CONDICOES].
+4) MATERIAIS: para mandar FOTOS de um empreendimento escreva [FOTOS: Nome do empreendimento] numa linha. Para mandar as CONDIÇÕES DO MÊS (imagem) escreva [CONDICOES]. Para mandar o BOOK (PDF) escreva [BOOK: Nome do empreendimento] — só dos que estão em BOOKS DISPONÍVEIS.
 5) NÃO MANDE LINK NENHUM (nem de tabela, planilha, painel ou site): responda direto com a informação. Preço que não estiver nos dados abaixo → diga que vai confirmar com o gestor.
 
 ${d.simulador.campanha ? `CAMPANHA / BASE: ${d.simulador.campanha}\n` : ""}EMPREENDIMENTOS (planilha atualizada):
@@ -349,6 +356,8 @@ ${emps || "(planilha ainda não configurada)"}
 
 UNIDADES PROMOCIONAIS (planilha):
 ${d.promocoes.join("\n") || "(nenhuma)"}
+
+BOOKS DISPONÍVEIS (PDF): ${books || "(nenhum cadastrado — diga que o book ainda não foi cadastrado)"}
 
 MATERIAIS E INFORMAÇÕES EXTRAS (do Diretor):
 ${(s.ioneInfo || "").trim() || "(nenhum)"}
@@ -459,12 +468,13 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
     return "Não consegui fechar essa resposta agora 🙏 Confirme com o seu gestor.";
   }
 
-  /** Separa as marcações [FOTOS: x] e [CONDICOES] do texto. */
+  /** Separa as marcações [FOTOS: x], [BOOK: x] e [CONDICOES] do texto. */
   separar(texto: string) {
     const fotos = [...texto.matchAll(TAG_FOTOS)].map((m) => m[1].trim());
-    const condicoes = TAG_CONDICOES.test(texto);
-    const limpo = texto.replace(TAG_FOTOS, "").replace(TAG_CONDICOES, "").replace(/\n{3,}/g, "\n\n").trim();
-    return { limpo, fotos: [...new Set(fotos)].slice(0, 2), condicoes };
+    const books = [...texto.matchAll(TAG_BOOK)].map((m) => m[1].trim());
+    const condicoes = /\[CONDICOES\]/i.test(texto); // sem /g: .test com /g guarda posição entre chamadas
+    const limpo = texto.replace(TAG_FOTOS, "").replace(TAG_CONDICOES, "").replace(TAG_BOOK, "").replace(/\n{3,}/g, "\n\n").trim();
+    return { limpo, fotos: [...new Set(fotos)].slice(0, 2), condicoes, books: [...new Set(books)].slice(0, 2) };
   }
 
   private async acharUsuario(phone: string): Promise<User | null> {
@@ -533,12 +543,23 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
 
     try {
       const bruto = await this.responder(user, phone, texto);
-      const { limpo, fotos, condicoes } = this.separar(bruto);
+      const { limpo, fotos, condicoes, books } = this.separar(bruto);
       if (limpo) await this.enviar(phone, limpo, user, p.pushName);
       for (const nome of fotos) {
         const f = await this.knowledge.fotosDoEmpreendimento(nome, 5).catch(() => null);
         for (const foto of f?.fotos ?? []) await this.whatsapp.sendMedia(IA_ONE_INSTANCIA, phone, foto).catch(() => {});
         if (f?.fotos?.length) await this.salvar(phone, user, p.pushName, "out", `📷 ${f.fotos.length} foto(s) do ${f.nome}`);
+      }
+      for (const nome of books) {
+        const comBook = ((await this.imoveis.findAll().catch(() => [])) as any[]).filter((x) => x.active !== false && x.bookKey);
+        const imovel = acharPorNome(comBook, nome, (x) => x.name);
+        const pdf = imovel ? await this.imoveis.getBook(imovel.id).catch(() => null) : null;
+        if (pdf) {
+          await this.whatsapp
+            .sendMedia(IA_ONE_INSTANCIA, phone, { base64: pdf.buffer.toString("base64"), mimetype: "application/pdf", fileName: pdf.nome, caption: `Book ${imovel.name}` })
+            .catch(() => {});
+          await this.salvar(phone, user, p.pushName, "out", `📘 Book ${imovel.name} (PDF)`);
+        }
       }
       if (condicoes) {
         const img = await this.settings.getDirecionalImageData().catch(() => null);
