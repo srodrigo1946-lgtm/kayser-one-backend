@@ -280,8 +280,11 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
       return "Oi! Eu sou a *One*, assistente da equipe Kayser One. 👋\nNão reconheci este número. Me manda o *e-mail que você usa pra entrar no Kayser One* que eu te identifico.";
     }
     const alvo = (await this.users.find()).find((u) => (u.email || "").trim().toLowerCase() === email);
-    if (!alvo || alvo.active === false || alvo.empresaId) {
-      return "Não achei esse e-mail entre os usuários ativos do Kayser One 🤔 Confira o e-mail ou fale com o seu gestor.";
+    if (alvo && alvo.active === false && !alvo.empresaId) {
+      return `Achei seu cadastro, ${alvo.name.split(" ")[0]}, mas a sua conta no Kayser One está *desativada* 🔒 Por isso o acesso não funciona. Fale com o seu gestor pra reativar.`;
+    }
+    if (!alvo || alvo.empresaId) {
+      return "Não achei esse e-mail entre os usuários do Kayser One 🤔 Confira o e-mail ou fale com o seu gestor.";
     }
     if (final8(alvo.phone) || final8((alvo as any).whatsapp)) {
       return "Esse e-mail já tem outro telefone no cadastro. Pra usar este número, peça pro seu gestor atualizar o seu telefone no Kayser One. 🙏";

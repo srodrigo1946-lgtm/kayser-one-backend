@@ -46,6 +46,8 @@ describe("IA One — vínculo do WhatsApp pelo e-mail", () => {
     const { s, updates } = montar([{ id: "u1", name: "Ana", email: "ana@x.com", active: true, phone: "21 98888-7777" }]);
     expect(await s.vincularPorEmail("5521999998888", "ana@x.com")).toContain("já tem outro telefone");
     expect(await s.vincularPorEmail("5521999998888", "nao@x.com")).toContain("Não achei");
+    const { s: s2 } = montar([{ id: "u2", name: "Angela Carvalho", email: "angela@x.com", active: false }]);
+    expect(await s2.vincularPorEmail("5521999998888", "angela@x.com")).toContain("desativada");
     expect(updates).toHaveLength(0);
   });
 
