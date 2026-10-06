@@ -31,6 +31,8 @@ import {
 
 /** Instância própria da IA One na Evolution (número só da equipe). */
 export const IA_ONE_INSTANCIA = "ione";
+/** Espera antes de responder, pra juntar mensagens mandadas em sequência. */
+export const IA_ONE_ESPERA_MS = 6000;
 // Claude Opus 5.5 com esforço "low" (conversa curta de WhatsApp) + fallback do servidor
 // se o modelo recusar (rota por categoria, sem lista de modelos pra manter).
 const MODELO = "claude-opus-5-5";
@@ -553,6 +555,12 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
       }
     }
     await this.salvar(phone, user, p.pushName, "in", texto);
+
+    // Mensagens seguidas ("Tabela direta" + "Ato de 10%"): espera um pouco e só a ÚLTIMA
+    // responde — com o histórico todo, uma resposta só (antes saíam duas).
+    await new Promise((r) => setTimeout(r, IA_ONE_ESPERA_MS));
+    const ultima = await this.msgs.findOne({ where: { phone }, order: { createdAt: "DESC" } });
+    if (ultima && ultima.direction === "in" && ultima.content !== texto) return { ok: true, agrupada: true };
 
     if (!user) {
       await this.enviar(phone, await this.vincularPorEmail(phone, texto), null, p.pushName);
