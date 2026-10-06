@@ -115,6 +115,15 @@ export class IaOneService {
     return this.cache;
   }
 
+  /** Apaga as unidades ENVIADAS de um empreendimento (ex.: planilha que entrou no lugar errado). */
+  async removerUnidades(produto: string) {
+    const s: any = await this.settings.get();
+    const atuais = s.ioneUnidadesCsv ? lerUnidades(lerCsv(s.ioneUnidadesCsv)) : [];
+    await this.settings.update({ ioneUnidadesCsv: unidadesParaCsv(atuais.filter((u) => u.produto !== produto)) } as any);
+    this.logger.log(`IA One: unidades enviadas de ${produto} apagadas.`);
+    return this.resumoDados();
+  }
+
   /**
    * Diretor sobe um arquivo de unidades (Excel ou CSV): a tabela completa (com PRODUTO)
    * ou a lista do simulador de UM empreendimento (sem nome dentro — usa o nome do arquivo,

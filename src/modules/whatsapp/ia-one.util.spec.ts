@@ -107,3 +107,19 @@ describe("IA One — tabela direta regra 1", () => {
     ]);
   });
 });
+
+describe("IA One — achar empreendimento pelo nome (fases/módulos)", () => {
+  const { acharPorNome } = require("./ia-one.util");
+  const l = [{ n: "Apogeu Barra - 1° fase" }, { n: "Apogeu Barra - 2° fase" }, { n: "Villa Santé Residence" }, { n: "Sky Mário Guimarães Riva" }];
+  it("acerta a fase pelo número", () => {
+    expect(acharPorNome(l, "Apogeu Barra 2 fase", (x: any) => x.n).n).toBe("Apogeu Barra - 2° fase");
+    expect(acharPorNome(l, "apogeu 2ª fase", (x: any) => x.n).n).toBe("Apogeu Barra - 2° fase");
+    expect(acharPorNome(l, "Apogeu Barra - 1° fase", (x: any) => x.n).n).toBe("Apogeu Barra - 1° fase");
+  });
+  it("nomes soltos continuam funcionando", () => {
+    expect(acharPorNome(l, "villa sante", (x: any) => x.n).n).toBe("Villa Santé Residence");
+    expect(acharPorNome(l, "Sky Mário Guimarães Riva", (x: any) => x.n).n).toBe("Sky Mário Guimarães Riva");
+    expect(acharPorNome(l, "sky", (x: any) => x.n).n).toBe("Sky Mário Guimarães Riva");
+    expect(acharPorNome(l, "marine", (x: any) => x.n)).toBeUndefined();
+  });
+});

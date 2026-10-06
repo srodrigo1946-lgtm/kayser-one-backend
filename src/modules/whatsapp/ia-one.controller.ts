@@ -76,6 +76,12 @@ export class IaOneController {
     return this.one.importarUnidades(dto.nome, dto.base64);
   }
 
+  @Delete("unidades/:produto")
+  @ApiOperation({ summary: "Apaga as unidades enviadas de um empreendimento" })
+  removerUnidades(@Param("produto") produto: string) {
+    return this.one.removerUnidades(produto);
+  }
+
   @Post("testar")
   @ApiOperation({ summary: "Testa a IA One pelo painel (sem WhatsApp)" })
   testar(@Body() dto: TestarDto, @Request() req: any) {

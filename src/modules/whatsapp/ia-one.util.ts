@@ -148,13 +148,25 @@ export function lerUnidades(linhas: string[][]): Unidade[] {
 
 /** Acha pelo nome, tolerante (sem acento, parte do nome). */
 export function acharPorNome<T>(lista: T[], nome: string, campo: (x: T) => string): T | undefined {
-  const alvo = semAcento(nome);
-  if (!alvo) return undefined;
-  return (
-    lista.find((x) => semAcento(campo(x)) === alvo) ||
-    lista.find((x) => semAcento(campo(x)).includes(alvo)) ||
-    lista.find((x) => alvo.includes(semAcento(campo(x)).split(" ")[0]))
-  );
+  // Palavras sem acento/pontuação/º: "Apogeu Barra - 2° fase" → [apogeu, barra, 2, fase].
+  const palavras = (t: string) => semAcento(t).replace(/[°ºª]/g, "").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+  const alvo = palavras(nome);
+  if (!alvo.length) return undefined;
+  const exato = lista.find((x) => palavras(campo(x)).join(" ") === alvo.join(" "));
+  if (exato) return exato;
+  // Melhor = mais palavras em comum; número diferente (fase/módulo) desempata contra.
+  let melhor: T | undefined;
+  let melhorPts = 0;
+  for (const x of lista) {
+    const c = palavras(campo(x));
+    let pts = alvo.filter((w) => c.includes(w)).length;
+    if (c.some((w) => /^\d+$/.test(w) && !alvo.includes(w)) && alvo.some((w) => /^\d+$/.test(w))) pts -= 1;
+    if (pts > melhorPts) {
+      melhor = x;
+      melhorPts = pts;
+    }
+  }
+  return melhor;
 }
 
 /** Meses até a entrega a partir de "02/2027" (mês/ano). 0 se já entregue/inválido. */
