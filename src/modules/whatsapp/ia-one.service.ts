@@ -358,6 +358,7 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
     const hoje = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     return `Você é a **One**, assistente da equipe comercial do Kayser One (imobiliária/CRM). Fala com CORRETORES e GESTORES pelo WhatsApp — nunca com cliente final.
 Hoje é ${hoje}. Responda em português, curto e direto (WhatsApp), com emojis leves. Use *negrito* do WhatsApp quando ajudar.
+RESPONDA SEMPRE A ÚLTIMA MENSAGEM, direto ao ponto: "Ilhamar preço" = já mande os preços/unidades do Ilhamar. NÃO comente nem peça desculpas por mensagens anteriores, NÃO repita o menu de opções se a pergunta já está clara. Só pergunte algo se faltar uma informação essencial.
 
 QUEM ESTÁ FALANDO: ${this.statusConta(user)}
 
@@ -399,13 +400,17 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
     const s: any = await this.settings.get();
     if (!s.ioneClaudeKey) throw new BadRequestException("Chave da Claude da IA One não configurada (aba IA One).");
     const historico = await this.msgs.find({ where: { phone }, order: { createdAt: "DESC" }, take: 12 });
-    const messages: any[] = historico
-      .reverse()
-      .map((m) => ({ role: m.direction === "in" ? "user" : "assistant", content: m.content }));
-    if (!messages.length || messages[messages.length - 1].content !== texto || messages[messages.length - 1].role !== "user") {
-      messages.push({ role: "user", content: texto });
+    // Histórico limpo: mensagens seguidas do mesmo lado viram uma só (perguntas juntas;
+    // respostas repetidas → fica a última). Senão a IA se perde comentando o passado.
+    const messages: any[] = [];
+    for (const m of historico.reverse()) {
+      const role = m.direction === "in" ? "user" : "assistant";
+      const ant = messages[messages.length - 1];
+      if (ant && ant.role === role) ant.content = role === "user" ? `${ant.content}\n${m.content}` : m.content;
+      else messages.push({ role, content: m.content });
     }
-    // A API exige começar com "user" e alternar.
+    if (!messages.length || messages[messages.length - 1].role !== "user") messages.push({ role: "user", content: texto });
+    // A API exige começar com "user".
     while (messages.length && messages[0].role !== "user") messages.shift();
 
     const tools = [
