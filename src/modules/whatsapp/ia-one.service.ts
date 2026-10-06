@@ -550,6 +550,9 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
     // WhatsApp novo pode esconder o número (@lid): tenta o número real que vem junto.
     const alt = raw?.key?.senderPn || raw?.key?.remoteJidAlt || "";
     const phone = (/@lid/.test(raw?.key?.remoteJid || "") && alt ? alt : p.remoteJid).split("@")[0].replace(/\D/g, "");
+    // Responde no MESMO endereço que chegou (igual ao número principal): montar
+    // 55...@s.whatsapp.net à mão num contato @lid fica PENDENTE e não chega.
+    const para: string = raw?.key?.remoteJid || phone;
     const user = await this.acharUsuario(phone);
 
     let texto = p.text;
@@ -558,7 +561,7 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
       const t = dl ? await this.transcrever(dl.base64, dl.mimetype) : null;
       texto = t ? `🎤 ${t}` : "";
       if (!texto) {
-        await this.enviar(phone, "Não consegui ouvir o áudio agora 🙏 Pode mandar por escrito?", user, p.pushName);
+        await this.enviar(phone, "Não consegui ouvir o áudio agora 🙏 Pode mandar por escrito?", user, p.pushName, para);
         return { ok: true };
       }
     }
@@ -571,21 +574,21 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
     if (ultima && ultima.direction === "in" && ultima.content !== texto) return { ok: true, agrupada: true };
 
     if (!user) {
-      await this.enviar(phone, await this.vincularPorEmail(phone, texto), null, p.pushName);
+      await this.enviar(phone, await this.vincularPorEmail(phone, texto), null, p.pushName, para);
       return { ok: true };
     }
     if (user.active === false) {
-      await this.enviar(phone, "Oi! Sua conta no Kayser One está desativada. Fale com o seu gestor pra reativar. 🙏", user, p.pushName);
+      await this.enviar(phone, "Oi! Sua conta no Kayser One está desativada. Fale com o seu gestor pra reativar. 🙏", user, p.pushName, para);
       return { ok: true };
     }
 
     try {
       const bruto = await this.responder(user, phone, texto);
       const { limpo, fotos, condicoes, books } = this.separar(bruto);
-      if (limpo) await this.enviar(phone, limpo, user, p.pushName);
+      if (limpo) await this.enviar(phone, limpo, user, p.pushName, para);
       for (const nome of fotos) {
         const f = await this.knowledge.fotosDoEmpreendimento(nome, 5).catch(() => null);
-        for (const foto of f?.fotos ?? []) await this.whatsapp.sendMedia(IA_ONE_INSTANCIA, phone, foto).catch(() => {});
+        for (const foto of f?.fotos ?? []) await this.whatsapp.sendMedia(IA_ONE_INSTANCIA, para, foto).catch(() => {});
         if (f?.fotos?.length) await this.salvar(phone, user, p.pushName, "out", `📷 ${f.fotos.length} foto(s) do ${f.nome}`);
       }
       for (const nome of books) {
@@ -594,7 +597,7 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
         const pdf = imovel ? await this.imoveis.getBook(imovel.id).catch(() => null) : null;
         if (pdf) {
           await this.whatsapp
-            .sendMedia(IA_ONE_INSTANCIA, phone, { base64: pdf.buffer.toString("base64"), mimetype: "application/pdf", fileName: pdf.nome, caption: `Book ${imovel.name}` })
+            .sendMedia(IA_ONE_INSTANCIA, para, { base64: pdf.buffer.toString("base64"), mimetype: "application/pdf", fileName: pdf.nome, caption: `Book ${imovel.name}` })
             .catch(() => {});
           await this.salvar(phone, user, p.pushName, "out", `📘 Book ${imovel.name} (PDF)`);
         }
@@ -603,21 +606,21 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
         const img = await this.settings.getDirecionalImageData().catch(() => null);
         if (img) {
           await this.whatsapp
-            .sendMedia(IA_ONE_INSTANCIA, phone, { base64: img.buffer.toString("base64"), mimetype: img.contentType, fileName: "condicoes-do-mes", caption: "Condições do mês" })
+            .sendMedia(IA_ONE_INSTANCIA, para, { base64: img.buffer.toString("base64"), mimetype: img.contentType, fileName: "condicoes-do-mes", caption: "Condições do mês" })
             .catch(() => {});
           await this.salvar(phone, user, p.pushName, "out", "🖼️ Condições do mês");
         }
       }
     } catch (e) {
       this.logger.error(`IA One falhou: ${(e as Error).message}`);
-      await this.enviar(phone, "Tive um probleminha pra responder agora 😅 Tenta de novo em instantes ou fale com o seu gestor.", user, p.pushName);
+      await this.enviar(phone, "Tive um probleminha pra responder agora 😅 Tenta de novo em instantes ou fale com o seu gestor.", user, p.pushName, para);
     }
     return { ok: true };
   }
 
-  private async enviar(phone: string, texto: string, user: User | null, nome: string) {
+  private async enviar(phone: string, texto: string, user: User | null, nome: string, para: string = phone) {
     try {
-      const r: any = await this.whatsapp.sendText(IA_ONE_INSTANCIA, phone, texto);
+      const r: any = await this.whatsapp.sendText(IA_ONE_INSTANCIA, para, texto);
       this.registrarEnvio(phone, r?.key?.remoteJid || "?", String(r?.status ?? r?.message?.status ?? "enviado"));
     } catch (e) {
       this.registrarEnvio(phone, "-", "FALHOU", (e as Error).message);
