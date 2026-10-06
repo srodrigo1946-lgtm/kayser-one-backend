@@ -463,6 +463,8 @@ export class SchemaBootstrapService implements OnModuleInit {
 
   /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */
   private async ensureIaOne() {
+    await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "reengajadoEm" timestamp`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "reengajarAtivo" boolean NOT NULL DEFAULT true`);
     for (const c of ["bookKey", "bookNome"]) await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "${c}" varchar`);
     await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "bookData" text`);
     await this.dataSource.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "whatsappVinculadoEm" timestamp`);

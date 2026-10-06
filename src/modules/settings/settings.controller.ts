@@ -55,6 +55,9 @@ class UpdateSettingsDto {
   @IsOptional() @IsBoolean()
   ioneAtivo?: boolean;
 
+  @IsOptional() @IsBoolean()
+  reengajarAtivo?: boolean;
+
   @IsOptional() @IsString()
   masterPrompt?: string;
 

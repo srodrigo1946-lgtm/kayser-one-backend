@@ -3,6 +3,8 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { IaOneMensagem } from "./ia-one-mensagem.entity";
 import { IaOneService } from "./ia-one.service";
 import { IaOneController } from "./ia-one.controller";
+import { ReengajamentoService } from "./reengajamento.service";
+import { Lead } from "../leads/lead.entity";
 import { User } from "../users/user.entity";
 import { WhatsappController } from "./whatsapp.controller";
 import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
@@ -17,9 +19,9 @@ import { KnowledgeModule } from "../knowledge/knowledge.module";
 import { PropertiesModule } from "../properties/properties.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([IaOneMensagem, User]), ConversationsModule, SettingsModule, AiModule, forwardRef(() => LeadQueueModule), UsersModule, KnowledgeModule, PropertiesModule],
+  imports: [TypeOrmModule.forFeature([IaOneMensagem, User, Lead]), ConversationsModule, SettingsModule, AiModule, forwardRef(() => LeadQueueModule), UsersModule, KnowledgeModule, PropertiesModule],
   controllers: [WhatsappController, WhatsappWebhookController, IaOneController],
-  providers: [WhatsappService, WhatsappFlowService, IaOneService],
+  providers: [WhatsappService, WhatsappFlowService, IaOneService, ReengajamentoService],
   exports: [WhatsappService, WhatsappFlowService],
 })
 export class WhatsappModule {}

@@ -8,6 +8,7 @@ import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { IaOneService, IA_ONE_INSTANCIA } from "./ia-one.service";
+import { ReengajamentoService } from "./reengajamento.service";
 
 /**
  * O cliente mandou ÁUDIO → a resposta vira voz. Texto pra ser FALADO é diferente do
@@ -98,7 +99,8 @@ export class WhatsappFlowService {
     private readonly leadQueue: LeadQueueService,
     private readonly users: UsersService,
     private readonly knowledge: KnowledgeService,
-    private readonly iaOne: IaOneService
+    private readonly iaOne: IaOneService,
+    private readonly reengajamento: ReengajamentoService
   ) {}
 
   /** Catálogo dos empreendimentos pro prompt (não derruba a resposta se falhar). */
@@ -339,6 +341,10 @@ export class WhatsappFlowService {
         if (pedeParar(textoCliente)) await this.conversations.marcarNaoPerturbe(conv.leadId).catch(() => null);
         // Score em TODA conversa com lead — no plantão também (a IA só lê, não responde).
         this.agendarScore(conv.id, conv.leadId);
+        // Resposta ao reengajamento ("sem interesse"): NÃO → sai do Kayser; SIM → fila.
+        if (await this.reengajamento.tratarResposta(conv.leadId, textoCliente, instanceName, remoteJidFull).catch(() => false)) {
+          return { persisted: true, autoReply: false, reengajamento: true };
+        }
       }
 
       if (ehCentral && !conv.fromAd) {

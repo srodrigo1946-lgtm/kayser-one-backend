@@ -64,6 +64,10 @@ export class Settings {
   @Column({ default: true })
   ioneAtivo: boolean;
 
+  // Reengajar "Cliente sem interesse": 25 por hora, 9h–21h, 1 mensagem por cliente.
+  @Column({ default: true })
+  reengajarAtivo: boolean;
+
   // Permite sobrescrever o prompt mestre padrão.
   @Column({ type: "text", nullable: true })
   masterPrompt: string;

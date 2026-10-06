@@ -151,6 +151,10 @@ export class Lead {
   @Column({ default: false })
   naoPerturbe: boolean;
 
+  // Quando a IA mandou a mensagem de reengajamento (cliente "sem interesse") — 1x só.
+  @Column({ type: "timestamp", nullable: true })
+  reengajadoEm: Date | null;
+
   @Column({ nullable: true })
   kanbanOrder: number;
 
