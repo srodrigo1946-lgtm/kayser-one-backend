@@ -179,7 +179,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Fluxos do Rodrigo (04/10/2026):
- * - padrão: 10% ato · 20% durante a obra (mensal até a entrega) · 70% pós-obra em 120x
+ * - padrão (tabela direta, 06/10): 6% ato · 2% em 30 dias · 2% em 60 dias · depois os 20%
+ *   mensais até a entrega · 70% pós-obra em 120x
  * - investidor: 10% ato · 90% durante a obra (mensal até a entrega)
  * - caixa: financiamento Caixa + FGTS/subsídio; a diferença (entrada) = 10% ato
  *   (ou o que faltar) + o resto mensal durante a obra.
@@ -201,8 +202,11 @@ export function simularPagamento(p: {
   };
   let observacao = "Valores sem correção (INCC/IPCA), sujeitos à aprovação e à política vigente.";
   if (p.tabela === "padrao") {
-    add("Ato (10%)", preco * 0.1, 1);
-    add("Durante a obra (20%)", preco * 0.2, meses);
+    add("Ato (6%)", preco * 0.06, 1);
+    add("30 dias (2%)", preco * 0.02, 1);
+    add("60 dias (2%)", preco * 0.02, 1);
+    // Os 20% começam depois dos 60 dias: do 3º mês até a entrega (mín. 1 parcela).
+    add("Durante a obra (20%)", preco * 0.2, Math.max(1, meses - 2));
     add("Pós-obra (70%)", preco * 0.7, 120);
   } else if (p.tabela === "investidor") {
     add("Ato (10%)", preco * 0.1, 1);
@@ -224,7 +228,7 @@ export function simularPagamento(p: {
 /** Texto curto da simulação pro WhatsApp. */
 export function textoSimulacao(s: Simulacao, rotulo: string): string {
   const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const nomes: Record<Tabela, string> = { padrao: "Tabela padrão", investidor: "Tabela investidor", caixa: "Financiamento Caixa" };
+  const nomes: Record<Tabela, string> = { padrao: "Tabela direta", investidor: "Tabela investidor", caixa: "Financiamento Caixa" };
   const corpo = s.linhas
     .map((l) => (l.parcelas > 1 ? `• ${l.item}: ${l.parcelas}x de ${brl(l.valorParcela)} (total ${brl(l.total)})` : `• ${l.item}: ${brl(l.total)}`))
     .join("\n");
