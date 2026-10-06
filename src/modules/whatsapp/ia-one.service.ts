@@ -54,6 +54,9 @@ const final8 = (t: string) => (t || "").replace(/\D/g, "").slice(-8);
 @Injectable()
 export class IaOneService {
   private readonly logger = new Logger(IaOneService.name);
+  // Últimos envios do número da One (o que a Evolution respondeu) — diagnóstico no painel.
+  private envios: { em: string; para: string; status: string; erro?: string }[] = [];
+
   // Anti-abuso: no máximo 1 reset de senha por usuário por hora pela One.
   private ultimoReset = new Map<string, number>();
 
@@ -608,8 +611,29 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
   }
 
   private async enviar(phone: string, texto: string, user: User | null, nome: string) {
-    await this.whatsapp.sendText(IA_ONE_INSTANCIA, phone, texto);
+    try {
+      const r: any = await this.whatsapp.sendText(IA_ONE_INSTANCIA, phone, texto);
+      this.registrarEnvio(phone, r?.key?.remoteJid || "?", String(r?.status ?? r?.message?.status ?? "enviado"));
+    } catch (e) {
+      this.registrarEnvio(phone, "-", "FALHOU", (e as Error).message);
+      throw e;
+    }
     await this.salvar(phone, user, nome, "out", texto);
+  }
+
+  private registrarEnvio(phone: string, para: string, status: string, erro?: string) {
+    this.envios.unshift({ em: new Date().toISOString(), para: `${phone.slice(-4)} → ${para}`, status, ...(erro ? { erro: erro.slice(0, 200) } : {}) });
+    this.envios = this.envios.slice(0, 20);
+  }
+
+  ultimosEnvios() {
+    return this.envios;
+  }
+
+  async reiniciar() {
+    await this.whatsapp.restartInstance(IA_ONE_INSTANCIA);
+    await this.whatsapp.ensureWebhook(IA_ONE_INSTANCIA).catch(() => null);
+    return this.status();
   }
 
   /* ---------------- painel do Diretor ---------------- */

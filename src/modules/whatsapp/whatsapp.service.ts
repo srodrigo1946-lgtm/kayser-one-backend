@@ -359,6 +359,19 @@ export class WhatsappService {
     }
   }
 
+  /** Reinicia a sessão da instância (sem deslogar / sem QR). Evolution v2: PUT ou POST /instance/restart. */
+  async restartInstance(instanceName: string) {
+    for (const metodo of ["put", "post"] as const) {
+      try {
+        const { data } = await axios[metodo](`${this.apiUrl}/instance/restart/${instanceName}`, {}, { headers: this.headers });
+        this.logger.log(`Instância ${instanceName} reiniciada (${metodo.toUpperCase()}).`);
+        return data;
+      } catch (err: any) {
+        if (metodo === "post") throw new ServiceUnavailableException(`Não consegui reiniciar: ${err?.response?.status ?? err?.message}`);
+      }
+    }
+  }
+
   async deleteInstance(instanceName: string) {
     const { data } = await axios.delete(
       `${this.apiUrl}/instance/delete/${instanceName}`,

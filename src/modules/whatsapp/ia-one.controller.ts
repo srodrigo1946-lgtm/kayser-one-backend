@@ -51,6 +51,18 @@ export class IaOneController {
     return this.one.conectar(reset === "1");
   }
 
+  @Post("reiniciar")
+  @ApiOperation({ summary: "Reinicia a sessão do número da One (sem QR)" })
+  reiniciar() {
+    return this.one.reiniciar();
+  }
+
+  @Get("envios")
+  @ApiOperation({ summary: "Últimos envios do número da One (diagnóstico)" })
+  envios() {
+    return this.one.ultimosEnvios();
+  }
+
   @Delete("instancia")
   @ApiOperation({ summary: "Desconecta o número da IA One" })
   desconectar() {
