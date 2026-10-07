@@ -222,8 +222,8 @@ export function simularPagamento(p: {
     add("Ato (6%)", preco * 0.06, 1);
     add("30 dias (2%)", preco * 0.02, 1);
     add("60 dias (2%)", preco * 0.02, 1);
-    // Os 20% usam o prazo INTEIRO da obra — os sinais de 30/60 dias não tiram parcela (Rodrigo 07/10).
-    add("Durante a obra (20%)", preco * 0.2, meses);
+    // Os 20% começam depois dos 60 dias: do 3º mês até a entrega (mín. 1 parcela).
+    add("Durante a obra (20%)", preco * 0.2, Math.max(1, meses - 2));
     add("Pós-obra (70%)", preco * 0.7, 120);
   } else if (p.tabela === "investidor") {
     add("Ato (10%)", preco * 0.1, 1);
