@@ -483,6 +483,22 @@ export class SchemaBootstrapService implements OnModuleInit {
         "createdAt" timestamp NOT NULL DEFAULT now()
       )`);
     await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_ia_one_phone ON ia_one_mensagens (phone, "createdAt")`);
+    // Acompanhamento do reengajamento (enviado / sim / nao). O lead do "não" é apagado, então o histórico fica aqui.
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS reengajamento_eventos (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "leadId" varchar,
+        nome varchar,
+        phone varchar,
+        tipo varchar(10) NOT NULL,
+        texto text,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
+    // 1ª vez: traz os envios que já saíram antes do painel existir.
+    await this.dataSource.query(`
+      INSERT INTO reengajamento_eventos ("leadId", nome, phone, tipo, "createdAt")
+      SELECT id::varchar, name, phone, 'enviado', "reengajadoEm" FROM leads
+      WHERE "reengajadoEm" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM reengajamento_eventos)`);
   }
 
   /** Reuniões em vídeo (aba Reuniões). */

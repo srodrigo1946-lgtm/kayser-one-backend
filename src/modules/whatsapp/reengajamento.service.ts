@@ -100,6 +100,7 @@ export class ReengajamentoService {
           const texto = mensagemReengajar(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
           await this.whatsapp.sendText(`user_${central}`, phone, texto);
           await this.conversations.addMessage(conv.id, texto, "out", true);
+          await this.registrar(l, "enviado");
           enviados++;
         } catch (e) {
           this.logger.warn(`Reengajamento: falhou pro lead ${l.id} (${(e as Error).message}).`);
@@ -127,6 +128,7 @@ export class ReengajamentoService {
     if (r === "outro") r = await this.ai.classificarInteresse(texto);
     if (r === "outro") return false;
     const nome = primeiroNome(lead.name);
+    await this.registrar(lead, r, texto);
     if (r === "nao") {
       await this.whatsapp
         .sendText(instancia, destino, `Tudo bem${nome ? `, ${nome}` : ""}! Não vamos mais te enviar mensagens. Obrigado pela atenção 🙏`)
@@ -143,5 +145,45 @@ export class ReengajamentoService {
     const f = await this.fila.distribuirLeadManual(lead.id).catch(() => null);
     this.logger.log(`Reengajamento: lead ${lead.id} tem interesse — fila: ${f?.status ?? "erro"}.`);
     return true;
+  }
+
+  /** Guarda o que aconteceu (o lead do "não" é apagado, o histórico fica). */
+  private async registrar(lead: Lead, tipo: "enviado" | "sim" | "nao", texto?: string) {
+    await this.leads
+      .query(`INSERT INTO reengajamento_eventos ("leadId", nome, phone, tipo, texto) VALUES ($1, $2, $3, $4, $5)`, [
+        lead.id,
+        lead.name ?? null,
+        lead.phone || lead.whatsapp || null,
+        tipo,
+        texto ? texto.slice(0, 500) : null,
+      ])
+      .catch((e) => this.logger.warn(`Reengajamento: não registrei evento (${e.message}).`));
+  }
+
+  /** Painel do Diretor: números de hoje e do total, quem falta e as últimas respostas. */
+  async painel() {
+    const hojeSP = `("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = (now() AT TIME ZONE 'America/Sao_Paulo')::date`;
+    const [contagem] = await this.leads.query(
+      `SELECT
+         count(*) FILTER (WHERE tipo = 'enviado' AND ${hojeSP})::int AS "enviadosHoje",
+         count(*) FILTER (WHERE tipo = 'sim' AND ${hojeSP})::int AS "simHoje",
+         count(*) FILTER (WHERE tipo = 'nao' AND ${hojeSP})::int AS "naoHoje",
+         count(*) FILTER (WHERE tipo = 'enviado')::int AS "enviadosTotal",
+         count(*) FILTER (WHERE tipo = 'sim')::int AS "simTotal",
+         count(*) FILTER (WHERE tipo = 'nao')::int AS "naoTotal"
+       FROM reengajamento_eventos`
+    );
+    const [fila] = await this.leads.query(
+      `SELECT
+         count(*) FILTER (WHERE "reengajadoEm" IS NOT NULL AND "reengajadoEm" > now() - interval '15 days')::int AS aguardando,
+         count(*) FILTER (WHERE "reengajadoEm" IS NULL AND "naoPerturbe" = false)::int AS faltam
+       FROM leads WHERE status = $1`,
+      [LeadStatus.VENDA_PERDIDA]
+    );
+    const ultimas = await this.leads.query(
+      `SELECT nome, phone, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE tipo <> 'enviado' ORDER BY "createdAt" DESC LIMIT 30`
+    );
+    const s: any = await this.settings.get().catch(() => null);
+    return { ativo: s?.reengajarAtivo !== false, porHora: REENGAJAR_POR_HORA, ...contagem, ...fila, ultimas };
   }
 }
