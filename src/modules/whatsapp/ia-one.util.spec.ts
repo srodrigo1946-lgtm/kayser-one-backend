@@ -49,13 +49,13 @@ describe("IA One — planilhas e simulação", () => {
     expect(mesesAte("01/2020", new Date(2026, 9, 4))).toBe(0);
   });
 
-  it("tabela direta: 6% ato, 2% em 30 dias, 2% em 60 dias, 20% na obra depois, 70% em 120x", () => {
+  it("tabela direta: 6% ato, 2% em 30 dias, 2% em 60 dias, 20% no prazo todo da obra, 70% em 120x", () => {
     const s = simularPagamento({ preco: 500000, tabela: "padrao", mesesObra: 10 });
     expect(s.linhas).toEqual([
       { item: "Ato (6%)", parcelas: 1, valorParcela: 30000, total: 30000 },
       { item: "30 dias (2%)", parcelas: 1, valorParcela: 10000, total: 10000 },
       { item: "60 dias (2%)", parcelas: 1, valorParcela: 10000, total: 10000 },
-      { item: "Durante a obra (20%)", parcelas: 8, valorParcela: 12500, total: 100000 },
+      { item: "Durante a obra (20%)", parcelas: 10, valorParcela: 10000, total: 100000 },
       { item: "Pós-obra (70%)", parcelas: 120, valorParcela: 2916.67, total: 350000 },
     ]);
   });
