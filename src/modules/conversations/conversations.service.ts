@@ -92,7 +92,8 @@ export class ConversationsService {
       // Só os campos do atendente que interessam ao front (sem passwordHash).
       .leftJoin("c.assignedTo", "atendente")
       .addSelect(["atendente.id", "atendente.name", "atendente.role", "atendente.avatar"])
-      .orderBy("c.lastMessageAt", "DESC")
+      // NULLS LAST: conversa sem mensagem (~500) subia pro topo e escondia as ativas.
+      .orderBy("c.lastMessageAt", "DESC", "NULLS LAST")
       // SÓ conversas de LEAD entram no Kayser One. Conversa pessoal e grupo (que
       // nunca têm lead vinculado) ficam de fora — o WhatsApp da pessoa não vira CRM.
       .where("c.leadId IS NOT NULL");
