@@ -152,7 +152,8 @@ export class DocumentsService {
     const req = await this.reqRepo.findOne({ where: { token } });
     if (!req) throw new NotFoundException("Link inválido.");
 
-    const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+    // Upload público: a extensão vem do cliente → só letras/números (vai pra chave do R2 e pro nome no download).
+    const ext = (file.originalname.split(".").pop() || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "bin";
     const date = new Date().toISOString().slice(0, 10);
     const filename = `${slug(req.clientName)}_${(req.clientPhone || "").replace(/\D/g, "")}_${date}_${tipoLabel(tipo)}.${ext}`;
 

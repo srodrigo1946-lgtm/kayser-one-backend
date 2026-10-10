@@ -3,6 +3,8 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import Anthropic from "@anthropic-ai/sdk";
 import * as bcrypt from "bcryptjs";
+import { randomInt } from "crypto";
+import { Cron } from "@nestjs/schedule";
 import * as XLSX from "xlsx";
 import { IaOneMensagem } from "./ia-one-mensagem.entity";
 import { User, UserRole } from "../users/user.entity";
@@ -48,8 +50,32 @@ const CARGO: Record<string, string> = {
   corretor: "Corretor",
 };
 
-/** Últimos 8 dígitos do telefone (casa 21 9xxxx-xxxx com ou sem 55/9º dígito). */
+/** Últimos 8 dígitos do telefone (só pra saber se o cadastro TEM telefone). */
 const final8 = (t: string) => (t || "").replace(/\D/g, "").slice(-8);
+
+/**
+ * Chave pra identificar quem fala: DDD + últimos 8 dígitos (ignora o 55 e o 9º dígito).
+ * Antes era só o final 8 — um número de OUTRO DDD com o mesmo final virava o corretor.
+ * Sem DDD não identifica (devolve "").
+ */
+export function chaveTelefone(t: string): string {
+  let d = (t || "").replace(/\D/g, "");
+  if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+  return d.length >= 10 ? d.slice(0, 2) + d.slice(-8) : "";
+}
+
+/** Senha provisória aleatória (antes era sempre 123456789 — qualquer um sabia). */
+export function senhaProvisoria(): string {
+  const letras = "abcdefghjkmnpqrstuvwxyz23456789";
+  let s = "";
+  for (let i = 0; i < 8; i++) s += letras[randomInt(letras.length)];
+  return s;
+}
+
+/** Vínculo pelo e-mail fica PENDENTE até a pessoa devolver o código que foi pro e-mail. */
+const CODIGO_VALIDADE_MS = 15 * 60_000;
+const CODIGO_TENTATIVAS = 5;
+const CODIGOS_POR_HORA = 3;
 
 @Injectable()
 export class IaOneService {
@@ -59,6 +85,10 @@ export class IaOneService {
 
   // Anti-abuso: no máximo 1 reset de senha por usuário por hora pela One.
   private ultimoReset = new Map<string, number>();
+
+  // Vínculo por e-mail aguardando o código (por telefone) e envios de código na última hora.
+  private vinculosPendentes = new Map<string, { userId: string; codigo: string; expira: number; tentativas: number }>();
+  private codigosEnviados = new Map<string, number[]>();
 
   private cache: { em: number; simulador: ReturnType<typeof lerSimulador>; unidades: Unidade[]; promocoes: string[] } | null = null;
 
@@ -280,29 +310,97 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
    * Se o cadastro já tem outro telefone, não troca (manda falar com o gestor).
    */
   async vincularPorEmail(phone: string, texto: string): Promise<string> {
+    // SEGURANÇA (10/10): antes gravava o WhatsApp só com o e-mail — um estranho que soubesse
+    // o e-mail de alguém sem telefone tomava a conta (vínculo + reset de senha). Agora vai um
+    // CÓDIGO pro e-mail e só vincula quando a pessoa devolve o código aqui.
+    // E as respostas são NEUTRAS: não dizem se o e-mail existe, se está desativado etc.
+    const pendente = this.vinculosPendentes.get(phone);
+    const codigo = (texto.match(/\b\d{6}\b/) || [])[0];
+    if (pendente && codigo) {
+      if (Date.now() > pendente.expira) {
+        this.vinculosPendentes.delete(phone);
+        return "Esse código expirou ⏰ Me manda de novo o *e-mail do Kayser One* que eu envio outro.";
+      }
+      if (codigo !== pendente.codigo) {
+        pendente.tentativas++;
+        if (pendente.tentativas >= CODIGO_TENTATIVAS) {
+          this.vinculosPendentes.delete(phone);
+          return "Código errado várias vezes 🔒 Me manda o *e-mail* de novo pra receber um código novo.";
+        }
+        return "Esse código não confere. Confira no seu e-mail e me manda os *6 números* de novo.";
+      }
+      this.vinculosPendentes.delete(phone);
+      const alvo = await this.users.findOne({ where: { id: pendente.userId } });
+      // Confere de novo: pode ter mudado nesses minutos.
+      if (!alvo || alvo.active === false || alvo.empresaId || final8(alvo.phone) || final8((alvo as any).whatsapp)) {
+        return "Não consegui vincular este número 🙏 Fale com o seu gestor.";
+      }
+      await this.users.update(alvo.id, { whatsapp: phone, whatsappVinculadoEm: new Date() } as any);
+      this.logger.log(`IA One: WhatsApp final ${phone.slice(-4)} vinculado a ${alvo.name} (código do e-mail confirmado).`);
+      return `Pronto, ${alvo.name.split(" ")[0]}! ✅ Vinculei este WhatsApp ao seu cadastro do Kayser One.\nComo posso te ajudar? (suporte do sistema, empreendimentos, simulação de pagamento…)`;
+    }
+
     const email = (texto.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [])[0]?.toLowerCase();
     if (!email) {
-      return "Oi! Eu sou a *One*, assistente da equipe Kayser One. 👋\nNão reconheci este número. Me manda o *e-mail que você usa pra entrar no Kayser One* que eu te identifico.";
+      if (pendente) return "Me manda aqui o *código de 6 números* que enviei pro seu e-mail (vale 15 minutos). Não chegou? Olhe o spam ou me mande o e-mail de novo.";
+      return "Oi! Eu sou a *One*, assistente da equipe Kayser One. 👋\nNão reconheci este número. Me manda o *e-mail que você usa pra entrar no Kayser One* que eu te mando um código de confirmação.";
     }
+
+    const umaHora = Date.now() - 60 * 60_000;
+    const enviados = (this.codigosEnviados.get(phone) || []).filter((t) => t > umaHora);
+    if (enviados.length >= CODIGOS_POR_HORA) {
+      return "Já mandei vários códigos na última hora 🔒 Espere um pouco ou fale com o seu gestor.";
+    }
+    const neutra =
+      "Se esse e-mail for de um usuário do Kayser One, acabei de enviar um *código de 6 números* pra ele 📧\nMe manda o código aqui (vale 15 minutos). Não chegou? Olhe o spam ou fale com o seu gestor.";
     const alvo = (await this.users.find()).find((u) => (u.email || "").trim().toLowerCase() === email);
-    if (alvo && alvo.active === false && !alvo.empresaId) {
-      return `Achei seu cadastro, ${alvo.name.split(" ")[0]}, mas a sua conta no Kayser One está *desativada* 🔒 Por isso o acesso não funciona. Fale com o seu gestor pra reativar.`;
+    // Só manda código pra quem pode ser vinculado (ativo, da equipe, sem telefone). Resposta igual pra todos.
+    if (!alvo || alvo.active === false || alvo.empresaId || final8(alvo.phone) || final8((alvo as any).whatsapp)) {
+      this.vinculosPendentes.delete(phone);
+      return neutra;
     }
-    if (!alvo || alvo.empresaId) {
-      return "Não achei esse e-mail entre os usuários do Kayser One 🤔 Confira o e-mail ou fale com o seu gestor.";
+    const novo = String(randomInt(1_000_000)).padStart(6, "0");
+    const ok = await this.enviarCodigoPorEmail(alvo, novo);
+    if (ok) {
+      this.codigosEnviados.set(phone, [...enviados, Date.now()]);
+      this.vinculosPendentes.set(phone, { userId: alvo.id, codigo: novo, expira: Date.now() + CODIGO_VALIDADE_MS, tentativas: 0 });
     }
-    if (final8(alvo.phone) || final8((alvo as any).whatsapp)) {
-      return "Esse e-mail já tem outro telefone no cadastro. Pra usar este número, peça pro seu gestor atualizar o seu telefone no Kayser One. 🙏";
+    return neutra;
+  }
+
+  /** Manda o código de confirmação do vínculo pro e-mail do cadastro (Resend). */
+  private async enviarCodigoPorEmail(u: User, codigo: string): Promise<boolean> {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      this.logger.warn("IA One: RESEND_API_KEY não configurado — não dá pra mandar o código de vínculo.");
+      return false;
     }
-    await this.users.update(alvo.id, { whatsapp: phone, whatsappVinculadoEm: new Date() } as any);
-    this.logger.log(`IA One: WhatsApp final ${phone.slice(-4)} vinculado a ${alvo.name} pelo e-mail.`);
-    return `Pronto, ${alvo.name.split(" ")[0]}! ✅ Vinculei este WhatsApp ao seu cadastro do Kayser One.\nComo posso te ajudar? (suporte do sistema, empreendimentos, simulação de pagamento…)`;
+    try {
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: process.env.SUPPORT_FROM || "Kayser One <onboarding@resend.dev>",
+          to: u.email,
+          subject: `Seu código da One: ${codigo}`,
+          text:
+            `Oi, ${u.name.split(" ")[0]}!\n\nSeu código para vincular o WhatsApp à One (Kayser One) é: ${codigo}\n` +
+            `Ele vale 15 minutos. Mande esse número na conversa com a One.\n\n` +
+            `Não foi você? Ignore este e-mail — nada muda na sua conta.`,
+        }),
+      });
+      if (!r.ok) this.logger.warn(`IA One: Resend recusou o código (${r.status}).`);
+      return r.ok;
+    } catch (e) {
+      this.logger.warn(`IA One: falha ao mandar o código (${(e as Error).message}).`);
+      return false;
+    }
   }
 
   /**
    * Reset de senha pedido pelo próprio corretor no WhatsApp da One. Só reseta a conta
    * do TELEFONE que está falando e só se o e-mail informado bater com o cadastro dela.
-   * Senha volta pra 123456789 e o sistema pede uma nova no próximo acesso.
+   * Gera uma senha provisória aleatória e o sistema pede uma nova no próximo acesso.
    */
   private async resetarSenha(user: User | null, email: string) {
     if (!user) return { erro: "Número não cadastrado: não dá pra resetar." };
@@ -319,11 +417,17 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
       };
     }
     const ultimo = this.ultimoReset.get(user.id) || 0;
-    if (Date.now() - ultimo < 60 * 60_000) return { erro: "A senha já foi resetada há menos de 1 hora. Use a 123456789 ou fale com o gestor." };
-    await this.users.update(user.id, { passwordHash: await bcrypt.hash("123456789", 12), firstLogin: true } as any);
+    if (Date.now() - ultimo < 60 * 60_000) return { erro: "A senha já foi resetada há menos de 1 hora. Use a senha provisória que a One mandou ou fale com o gestor." };
+    // Senha provisória ALEATÓRIA, dita só neste WhatsApp (a fixa 123456789 qualquer um conhecia).
+    const provisoria = senhaProvisoria();
+    await this.users.update(user.id, { passwordHash: await bcrypt.hash(provisoria, 12), firstLogin: true } as any);
     this.ultimoReset.set(user.id, Date.now());
     this.logger.log(`IA One: senha de ${user.name} (${user.id}) resetada a pedido pelo WhatsApp.`);
-    return { ok: true, senhaProvisoria: "123456789", proximoPasso: "Entrar em kayserone.com.br com o e-mail e a senha 123456789; o sistema pede pra criar a senha nova." };
+    return {
+      ok: true,
+      senhaProvisoria: provisoria,
+      proximoPasso: `Entrar em kayserone.com.br com o e-mail e a senha provisória ${provisoria} (copie exatamente); o sistema pede pra criar a senha nova.`,
+    };
   }
 
   /* ---------------- prompt ---------------- */
@@ -334,7 +438,7 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
       `${u.name} (${CARGO[u.role] ?? u.role})`,
       u.active === false ? "CONTA DESATIVADA (precisa pedir ao gestor para reativar)" : "conta ativa",
       u.approved === false ? "CADASTRO AGUARDANDO APROVAÇÃO do gestor" : "cadastro aprovado",
-      (u as any).firstLogin ? "ainda não fez o primeiro acesso (senha padrão 123456789, vai pedir pra criar a nova)" : "",
+      (u as any).firstLogin ? "ainda não fez o primeiro acesso (o sistema vai pedir pra criar a senha nova)" : "",
       `login: ${u.email}`,
     ];
     return partes.filter(Boolean).join(" · ");
@@ -366,7 +470,7 @@ O QUE VOCÊ FAZ:
 1) SUPORTE do Kayser One (sistema):
 - Instalar: abrir kayserone.com.br no celular → "Adicionar à tela inicial".
 - Primeiro acesso: senha padrão 123456789; o sistema pede pra criar a senha nova.
-- NÃO CONSEGUE ENTRAR / ESQUECEU A SENHA: peça o E-MAIL cadastrado no Kayser One e use a ferramenta resetar_senha com ele. Deu certo → diga pra entrar em kayserone.com.br com o e-mail e a senha 123456789 e criar a senha nova. Deu erro → explique o motivo (sem revelar o e-mail cadastrado). Se a conta estiver aguardando aprovação ou desativada, o problema não é a senha: fale com o gestor.
+- NÃO CONSEGUE ENTRAR / ESQUECEU A SENHA: peça o E-MAIL cadastrado no Kayser One e use a ferramenta resetar_senha com ele. Deu certo → passe a SENHA PROVISÓRIA que a ferramenta devolveu (exatamente como veio) e diga pra entrar em kayserone.com.br com o e-mail e essa senha e criar a senha nova. Deu erro → explique o motivo (sem revelar o e-mail cadastrado). Se a conta estiver aguardando aprovação ou desativada, o problema não é a senha: fale com o gestor.
 - Cadastro novo precisa ser APROVADO pelo gestor (sino 🔔). Conta desativada → falar com o gestor.
 - Check-in do plantão: automático pelo GPS ao abrir o Kayser no stand; até 500 m do stand; abre 1 h antes e fecha na hora do início do turno (09:00 ok, 09:01 fora). Precisa PERMITIR a localização. GPS demorando → ligar Localização e Wi-Fi, ir pra perto da janela. Não deu → o Diretor vê o motivo no painel e pode liberar.
 - Bloqueado no plantão → falar com o gestor (bloqueio do Diretor só o Diretor tira).
@@ -429,7 +533,7 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
       },
       {
         name: "resetar_senha",
-        description: "Reseta a senha do Kayser One de QUEM ESTÁ FALANDO pra 123456789, se o e-mail informado bater com o cadastro. Use quando não conseguir entrar ou esqueceu a senha.",
+        description: "Reseta a senha do Kayser One de QUEM ESTÁ FALANDO pra uma senha provisória aleatória (a ferramenta devolve), se o e-mail informado bater com o cadastro. Use quando não conseguir entrar ou esqueceu a senha.",
         input_schema: {
           type: "object",
           properties: { email: { type: "string", description: "E-mail cadastrado no Kayser One, informado pelo corretor" } },
@@ -510,10 +614,10 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
   }
 
   private async acharUsuario(phone: string): Promise<User | null> {
-    const alvo = final8(phone);
-    if (alvo.length < 8) return null;
+    const alvo = chaveTelefone(phone);
+    if (!alvo) return null;
     const todos = await this.users.find();
-    return todos.find((u) => final8(u.phone) === alvo || final8((u as any).whatsapp) === alvo) || null;
+    return todos.find((u) => chaveTelefone(u.phone) === alvo || chaveTelefone((u as any).whatsapp) === alvo) || null;
   }
 
   private async transcrever(base64: string, mime: string): Promise<string | null> {
@@ -557,6 +661,11 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
 
     let texto = p.text;
     if (p.mediaType === "audio") {
+      // Áudio de quem não é da equipe não é transcrito (custo + dado de estranho): pede o e-mail.
+      if (!user) {
+        await this.enviar(phone, await this.vincularPorEmail(phone, ""), null, p.pushName, para);
+        return { ok: true };
+      }
       const dl = await this.whatsapp.getMediaBase64(IA_ONE_INSTANCIA, raw);
       const t = dl ? await this.transcrever(dl.base64, dl.mimetype) : null;
       texto = t ? `🎤 ${t}` : "";
@@ -636,6 +745,14 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
 
   ultimosEnvios() {
     return this.envios;
+  }
+
+  /** LGPD: conversa da One com mais de 180 dias é apagada (todo dia às 03:30). */
+  @Cron("30 3 * * *", { timeZone: "America/Sao_Paulo" })
+  async limparConversasAntigas() {
+    await this.msgs
+      .query(`DELETE FROM ia_one_mensagens WHERE "createdAt" < now() - interval '180 days'`)
+      .catch((e) => this.logger.warn(`IA One: limpeza LGPD falhou (${e.message}).`));
   }
 
   async reiniciar() {

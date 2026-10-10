@@ -34,8 +34,13 @@ export class AiController {
     return this.aiService.diagnosticoAudio();
   }
 
+  // Só Diretor: a rota grava renda/e-mail/nome no lead a partir de texto do body e não
+  // checava o escopo (qualquer corretor mexia em lead de outra equipe). O fluxo normal
+  // chama o service por dentro; o front não usa esta rota.
   @Post("qualify/:leadId")
-  @ApiOperation({ summary: "Qualificar lead automaticamente com IA" })
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Qualificar lead automaticamente com IA (só Diretor)" })
   async qualify(
     @Param("leadId") leadId: string,
     @Body() body: { conversation: string },

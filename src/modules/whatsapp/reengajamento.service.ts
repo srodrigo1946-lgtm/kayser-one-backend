@@ -147,6 +147,17 @@ export class ReengajamentoService {
     return true;
   }
 
+  /** LGPD: depois de 90 dias o histórico fica só com a contagem (sem nome, telefone e texto). */
+  @Cron("40 3 * * *", { timeZone: "America/Sao_Paulo" })
+  async anonimizarEventosAntigos() {
+    await this.leads
+      .query(
+        `UPDATE reengajamento_eventos SET nome = NULL, phone = NULL, texto = NULL
+         WHERE "createdAt" < now() - interval '90 days' AND (nome IS NOT NULL OR phone IS NOT NULL OR texto IS NOT NULL)`
+      )
+      .catch((e) => this.logger.warn(`Reengajamento: anonimização LGPD falhou (${e.message}).`));
+  }
+
   /** Guarda o que aconteceu (o lead do "não" é apagado, o histórico fica). */
   private async registrar(lead: Lead, tipo: "enviado" | "sim" | "nao", texto?: string) {
     await this.leads

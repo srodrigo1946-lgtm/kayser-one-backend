@@ -17,6 +17,9 @@ import { Response } from "express";
 import { IsBoolean, IsOptional, IsString } from "class-validator";
 import { DocumentsService } from "./documents.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../users/user.entity";
 
 class CreateRequestDto {
   @IsOptional() @IsString() leadId?: string;
@@ -80,7 +83,9 @@ export class DocumentsController {
 
   @Post("documents/migrate-r2")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  // Só Diretor: varre e regrava todos os arquivos do R2 (pesado) — qualquer login disparava.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Organizar documentos no R2 em pastas amigáveis (idempotente)" })
   migrateR2() {
     return this.service.organizeR2();
