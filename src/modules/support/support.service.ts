@@ -18,7 +18,8 @@ export class SupportService {
   async create(data: { name?: string; email?: string; type?: string; message?: string }) {
     const message = (data.message || "").trim();
     if (message.length < 3) throw new BadRequestException("Escreva a sua mensagem.");
-    const type = data.type === "reclamacao" ? "reclamacao" : "suporte";
+    // "ceo" = formulário "Falar com o CEO" da página de vendas.
+    const type = data.type === "reclamacao" || data.type === "ceo" ? data.type : "suporte";
     const msg = this.repo.create({
       name: (data.name || "").trim() || undefined,
       email: (data.email || "").trim() || undefined,
