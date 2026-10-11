@@ -48,7 +48,9 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
       // Requests sem Origin (curl, apps mobile, webhooks) e origens permitidas passam.
-      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      // Subdomínios da marca própria (ex.: https://imobiliariax.kayserone.com.br).
+      const subdominio = /^https:\/\/[a-z0-9-]+\.kayserone\.com\.br$/.test(origin || "");
+      if (!origin || allowedOrigins.includes(origin) || subdominio) return cb(null, true);
       cb(new Error(`Origem não permitida pelo CORS: ${origin}`));
     },
     credentials: true,

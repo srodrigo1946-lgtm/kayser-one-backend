@@ -271,6 +271,10 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "metaAdAccountIds" text`);
     await this.dataSource.query(`UPDATE settings SET "metaAdAccountIds" = '542408373588337' WHERE "metaAdAccountIds" IS NULL`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tabelaRivaUrl" text`);
+    // Marca própria (white-label, 11/10/2026).
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "marcaNome" varchar(60)`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "marcaCor" varchar(7)`);
+    await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "marcaLogo" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "custoLeadVisivel" boolean NOT NULL DEFAULT false`);
     await this.dataSource.query(
       `ALTER TABLE settings ADD COLUMN IF NOT EXISTS "leadOrigens" text DEFAULT 'Time Tati,Time Helen,Time Allan,Time Marisa,Time Isabelle,Time Isaac,Time Andre,Time Edjane'`

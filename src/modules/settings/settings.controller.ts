@@ -9,11 +9,12 @@ import {
   UploadedFile,
   Res,
   Query,
+  Delete,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from "class-validator";
 import { SettingsService } from "./settings.service";
 import { AiProvider } from "./settings.entity";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -120,6 +121,13 @@ class UpdateSettingsDto {
 
   @IsOptional() @IsArray() @IsString({ each: true })
   leadOrigens?: string[];
+
+  // Marca própria (white-label). Vazio volta pro padrão Kayser One.
+  @IsOptional() @IsString() @MaxLength(60)
+  marcaNome?: string;
+
+  @IsOptional() @Matches(/^(#[0-9a-fA-F]{6})?$/, { message: "Cor deve ser no formato #RRGGBB." })
+  marcaCor?: string;
 }
 
 @ApiTags("Configurações")
@@ -160,6 +168,23 @@ export class SettingsController {
   @ApiOperation({ summary: "Enviar a imagem de condições comerciais (somente Diretor)" })
   setDirecionalImage(@UploadedFile() file: Express.Multer.File) {
     return this.settingsService.setDirecionalImage(file);
+  }
+
+  @Post("marca-logo")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }))
+  @ApiOperation({ summary: "Enviar o logo da marca própria (PNG/JPG/WEBP, até 2 MB, somente Diretor)" })
+  setMarcaLogo(@UploadedFile() file: Express.Multer.File) {
+    return this.settingsService.setMarcaLogo(file);
+  }
+
+  @Delete("marca-logo")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Tirar o logo da marca própria (volta pro padrão)" })
+  removerMarcaLogo() {
+    return this.settingsService.removerMarcaLogo();
   }
 
   @Get("direcional-image")

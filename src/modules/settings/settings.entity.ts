@@ -177,6 +177,18 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   tabelaRivaUrl: string;
 
+  // Marca própria (white-label): cada imobiliária põe o nome, a cor e o logo dela.
+  // Vazio = Kayser One (padrão).
+  @Column({ type: "varchar", length: 60, nullable: true })
+  marcaNome: string | null;
+
+  @Column({ type: "varchar", length: 7, nullable: true })
+  marcaCor: string | null;
+
+  // Logo: chave no R2 ou data URI (mesmo esquema das outras imagens). Só PNG/JPG/WEBP.
+  @Column({ type: "text", nullable: true })
+  marcaLogo: string | null;
+
   // Integração Meta (formulário de anúncio). O Diretor cola aqui em vez de env.
   @Column({ type: "text", nullable: true })
   metaPageToken: string;
