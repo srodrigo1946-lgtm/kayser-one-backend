@@ -1,4 +1,4 @@
-import { slugSubdominio, subdominioValido, PLANOS_SAAS, ClientesSaasService } from "./clientes-saas.service";
+import { slugSubdominio, subdominioValido, PLANOS_SAAS, PLANO_PERSONALIZADO, ClientesSaasService } from "./clientes-saas.service";
 
 describe("Clientes SaaS — subdomínio e planos", () => {
   it("gera subdomínio limpo a partir do nome da empresa", () => {
@@ -36,5 +36,14 @@ describe("Clientes SaaS — criação", () => {
     const s = new ClientesSaasService(repo({ id: "outro" }) as any);
     await expect(s.criar({ empresa: "Imob X", plano: "Ouro", diretorNome: "Ana", diretorEmail: "a@x.com" })).rejects.toThrow(/Plano inválido/);
     await expect(s.criar({ empresa: "Imob X", plano: "Corretor", diretorNome: "Ana", diretorEmail: "a@x.com" })).rejects.toThrow(/já é de outro cliente/);
+  });
+
+  it("plano personalizado (CEO) usa a quantidade digitada e exige o número", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    const s: any = new ClientesSaasService(repo() as any);
+    s.provisionar = async () => null;
+    await expect(s.criar({ empresa: "Rede X", plano: PLANO_PERSONALIZADO, diretorNome: "Ana", diretorEmail: "a@x.com" })).rejects.toThrow(/quantidade de usuários/);
+    const c = await s.criar({ empresa: "Rede X", plano: PLANO_PERSONALIZADO, limiteUsuarios: 450, diretorNome: "Ana", diretorEmail: "a@x.com" });
+    expect(c.limiteUsuarios).toBe(450);
   });
 });

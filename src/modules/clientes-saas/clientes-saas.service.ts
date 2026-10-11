@@ -13,6 +13,9 @@ export const PLANOS_SAAS: Record<string, number> = {
   "Diretor completo": 250,
 };
 
+/** Acima de 250 (negociado na reunião com o CEO): o Diretor digita a quantidade de usuários. */
+export const PLANO_PERSONALIZADO = "Personalizado (CEO)";
+
 /** Subdomínios que não podem ser de cliente. */
 const RESERVADOS = new Set(["www", "demo", "api", "app", "admin", "mail", "email", "rsend", "enviar", "send", "kayser", "kayserone", "suporte", "contato", "teste"]);
 
@@ -68,9 +71,10 @@ export class ClientesSaasService {
     return { api: c.apiUrl };
   }
 
-  async criar(dto: { empresa: string; subdominio?: string; plano: string; diretorNome: string; diretorEmail: string }) {
+  async criar(dto: { empresa: string; subdominio?: string; plano: string; limiteUsuarios?: number; diretorNome: string; diretorEmail: string }) {
     this.config();
-    const limite = PLANOS_SAAS[dto.plano];
+    const limite = dto.plano === PLANO_PERSONALIZADO ? Math.floor(Number(dto.limiteUsuarios)) : PLANOS_SAAS[dto.plano];
+    if (dto.plano === PLANO_PERSONALIZADO && !(limite >= 1)) throw new BadRequestException("Digite a quantidade de usuários do plano personalizado.");
     if (!limite) throw new BadRequestException("Plano inválido.");
     const sub = slugSubdominio(dto.subdominio || dto.empresa);
     if (!subdominioValido(sub)) throw new BadRequestException(`Subdomínio "${sub}" não pode ser usado. Escolha outro (só letras, números e hífen).`);

@@ -1,11 +1,11 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
-import { ClientesSaasService, PLANOS_SAAS } from "./clientes-saas.service";
+import { ClientesSaasService, PLANOS_SAAS, PLANO_PERSONALIZADO } from "./clientes-saas.service";
 
 class CriarClienteDto {
   @IsString() @MinLength(2) @MaxLength(80)
@@ -14,8 +14,12 @@ class CriarClienteDto {
   @IsOptional() @IsString() @MaxLength(30)
   subdominio?: string;
 
-  @IsIn(Object.keys(PLANOS_SAAS))
+  @IsIn([...Object.keys(PLANOS_SAAS), PLANO_PERSONALIZADO])
   plano: string;
+
+  // Só no plano personalizado (negociado com o CEO).
+  @IsOptional() @IsInt() @Min(1) @Max(100000)
+  limiteUsuarios?: number;
 
   @IsString() @MinLength(2) @MaxLength(80)
   diretorNome: string;
@@ -42,7 +46,7 @@ export class ClientesSaasController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   async listar() {
-    return { configurado: this.service.configurado(), planos: PLANOS_SAAS, clientes: await this.service.listar() };
+    return { configurado: this.service.configurado(), planos: PLANOS_SAAS, personalizado: PLANO_PERSONALIZADO, clientes: await this.service.listar() };
   }
 
   @Post()
