@@ -49,6 +49,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["corujaoParaPrimeiroContato", () => this.corujaoParaPrimeiroContato()],
       ["corujaoMarcaEntrada", () => this.corujaoMarcaEntrada()],
       ["ensureIaOne", () => this.ensureIaOne()],
+      ["ensureClientesSaas", () => this.ensureClientesSaas()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -466,6 +467,27 @@ export class SchemaBootstrapService implements OnModuleInit {
       `UPDATE properties SET "standLat" = NULL, "standLng" = NULL
         WHERE "standAddress" ILIKE '%heley%' AND "standLng" > -43.3`
     );
+  }
+
+  /** Venda SaaS (12/10/2026): imobiliárias criadas pela aba "Clientes" (instalação própria no Railway). */
+  private async ensureClientesSaas() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS clientes_saas (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        empresa varchar NOT NULL,
+        subdominio varchar NOT NULL UNIQUE,
+        plano varchar NOT NULL,
+        "limiteUsuarios" int NOT NULL,
+        "diretorNome" varchar NOT NULL,
+        "diretorEmail" varchar NOT NULL,
+        status varchar NOT NULL DEFAULT 'criando',
+        etapa varchar,
+        "railwayServiceId" varchar,
+        "apiUrl" varchar,
+        erro text,
+        "createdAt" timestamp NOT NULL DEFAULT now(),
+        "updatedAt" timestamp NOT NULL DEFAULT now()
+      )`);
   }
 
   /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */

@@ -1,6 +1,7 @@
 import { IaOneService } from "./ia-one.service";
 
 describe("IA One — reset de senha pelo WhatsApp", () => {
+  jest.setTimeout(20_000); // bcrypt custo 12 é lento com todos os testes em paralelo
   const montar = () => {
     const updates: any[] = [];
     const users = { update: async (id: string, d: any) => updates.push({ id, ...d }) };

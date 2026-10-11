@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { PlantaoModule } from "./modules/plantao/plantao.module";
+import { ClientesSaasModule } from "./modules/clientes-saas/clientes-saas.module";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -82,6 +83,7 @@ import { SchemaBootstrapService } from "./database/schema-bootstrap.service";
     LeadHistoryModule,
     AutomationModule,
     PlantaoModule,
+    ClientesSaasModule,
     GoalsModule,
     PropertiesModule,
     DocumentsModule,
