@@ -17,7 +17,7 @@ describe("Clientes SaaS — subdomínio e planos", () => {
 });
 
 describe("Clientes SaaS — criação", () => {
-  const ENV = ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID", "CLIENTES_PG_URL"];
+  const ENV = ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID"];
   afterEach(() => ENV.forEach((k) => delete process.env[k]));
   const repo = (existente: any = null) => ({
     findOne: async () => existente,

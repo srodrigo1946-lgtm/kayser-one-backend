@@ -49,15 +49,27 @@ export class ClientesSaasService {
     const token = process.env.RAILWAY_API_TOKEN;
     const projectId = process.env.RAILWAY_CLIENTES_PROJECT_ID;
     const environmentId = process.env.RAILWAY_CLIENTES_ENV_ID;
-    const pgAdmin = process.env.CLIENTES_PG_URL;
-    if (!token || !projectId || !environmentId || !pgAdmin) {
+    if (!token || !projectId || !environmentId) {
       throw new ServiceUnavailableException("Criação automática de clientes ainda não configurada (faltam as chaves do Railway).");
     }
-    return { token, projectId, environmentId, pgAdmin };
+    return { token, projectId, environmentId };
+  }
+
+  /** Endereço do Postgres dos clientes: CLIENTES_PG_URL ou, se não tiver, busca no Railway pelo token. */
+  private async pgAdmin(): Promise<string> {
+    if (process.env.CLIENTES_PG_URL) return process.env.CLIENTES_PG_URL;
+    const { projectId, environmentId } = this.config();
+    const p = await this.gql(`query($id: String!) { project(id: $id) { services { edges { node { id name } } } } }`, { id: projectId });
+    const pg = p.project.services.edges.map((e: any) => e.node).find((n: any) => /postgres/i.test(n.name));
+    if (!pg) throw new Error("Não achei o Postgres no projeto dos clientes.");
+    const v = await this.gql(`query($p: String!, $e: String!, $s: String!) { variables(projectId: $p, environmentId: $e, serviceId: $s) }`, { p: projectId, e: environmentId, s: pg.id });
+    const url = v.variables?.DATABASE_PUBLIC_URL;
+    if (!url) throw new Error("O Postgres dos clientes está sem acesso público (ligar TCP Proxy no Railway).");
+    return url;
   }
 
   configurado() {
-    return !!(process.env.RAILWAY_API_TOKEN && process.env.RAILWAY_CLIENTES_PROJECT_ID && process.env.RAILWAY_CLIENTES_ENV_ID && process.env.CLIENTES_PG_URL);
+    return !!(process.env.RAILWAY_API_TOKEN && process.env.RAILWAY_CLIENTES_PROJECT_ID && process.env.RAILWAY_CLIENTES_ENV_ID);
   }
 
   listar() {
@@ -117,7 +129,7 @@ export class ClientesSaasService {
 
   /** Banco do cliente dentro do Postgres compartilhado dos clientes (um banco por imobiliária). */
   private async criarBanco(nome: string) {
-    const db = new Client({ connectionString: this.config().pgAdmin, ssl: { rejectUnauthorized: false } });
+    const db = new Client({ connectionString: await this.pgAdmin(), ssl: { rejectUnauthorized: false } });
     await db.connect();
     try {
       const existe = await db.query("SELECT 1 FROM pg_database WHERE datname = $1", [nome]);
