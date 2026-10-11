@@ -40,7 +40,8 @@ export class SupportService {
     if (!apiKey) return;
     const to = this.config.get<string>("SUPPORT_NOTIFY_EMAIL", "srodrigo1946@gmail.com");
     const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
-    const tipo = msg.type === "reclamacao" ? "Reclamação" : "Suporte";
+    // "ceo" = formulário "Falar com o CEO" da página de vendas (rede com +250 usuários).
+    const tipo = msg.type === "reclamacao" ? "Reclamação" : msg.type === "ceo" ? "Reunião com o CEO (site)" : "Suporte";
     const text =
       `Nova mensagem de ${tipo} pela tela do Kayser One:\n\n` +
       `Nome: ${msg.name || "—"}\n` +

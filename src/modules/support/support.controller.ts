@@ -1,15 +1,16 @@
 import { Controller, Post, Get, Patch, Delete, Body, Param, UseGuards, Request, ForbiddenException } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
-import { IsOptional, IsString } from "class-validator";
+import { IsOptional, IsString, MaxLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { SupportService } from "./support.service";
 import { UserRole } from "../users/user.entity";
 
+// Público (login + página de vendas): tamanhos limitados pra ninguém lotar a caixa de e-mail.
 class CreateSupportDto {
-  @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsString() email?: string;
-  @IsOptional() @IsString() type?: string;
-  @IsString() message: string;
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(160) email?: string;
+  @IsOptional() @IsString() @MaxLength(30) type?: string;
+  @IsString() @MaxLength(5000) message: string;
 }
 
 @ApiTags("Suporte")
