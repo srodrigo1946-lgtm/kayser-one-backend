@@ -18,18 +18,19 @@ export const REENGAJAR_POR_HORA = 25;
 const primeiroNome = (n?: string | null) => ((n || "").trim().split(/\s+/)[0] || "").replace(/^\w/, (c) => c.toUpperCase());
 
 /** Mensagens variadas (texto igual em massa é o que mais gera denúncia no WhatsApp). */
-export function mensagemReengajar(nome: string | null | undefined, empreendimento: string | null | undefined, i: number): string {
+// `empresa`: marca própria da imobiliária (padrão Kayser).
+export function mensagemReengajar(nome: string | null | undefined, empreendimento: string | null | undefined, i: number, empresa = "Kayser"): string {
   const n = primeiroNome(nome);
   const oi = n ? `Oi, ${n}!` : "Oi!";
   const emp = (empreendimento || "").trim();
   const sobre = emp ? `o ${emp}` : "os nossos empreendimentos";
   const modelos = [
-    `${oi} Tudo bem? Aqui é da Kayser 😊 Faz um tempinho que conversamos sobre ${sobre}. Saíram condições novas este mês — ainda faz sentido pra você?`,
+    `${oi} Tudo bem? Aqui é da ${empresa} 😊 Faz um tempinho que conversamos sobre ${sobre}. Saíram condições novas este mês — ainda faz sentido pra você?`,
     `${oi} Passando pra saber se você ainda pensa em comprar seu imóvel. Temos novidades sobre ${sobre} com condições especiais. Posso te contar?`,
-    `${oi} Aqui é da Kayser. Lembrei de você porque abriram condições novas pra ${sobre} 🏡 Quer que eu te passe os detalhes?`,
+    `${oi} Aqui é da ${empresa}. Lembrei de você porque abriram condições novas pra ${sobre} 🏡 Quer que eu te passe os detalhes?`,
     `${oi} Tudo certo? Seu momento pode ter mudado desde a última conversa sobre ${sobre}. Este mês está com condição diferenciada — tem interesse em saber?`,
     `${oi} Ainda está procurando imóvel? Separei novidades sobre ${sobre} que podem te interessar. Posso te mandar?`,
-    `${oi} Aqui é da Kayser 😊 Voltou a pensar em sair do aluguel? Temos condições novas pra ${sobre}. Me conta se quer saber mais!`,
+    `${oi} Aqui é da ${empresa} 😊 Voltou a pensar em sair do aluguel? Temos condições novas pra ${sobre}. Me conta se quer saber mais!`,
   ];
   return `${modelos[i % modelos.length]}\n\n(Se não quiser mais receber, é só responder NÃO.)`;
 }
@@ -97,7 +98,7 @@ export class ReengajamentoService {
         try {
           const conv = await this.conversations.findOrCreateByPhone(phone, central);
           if (!conv.leadId) await this.conversations.setLead(conv.id, l.id, l.name).catch(() => null);
-          const texto = mensagemReengajar(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
+          const texto = mensagemReengajar(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours(), s.marcaNome || "Kayser");
           await this.whatsapp.sendText(`user_${central}`, phone, texto);
           await this.conversations.addMessage(conv.id, texto, "out", true);
           await this.registrar(l, "enviado");

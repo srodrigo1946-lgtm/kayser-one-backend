@@ -70,12 +70,19 @@ export function paraWhatsapp(texto: string): string {
 }
 
 /** Instrução extra da IA quando atende lead de anúncio FORA do plantão. */
-function promptForaDoPlantao(): string {
+export function promptForaDoPlantao(marca?: string | null): string {
   const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  return `=== ATENDIMENTO FORA DO PLANTÃO — VOCÊ É O KAYSER ===
+  // Marca própria: a IA se apresenta pela imobiliária do cliente (sem "Kayser").
+  const quem = marca
+    ? `a assistente de INTELIGÊNCIA ARTIFICIAL da *${marca}* (não use outro nome nem "Kayser")`
+    : "*Kayser*, o assistente de INTELIGÊNCIA ARTIFICIAL da equipe";
+  const ola = marca
+    ? `"Olá! 👋 Eu sou a assistente de inteligência artificial da *${marca}*. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"`
+    : `"Olá! 👋 Eu sou o *Kayser*, assistente de inteligência artificial da equipe. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"`;
+  return `=== ATENDIMENTO FORA DO PLANTÃO — VOCÊ ATENDE ESTE CLIENTE ===
 Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora — VOCÊ atende este cliente.
-- Seu nome é *Kayser*, o assistente de INTELIGÊNCIA ARTIFICIAL da equipe. Seja transparente: na sua PRIMEIRA resposta da conversa, apresente-se assim (adapte a saudação ao horário):
-  "Olá! 👋 Eu sou o *Kayser*, assistente de inteligência artificial da equipe. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"
+- Você é ${quem}. Seja transparente: na sua PRIMEIRA resposta da conversa, apresente-se assim (adapte a saudação ao horário):
+  ${ola}
   Nas respostas seguintes não precisa se apresentar de novo.
 - Se o cliente mandou ÁUDIO, a mensagem aparece como 🎤 Áudio: "transcrição" — responda ao conteúdo normalmente.
 - Formato WhatsApp: negrito com UMA estrela (*assim*), sem títulos (#), sem linhas "---", sem tabelas. Seja cordial e breve (mensagens curtas). Tire dúvidas SÓ com a base de conhecimento; se não souber, diga que o especialista vai responder.
@@ -445,7 +452,7 @@ export class WhatsappFlowService {
           history,
           undefined,
           [
-            promptForaDoPlantao(),
+            promptForaDoPlantao((settings as any).marcaNome),
             await this.extraEmpreendimentos(conv.leadId),
             semEmail ? PROMPT_PEDIR_EMAIL : "",
             clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : "",

@@ -33,3 +33,13 @@ describe("Reengajamento — só cita empreendimento cadastrado", () => {
     expect(acharPorNome(imoveis, "Ilha Stay", (x: string) => x)).toBe("Ilha stay home Resort");
   });
 });
+
+describe("Reengajamento — marca própria", () => {
+  const { mensagemReengajar: msg } = require("./reengajamento.service");
+  it("usa o nome da imobiliária no lugar de Kayser", () => {
+    const textos = [0, 2, 5].map((i) => msg("ana", null, i, "Imob Vista"));
+    for (const t of textos) expect(t).not.toMatch(/Kayser/);
+    expect(textos.join(" ")).toMatch(/Aqui é da Imob Vista/);
+    expect(msg("ana", null, 0)).toMatch(/Aqui é da Kayser/); // padrão continua
+  });
+});
