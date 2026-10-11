@@ -69,7 +69,12 @@ export class ClientesSaasService {
   }
 
   configurado() {
-    return !!(process.env.RAILWAY_API_TOKEN && process.env.RAILWAY_CLIENTES_PROJECT_ID && process.env.RAILWAY_CLIENTES_ENV_ID);
+    return this.faltam().length === 0;
+  }
+
+  /** Nomes (nunca valores) das chaves que o servidor não está enxergando. */
+  faltam() {
+    return ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID"].filter((k) => !process.env[k]?.trim());
   }
 
   listar() {

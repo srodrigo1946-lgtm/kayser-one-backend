@@ -46,7 +46,7 @@ export class ClientesSaasController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   async listar() {
-    return { configurado: this.service.configurado(), planos: PLANOS_SAAS, personalizado: PLANO_PERSONALIZADO, clientes: await this.service.listar() };
+    return { configurado: this.service.configurado(), faltam: this.service.faltam(), planos: PLANOS_SAAS, personalizado: PLANO_PERSONALIZADO, clientes: await this.service.listar() };
   }
 
   @Post()
