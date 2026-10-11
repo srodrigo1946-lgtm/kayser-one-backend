@@ -149,9 +149,9 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
 
 describe("IA fora do plantão — marca própria", () => {
   const { promptForaDoPlantao } = require("./whatsapp-flow.service");
-  it("com marca, a IA se apresenta pela imobiliária (sem Kayser); sem marca, continua Kayser", () => {
+  it("com marca, a IA se apresenta como One da imobiliária (sem Kayser); sem marca, continua Kayser", () => {
     const comMarca = promptForaDoPlantao("Casa Nova Imóveis");
-    expect(comMarca).toContain("assistente de inteligência artificial da *Casa Nova Imóveis*");
+    expect(comMarca).toContain("Eu sou a *One*, assistente de inteligência artificial da *Casa Nova Imóveis*");
     expect(comMarca).not.toMatch(/Eu sou o \*Kayser\*/);
     expect(promptForaDoPlantao(null)).toContain("Eu sou o *Kayser*");
   });

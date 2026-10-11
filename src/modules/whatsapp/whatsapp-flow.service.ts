@@ -72,12 +72,12 @@ export function paraWhatsapp(texto: string): string {
 /** Instrução extra da IA quando atende lead de anúncio FORA do plantão. */
 export function promptForaDoPlantao(marca?: string | null): string {
   const hoje = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  // Marca própria: a IA se apresenta pela imobiliária do cliente (sem "Kayser").
+  // Marca própria: a IA se chama *One* e fala pela imobiliária do cliente (sem "Kayser").
   const quem = marca
-    ? `a assistente de INTELIGÊNCIA ARTIFICIAL da *${marca}* (não use outro nome nem "Kayser")`
+    ? `a *One*, assistente de INTELIGÊNCIA ARTIFICIAL da *${marca}* (não use o nome "Kayser")`
     : "*Kayser*, o assistente de INTELIGÊNCIA ARTIFICIAL da equipe";
   const ola = marca
-    ? `"Olá! 👋 Eu sou a assistente de inteligência artificial da *${marca}*. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"`
+    ? `"Olá! 👋 Eu sou a *One*, assistente de inteligência artificial da *${marca}*. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"`
     : `"Olá! 👋 Eu sou o *Kayser*, assistente de inteligência artificial da equipe. Vou te ajudar agora e, em seguida, te transfiro para um dos nossos especialistas. 🏡"`;
   return `=== ATENDIMENTO FORA DO PLANTÃO — VOCÊ ATENDE ESTE CLIENTE ===
 Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora — VOCÊ atende este cliente.
