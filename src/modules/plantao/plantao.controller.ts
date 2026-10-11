@@ -51,6 +51,12 @@ export class PlantaoController {
     return this.plantao.checkin(req.user, dto.lat, dto.lng, dto.precisao);
   }
 
+  @Post("posicao")
+  @ApiOperation({ summary: "Posição depois do check-in (mais de 500 m do stand sai do plantão; menos o das 21h)" })
+  posicao(@Body() dto: LocalizacaoDto, @Request() req: any) {
+    return this.plantao.posicao(req.user, dto.lat, dto.lng, dto.precisao);
+  }
+
   @Post("tentativa")
   @ApiOperation({ summary: "Registrar falha de check-in do lado do celular (GPS negado/desligado)" })
   tentativa(@Body() dto: TentativaDto, @Request() req: any) {

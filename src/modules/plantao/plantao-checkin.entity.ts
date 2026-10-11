@@ -41,6 +41,13 @@ export class PlantaoCheckin {
   @Column({ type: "int", nullable: true })
   precisao: number | null;
 
+  // Se afastou mais de 500 m do stand depois do check-in → saiu do plantão do turno.
+  @Column({ type: "timestamp", nullable: true })
+  saiuEm: Date | null;
+
+  @Column({ type: "int", nullable: true })
+  saiuDistancia: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

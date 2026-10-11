@@ -407,6 +407,9 @@ export class SchemaBootstrapService implements OnModuleInit {
     );
     // Precisão (m) que o celular informou — GPS falso costuma vir com 0–1 m (02/10/2026).
     await this.dataSource.query(`ALTER TABLE plantao_checkins ADD COLUMN IF NOT EXISTS precisao int`);
+    // Saiu do stand (mais de 500 m) depois do check-in → sai do plantão do turno (11/10/2026).
+    await this.dataSource.query(`ALTER TABLE plantao_checkins ADD COLUMN IF NOT EXISTS "saiuEm" timestamp`);
+    await this.dataSource.query(`ALTER TABLE plantao_checkins ADD COLUMN IF NOT EXISTS "saiuDistancia" int`);
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS plantao_bloqueios (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

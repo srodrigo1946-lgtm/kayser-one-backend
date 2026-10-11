@@ -186,3 +186,55 @@ describe("Check-in do plantão (geolocalização)", () => {
     expect(hojeSP(new Date("2026-10-02T02:00:00Z"))).toBe("2026-10-01"); // 23h em SP
   });
 });
+
+describe("Plantão — saiu do stand depois do check-in", () => {
+  const { longeDoStand, turnoLivreDoStand, SAIDA_LEITURAS, PlantaoService: Svc } = require("./plantao.service");
+
+  it("longe = passou de 500 m, descontando o erro do GPS (até 100 m); GPS muito ruim não conta", () => {
+    expect(longeDoStand(450, 10)).toBe(false);
+    expect(longeDoStand(560, 80)).toBe(false); // 560 - 80 = 480: pode ser erro do GPS
+    expect(longeDoStand(700, 300)).toBeNull(); // precisão ruim: ignora a leitura
+    expect(longeDoStand(800, 20)).toBe(true);
+    expect(longeDoStand(650, 500)).toBeNull();
+  });
+
+  it("o plantão das 21h não entra na regra", () => {
+    expect(turnoLivreDoStand("21:00")).toBe(true);
+    expect(turnoLivreDoStand("09:00")).toBe(false);
+    expect(turnoLivreDoStand("15:00")).toBe(false);
+  });
+
+  const montar = (horaInicio: string, ck: any) => {
+    const updates: any[] = [];
+    const checkins = { findOne: async () => (ck ? { ...ck, saiuEm: ck.saiuEm ?? null } : null), update: async (id: string, d: any) => { updates.push({ id, ...d }); if (ck) Object.assign(ck, d); } };
+    const props = { findOne: async () => ({ id: "p1", standLat: -23.0, standLng: -43.3 }) };
+    const escala = { turnoAtivo: async () => ({ id: "t1", horaInicio }) };
+    const s = new Svc(checkins as any, props as any, {} as any, {} as any, {} as any, escala as any, {} as any, {} as any);
+    return { s, updates };
+  };
+  const longe = { lat: -23.02, lng: -43.3 }; // ~2,2 km do stand
+  const perto = { lat: -23.001, lng: -43.3 }; // ~110 m
+
+  it(`sai do plantão depois de ${SAIDA_LEITURAS} leituras seguidas longe (uma volta pra perto zera)`, async () => {
+    const ck = { id: "c1", propertyId: "p1", standNome: "Stand", saiuEm: null };
+    const { s, updates } = montar("09:00", ck);
+    const u = { id: "u1", name: "Ana" } as any;
+    expect((await s.posicao(u, longe.lat, longe.lng, 10)).status).toBe("aviso");
+    expect((await s.posicao(u, perto.lat, perto.lng, 10)).status).toBe("ok"); // voltou: zera
+    expect((await s.posicao(u, longe.lat, longe.lng, 10)).status).toBe("aviso");
+    expect((await s.posicao(u, longe.lat, longe.lng, 10)).status).toBe("saiu");
+    expect(updates[0]).toEqual(expect.objectContaining({ id: "c1", saiuEm: expect.any(Date) }));
+  });
+
+  it("no plantão das 21h pode sair do stand à vontade", async () => {
+    const { s, updates } = montar("21:00", { id: "c1", propertyId: "p1", standNome: "Stand" });
+    for (let i = 0; i < 3; i++) expect((await s.posicao({ id: "u1" } as any, longe.lat, longe.lng, 10)).status).toBe("livre");
+    expect(updates).toHaveLength(0);
+  });
+
+  it("check-in liberado à mão (sem stand) não é acompanhado", async () => {
+    const { s, updates } = montar("09:00", { id: "c1", propertyId: null, standNome: "Liberado por X" });
+    expect((await s.posicao({ id: "u1" } as any, longe.lat, longe.lng, 10)).status).toBe("sem-checkin");
+    expect(updates).toHaveLength(0);
+  });
+});

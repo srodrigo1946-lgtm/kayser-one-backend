@@ -162,11 +162,28 @@ export function standMaisPerto<T extends { lat: number; lng: number }>(
   return { ...melhor, dentro: melhor.distancia <= RAIO_CHECKIN + folga };
 }
 
+/**
+ * Depois do check-in: está longe do stand? Desconta o erro do GPS (até 100 m) pra não
+ * tirar ninguém por oscilação; leitura muito ruim (precisão > 150 m) não conta (null).
+ */
+export function longeDoStand(distancia: number, precisao?: number | null): boolean | null {
+  const p = Number(precisao);
+  if (isFinite(p) && p > 150) return null;
+  const folga = Math.min(Math.max(isFinite(p) ? p : 0, 0), 100);
+  return distancia - folga > RAIO_CHECKIN;
+}
+/** Leituras seguidas longe do stand pra sair do plantão (o app manda a posição a cada 2 min). */
+export const SAIDA_LEITURAS = 2;
+/** Plantão das 21h em diante: pode sair do stand sem perder o plantão (decisão do Rodrigo 11/10). */
+export const turnoLivreDoStand = (horaInicio: string) => (horaInicio || "") >= "21:00";
+
 type Stand = { propertyId: string; nome: string; endereco: string; lat: number; lng: number };
 
 @Injectable()
 export class PlantaoService implements OnModuleInit {
   private readonly logger = new Logger(PlantaoService.name);
+  // Leituras seguidas longe do stand, por check-in (zera quando volta pra perto).
+  private longeSeguidas = new Map<string, number>();
 
   constructor(
     @InjectRepository(PlantaoCheckin) private readonly checkins: Repository<PlantaoCheckin>,
@@ -222,7 +239,10 @@ export class PlantaoService implements OnModuleInit {
     const [livre, checkin, bloq] = await Promise.all([this.modoLivre(), this.exigeCheckin(), this.bloqueadosIds()]);
     let ids: string[];
     if (checkin) {
-      const feitos = (await this.checkins.find({ where: { turnoId: turno.id, data: hojeSP() }, order: { createdAt: "ASC" } })).map((c) => c.userId);
+      // Quem saiu do stand depois do check-in não conta mais.
+      const feitos = (await this.checkins.find({ where: { turnoId: turno.id, data: hojeSP() }, order: { createdAt: "ASC" } }))
+        .filter((c) => !c.saiuEm)
+        .map((c) => c.userId);
       ids = livre ? feitos : (turno.atendenteIds || []).filter((id) => feitos.includes(id));
     } else if (livre) {
       ids = (await this.users.find({ order: { name: "ASC" } })).filter((u) => this.elegivel(u)).map((u) => u.id);
@@ -480,7 +500,14 @@ export class PlantaoService implements OnModuleInit {
           horaFim: t.horaFim,
           atendentes: ids.map((id) => {
             const c = cks.find((x) => x.userId === id && x.turnoId === t.id);
-            return { id, nome: nomes.get(id) ?? "—", entrou: !!c, como: c?.standNome ?? null, bloqueado: bloq.has(id) };
+            return {
+              id,
+              nome: nomes.get(id) ?? "—",
+              entrou: !!c && !c.saiuEm,
+              como: c?.standNome ?? null,
+              bloqueado: bloq.has(id),
+              saiu: c?.saiuEm ? { hora: c.saiuEm, distancia: c.saiuDistancia } : null,
+            };
           }),
         };
       });
@@ -509,6 +536,7 @@ export class PlantaoService implements OnModuleInit {
         precisao: c.precisao ?? null,
         hora: c.createdAt,
         doTurnoAtual: !!turno && c.turnoId === turno.id,
+        saiu: c.saiuEm ? { hora: c.saiuEm, distancia: c.saiuDistancia } : null,
       })),
     };
   }
@@ -600,8 +628,48 @@ export class PlantaoService implements OnModuleInit {
       naEscala: true,
       janela: e.janela,
       bloqueado: bl ? { por: this.textoBloqueio(bl) } : null,
-      checkin: ck ? { stand: ck.standNome, distancia: ck.distancia, hora: ck.createdAt } : null,
+      checkin: ck
+        ? {
+            stand: ck.standNome,
+            distancia: ck.distancia,
+            hora: ck.createdAt,
+            // Check-in por GPS (fora o plantão das 21h): o app acompanha a distância do stand.
+            acompanhar: !!ck.propertyId && !ck.saiuEm && !turnoLivreDoStand(e.turno.horaInicio),
+            saiu: ck.saiuEm ? { hora: ck.saiuEm, distancia: ck.saiuDistancia } : null,
+          }
+        : null,
     };
+  }
+
+  /**
+   * Posição enviada pelo app depois do check-in (a cada ~2 min, com o app aberto).
+   * Longe do stand (mais de 500 m) em 2 leituras seguidas → sai do plantão do turno.
+   * O plantão das 21h não entra nessa regra.
+   */
+  async posicao(user: User, lat: number, lng: number, precisao?: number) {
+    if (!isFinite(lat) || !isFinite(lng)) return { status: "sem-gps" as const };
+    const turno = await this.escala.turnoAtivo(new Date());
+    if (!turno) return { status: "sem-turno" as const };
+    if (turnoLivreDoStand(turno.horaInicio)) return { status: "livre" as const };
+    const ck = await this.checkins.findOne({ where: { userId: user.id, turnoId: turno.id, data: hojeSP() } });
+    // Sem check-in, já saiu ou liberado à mão (sem stand) → nada a acompanhar.
+    if (!ck || ck.saiuEm || !ck.propertyId) return { status: ck?.saiuEm ? ("saiu" as const) : ("sem-checkin" as const) };
+    const p = await this.props.findOne({ where: { id: ck.propertyId } });
+    if (!p || p.standLat == null || p.standLng == null) return { status: "sem-stand" as const };
+    const distancia = distanciaMetros(lat, lng, Number(p.standLat), Number(p.standLng));
+    const longe = longeDoStand(distancia, precisao);
+    if (longe === null) return { status: "gps-ruim" as const, distancia };
+    if (!longe) {
+      this.longeSeguidas.delete(ck.id);
+      return { status: "ok" as const, distancia };
+    }
+    const n = (this.longeSeguidas.get(ck.id) || 0) + 1;
+    this.longeSeguidas.set(ck.id, n);
+    if (n < SAIDA_LEITURAS) return { status: "aviso" as const, distancia };
+    this.longeSeguidas.delete(ck.id);
+    await this.checkins.update(ck.id, { saiuEm: new Date(), saiuDistancia: distancia } as any);
+    this.logger.log(`Plantão: ${user.name} se afastou ${distancia} m do stand ${ck.standNome} — saiu do turno ${turno.horaInicio}.`);
+    return { status: "saiu" as const, distancia };
   }
 
   /** Check-in: GPS do celular precisa estar a até 500 m de um stand cadastrado. */
@@ -635,6 +703,10 @@ export class PlantaoService implements OnModuleInit {
     const turno = e.turno;
     const data = hojeSP();
     const ja = await this.checkins.findOne({ where: { userId: user.id, turnoId: turno.id, data } });
+    if (ja?.saiuEm) {
+      const h = new Date(ja.saiuEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+      throw new BadRequestException(`Você se afastou do stand às ${h} (${ja.saiuDistancia ?? "?"} m) e saiu deste plantão. Fale com seu gestor pra liberar de novo.`);
+    }
     if (ja) return { ok: true, jaFeito: true, stand: ja.standNome, distancia: ja.distancia };
     if (e.janela === "fechada") {
       throw new BadRequestException(`Check-in encerrado: era até as ${turno.horaInicio}. Você não entra neste plantão.`);
@@ -680,6 +752,12 @@ export class PlantaoService implements OnModuleInit {
     if ((await this.mapaBloqueios()).has(userId)) throw new BadRequestException("Esse corretor está bloqueado no plantão — desbloqueie antes.");
     const data = hojeSP();
     const ja = await this.checkins.findOne({ where: { userId, turnoId, data } });
+    // Saiu do stand → o gestor libera de novo (volta pro plantão do turno).
+    if (ja?.saiuEm) {
+      await this.checkins.update(ja.id, { saiuEm: null, saiuDistancia: null } as any);
+      this.logger.log(`Plantão: ${userId} liberado de novo no turno ${turno.horaInicio} por ${diretor.name} (tinha saído do stand).`);
+      return { ok: true, voltou: true };
+    }
     if (ja) return { ok: true, jaFeito: true };
     await this.checkins.save(
       this.checkins.create({ userId, turnoId, data, standNome: `Liberado por ${diretor.name}`, lat: 0, lng: 0, distancia: 0 })
