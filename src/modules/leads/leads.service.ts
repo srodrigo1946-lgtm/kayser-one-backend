@@ -95,7 +95,10 @@ export class LeadsService {
     limit?: number;
     user: User;
   }) {
-    const { status, responsavelId, search, page = 1, limit = 50, user } = params;
+    const { status, responsavelId, search, user } = params;
+    // Query sem page/limit chega como NaN (transform do ValidationPipe) → dava 500.
+    const page = Math.max(1, Math.floor(Number(params.page)) || 1);
+    const limit = Math.max(1, Math.floor(Number(params.limit)) || 50);
 
     const where: FindOptionsWhere<Lead> = {};
 

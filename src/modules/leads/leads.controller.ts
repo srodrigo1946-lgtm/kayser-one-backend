@@ -42,7 +42,9 @@ export class LeadsController {
     @Query("limit") limit?: number,
     @Request() req?: any
   ) {
-    return this.leadsService.findAll({ status, responsavelId, search, page, limit, user: req.user });
+    // Teto de 500 por página na API (o front pede até 50): ninguém puxa a base inteira de uma vez.
+    const porPagina = Math.min(500, Number(limit) || 50);
+    return this.leadsService.findAll({ status, responsavelId, search, page, limit: porPagina, user: req.user });
   }
 
   @Get(":id")
