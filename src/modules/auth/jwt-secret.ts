@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { ConfigService } from "@nestjs/config";
 
 /**
@@ -15,4 +16,14 @@ export function resolveJwtSecret(config: ConfigService): string {
     );
   }
   return "kayser-one-dev-secret";
+}
+
+/**
+ * "Versão" da senha que vai dentro do token (`pv`): um resumo do hash atual.
+ * Trocou a senha (por qualquer caminho: tela, gestor, IA One, recuperação) → o hash
+ * muda → tokens antigos param de valer. Resumo do hash (e não o hash) porque o
+ * conteúdo do JWT é legível por quem tem o token.
+ */
+export function versaoSenha(passwordHash: string): string {
+  return createHash("sha256").update(passwordHash || "").digest("base64url").slice(0, 16);
 }

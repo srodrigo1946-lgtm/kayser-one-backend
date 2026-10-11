@@ -152,7 +152,7 @@ export class SettingsController {
   }
 
   // Imagem de condições comerciais do mês (aba Grupo Direcional).
-  // Trocar = só Diretor. Ver = todos os cargos (JWT via header OU ?token=).
+  // Trocar = só Diretor. Ver = todos os cargos (JWT no header; o front baixa como blob).
   @Post("direcional-image")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)

@@ -7,6 +7,7 @@ import { User, UserRole } from "../users/user.entity";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { versaoSenha } from "./jwt-secret";
 
 /** Mapa cargo → cargo do gestor imediatamente acima (para o autocadastro). */
 const PARENT_ROLE: Partial<Record<UserRole, UserRole>> = {
@@ -102,12 +103,16 @@ export class AuthService {
       throw new UnauthorizedException("Seu cadastro está aguardando aprovação do seu gestor.");
     }
 
-    const payload = { sub: user.id, email: user.email, role: user.role };
     return {
-      accessToken: this.jwtService.sign(payload),
+      accessToken: this.assinar(user),
       user: this.sanitize(user),
       firstLogin: user.firstLogin,
     };
+  }
+
+  /** Token com a versão da senha (`pv`): trocar a senha derruba os tokens antigos. */
+  private assinar(user: User) {
+    return this.jwtService.sign({ sub: user.id, email: user.email, role: user.role, pv: versaoSenha(user.passwordHash) });
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
@@ -122,12 +127,17 @@ export class AuthService {
     user.passwordHash = await bcrypt.hash(dto.newPassword, 12);
     user.firstLogin = false;
     await this.usersRepo.save(user);
-    return { message: "Senha alterada com sucesso." };
+    // As outras sessões caem (senha mudou); esta continua com um token novo.
+    return { message: "Senha alterada com sucesso.", accessToken: this.assinar(user) };
   }
 
   async refresh(user: User) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    return { accessToken: this.jwtService.sign(payload) };
+    const comHash = await this.usersRepo
+      .createQueryBuilder("u")
+      .addSelect("u.passwordHash")
+      .where("u.id = :id", { id: user.id })
+      .getOneOrFail();
+    return { accessToken: this.assinar(comHash) };
   }
 
   /** Diretor define/atualiza seu código de recuperação (guardado com hash). */

@@ -54,7 +54,7 @@ export class ConversationsController {
 }
 
 /**
- * Serve a mídia das mensagens. Requer JWT (via header OU `?token=` para funcionar
+ * Serve a mídia das mensagens. Requer JWT no header (o front baixa com o cabeçalho e mostra como blob
  * dentro de <img>/<audio>) e valida o escopo por equipe no service.
  */
 @ApiTags("Conversas")
