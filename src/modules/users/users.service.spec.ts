@@ -195,3 +195,19 @@ describe("UsersService.tornarGestor", () => {
     await expect(s.tornarGestor("c1", "gerente", { id: "G", role: "gerente" } as any)).rejects.toThrow("Só o Diretor");
   });
 });
+
+describe("Plano da instalação — limite de usuários (LIMITE_USUARIOS)", () => {
+  const { UsersService: Svc } = require("./users.service");
+  const montar = (ativos: number) => new Svc({ count: async () => ativos } as any, {} as any);
+  afterEach(() => delete process.env.LIMITE_USUARIOS);
+
+  it("sem limite configurado (Kayser) não bloqueia", async () => {
+    await expect(montar(500).checarLimitePlano()).resolves.toBeUndefined();
+  });
+
+  it("bloqueia ao chegar no limite do plano e libera abaixo dele", async () => {
+    process.env.LIMITE_USUARIOS = "16";
+    await expect(montar(15).checarLimitePlano()).resolves.toBeUndefined();
+    await expect(montar(16).checarLimitePlano()).rejects.toThrow(/até 16 usuário/);
+  });
+});

@@ -141,9 +141,26 @@ export class UsersService {
     return this.clean(user);
   }
 
+  /**
+   * Plano da instalação (venda do Kayser One): LIMITE_USUARIOS é definido por NÓS no
+   * servidor de cada cliente (Railway) — o cliente não muda. Vazio/0 = sem limite (Kayser).
+   * Conta usuários ativos e aprovados da equipe (empresa parceira não entra).
+   */
+  async checarLimitePlano() {
+    const limite = Number(process.env.LIMITE_USUARIOS) || 0;
+    if (!limite) return;
+    const ativos = await this.usersRepo.count({ where: { active: true, approved: true, empresaId: IsNull() } as any });
+    if (ativos >= limite) {
+      throw new ForbiddenException(
+        `Seu plano permite até ${limite} usuário(s) ativo(s). Para aumentar o plano, fale com a Kayser One: contato@kayserone.com.br`
+      );
+    }
+  }
+
   async create(dto: CreateUserDto, creator: User) {
     const exists = await this.usersRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException("E-mail já cadastrado.");
+    await this.checarLimitePlano();
 
     const passwordHash = await bcrypt.hash("123456789", 12);
     const user = this.usersRepo.create({ ...dto, passwordHash, firstLogin: true });
@@ -289,6 +306,7 @@ export class UsersService {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException("Usuário não encontrado.");
     await this.assertCanManage(user, requester);
+    if (!user.active && user.approved !== false && !user.empresaId) await this.checarLimitePlano();
     user.active = true;
     await this.usersRepo.save(user);
     return { message: "Usuário ativado." };
@@ -374,6 +392,7 @@ export class UsersService {
     const target = await this.usersRepo.findOne({ where: { id } });
     if (!target) throw new NotFoundException("Usuário não encontrado.");
     await this.assertCanManage(target, requester);
+    if (!target.approved && target.active !== false && !target.empresaId) await this.checarLimitePlano();
     target.approved = true;
     const saved = await this.usersRepo.save(target);
     return this.clean(saved);
