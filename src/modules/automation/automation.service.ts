@@ -1,9 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { InjectRepository } from "@nestjs/typeorm";
-import { LessThan, Not, In, Repository } from "typeorm";
-import { subDays } from "date-fns";
+import { Not, In, Repository } from "typeorm";
 import { Lead, LeadStatus } from "../leads/lead.entity";
+import { semContatoWhere } from "../leads/followup-regras";
 import { Settings } from "../settings/settings.entity";
 import { SettingsService } from "../settings/settings.service";
 import { WhatsappFlowService } from "../whatsapp/whatsapp-flow.service";
@@ -122,8 +122,7 @@ export class AutomationService {
       naoPerturbe: false,
     };
     if (leadIds?.length) where.id = In(leadIds.slice(0, 40));
-    else where.lastContactAt = LessThan(subDays(new Date(), 3));
-    const leads = (await this.leadsRepo.find({ where, order: { lastContactAt: "ASC" }, take: 40 })).filter((l) => !!l.phone);
+    const leads = (await this.leadsRepo.find({ where: leadIds?.length ? where : semContatoWhere({ naoPerturbe: false }, 3), order: { lastContactAt: "ASC" }, take: 40 })).filter((l) => !!l.phone);
     if (!leads.length) return { agendados: 0, minutos: 0, motivo: "Nenhum lead com telefone pra chamar." };
 
     this.chamando = true;
@@ -162,18 +161,13 @@ export class AutomationService {
       return { skipped: true, reason: "WhatsApp central pausado (contingência)." };
     }
 
-    const cutoff = subDays(new Date(), settings.followupDays);
     // Origens que recebem o follow-up (padrão: número central = anúncio + WhatsApp, e
     // cadastro manual). Manual vale SÓ pro lead que o DIRETOR cadastrou (regra do Rodrigo).
     const sources =
       settings.followupSources?.length ? settings.followupSources : ["anuncio", "whatsapp", "manual"];
+    // Dias sem contato conforme a etapa: padrão (3), agendamento 7, depois da visita 15.
     const encontrados = await this.leadsRepo.find({
-      where: {
-        lastContactAt: LessThan(cutoff),
-        status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
-        source: In(sources),
-        naoPerturbe: false,
-      },
+      where: semContatoWhere({ source: In(sources), naoPerturbe: false }, settings.followupDays),
       order: { lastContactAt: "ASC" },
       // PROTEÇÃO: no máximo 40 por dia (o resto vai nos dias seguintes).
       take: 40,

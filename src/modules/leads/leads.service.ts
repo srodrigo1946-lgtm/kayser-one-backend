@@ -20,6 +20,7 @@ const ehGestor = (u?: User | null) =>
 import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
+import { zeraContagemNaEtapa } from "./followup-regras";
 
 /** Cabeçalho normalizado: minúsculo, sem acento, só letras/números ("Nome Completo" → "nomecompleto"). */
 function normCab(h: any): string {
@@ -295,6 +296,8 @@ export class LeadsService {
     const prevResponsavelId = lead.responsavelId ?? null;
     const prevStatus = lead.status;
     Object.assign(lead, dto);
+    // Entrou em agendamento / visita realizada / venda ganha: zera os dias sem contato.
+    if (lead.status !== prevStatus && zeraContagemNaEtapa(lead.status)) lead.lastContactAt = new Date();
     // GOTCHA TypeORM: o lead vem de findOne com a relação `responsavel` carregada
     // (o usuário ANTIGO). No save(), a relação vence o FK e regravaria o antigo —
     // a transferência "funcionava" na resposta mas não persistia. Soltar a relação
@@ -331,6 +334,8 @@ export class LeadsService {
     if (status !== fromStatus) await this.checarColunaGestores(status, user);
     lead.status = status as LeadStatus;
     if (order !== undefined) lead.kanbanOrder = order;
+    // Entrou em agendamento / visita realizada / venda ganha: zera os dias sem contato.
+    if (status !== fromStatus && zeraContagemNaEtapa(status)) lead.lastContactAt = new Date();
     // Ao fechar a venda, grava a DATA (só se ainda não tiver — não sobrescreve edição).
     if (lead.status === LeadStatus.VENDA_GANHA && !lead.dataVenda) {
       lead.dataVenda = new Date().toISOString().slice(0, 10);

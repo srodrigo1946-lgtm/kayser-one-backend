@@ -8,6 +8,7 @@ import { User, UserRole } from "../users/user.entity";
 import { Goal } from "../goals/goal.entity";
 import { LeadHistory, LeadHistoryType } from "../lead-history/lead-history.entity";
 import { UsersService } from "../users/users.service";
+import { semContatoWhere } from "../leads/followup-regras";
 import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
 // Leads que contam pra custo/funil: só os PAGOS (anúncio + formulário Meta).
@@ -49,9 +50,8 @@ export class DashboardService {
         this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VISITA_REALIZADA } }),
         this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VENDA_GANHA } }),
         this.leadsRepo.count({ where: { ...base, status: LeadStatus.NOVO_LEAD, lastContactAt: IsNull() } }),
-        this.leadsRepo.count({
-          where: { ...base, lastContactAt: LessThan(subDays(now, 3)) },
-        }),
+        // Sem contato conforme a etapa (3 / 7 agendamento / 15 depois da visita; venda não conta).
+        this.leadsRepo.count({ where: semContatoWhere(base, 3, now) }),
       ]);
 
     const total = leadsMes || 1;
@@ -394,7 +394,6 @@ export class DashboardService {
 
   async getAlerts(user: User) {
     const base = await this.scopeWhere(user);
-    const threeDaysAgo = subDays(new Date(), 3);
 
     const [semAtendimento, [semContato, semContatoTotal]] = await Promise.all([
       this.leadsRepo.find({
@@ -405,12 +404,8 @@ export class DashboardService {
       }),
       // findAndCount: lista os 20 mais antigos + o TOTAL verdadeiro.
       this.leadsRepo.findAndCount({
-        where: {
-          ...base,
-          lastContactAt: LessThan(threeDaysAgo),
-          // Venda ganha/perdida não precisa de contato — não entra no alerta.
-          status: Not(In([LeadStatus.VENDA_GANHA, LeadStatus.VENDA_PERDIDA])),
-        },
+        // Sem contato conforme a etapa (3 / 7 agendamento / 15 depois da visita; venda não conta).
+        where: semContatoWhere(base, 3),
         relations: ["responsavel"],
         order: { lastContactAt: "ASC" },
         take: 20,
