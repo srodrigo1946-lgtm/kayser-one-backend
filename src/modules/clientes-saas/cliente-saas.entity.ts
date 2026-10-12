@@ -41,6 +41,10 @@ export class ClienteSaas {
   @Column({ type: "varchar", nullable: true })
   assinatura: string | null;
 
+  // "site" = o próprio cliente assinou pela página de vendas; vazio = criado pelo painel.
+  @Column({ type: "varchar", nullable: true })
+  origem: string | null;
+
   @Column()
   diretorNome: string;
 

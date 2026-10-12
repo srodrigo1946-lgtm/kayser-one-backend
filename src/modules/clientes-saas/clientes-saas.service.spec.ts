@@ -125,3 +125,61 @@ describe("Clientes SaaS — cobrança (Mercado Pago)", () => {
     expect(updates).toHaveLength(1);
   });
 });
+
+describe("Clientes SaaS — cliente assina sozinho pelo site", () => {
+  const ENV = ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID", "MP_ACCESS_TOKEN"];
+  const fetchOriginal = global.fetch;
+  afterEach(() => {
+    ENV.forEach((k) => delete process.env[k]);
+    global.fetch = fetchOriginal;
+  });
+  const mpResponde = (assinatura: any) =>
+    (global.fetch = (async (url: string) =>
+      ({ ok: true, json: async () => (url.includes("api.mercadopago.com") ? assinatura : {}) }) as any) as any);
+
+  it("descobre o plano pelo valor da assinatura", () => {
+    const { planoPeloValor } = require("./clientes-saas.service");
+    expect(planoPeloValor(49)).toBe("Corretor");
+    expect(planoPeloValor("330")).toBe("Gerente Geral");
+    expect(planoPeloValor(12)).toBeNull();
+  });
+
+  it("pagou e não se cadastrou: entra no painel como 'aguardando', com o e-mail do pagador", async () => {
+    process.env.MP_ACCESS_TOKEN = "t";
+    mpResponde({ id: "PRE9", status: "authorized", payer_email: "joao@x.com", auto_recurring: { transaction_amount: 110 } });
+    const salvos: any[] = [];
+    const repo = { findOne: async () => null, create: (x: any) => x, save: async (x: any) => salvos.push(x), update: async () => null };
+    await new ClientesSaasService(repo as any).avisoMercadoPago({ type: "subscription_preapproval", data: { id: "PRE9" } }, {});
+    expect(salvos[0]).toEqual(expect.objectContaining({ status: "aguardando", plano: "Gerente de Vendas", diretorEmail: "joao@x.com", origem: "site", cobrancaId: "PRE9" }));
+    expect(salvos[0].subdominio).toMatch(/^pendente-/);
+  });
+
+  it("comecar: só com assinatura paga; completa o 'aguardando' e manda criar", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    const updates: any[] = [];
+    const aguardando = { id: "c9", status: "aguardando", cobrancaId: "PRE9" };
+    const repo = {
+      findOne: async ({ where }: any) => (where.cobrancaId ? aguardando : null),
+      create: (x: any) => x,
+      save: async (x: any) => x,
+      update: async (_: string, d: any) => updates.push(d),
+    };
+    const s: any = new ClientesSaasService(repo as any);
+    s.provisionar = async () => null;
+
+    mpResponde({ id: "PRE9", status: "pending", auto_recurring: { transaction_amount: 49 } });
+    await expect(s.comecar({ assinatura: "PRE9", empresa: "Imob Nova", diretorNome: "João", diretorEmail: "J@X.com" })).rejects.toThrow(/confirmando o pagamento/);
+
+    mpResponde({ id: "PRE9", status: "authorized", auto_recurring: { transaction_amount: 49 } });
+    const r = await s.comecar({ assinatura: "PRE9", empresa: "Imob Nova", diretorNome: "João", diretorEmail: "J@X.com" });
+    expect(r.endereco).toBe("https://imobnova.kayserone.com.br");
+    expect(updates[0]).toEqual(expect.objectContaining({ empresa: "Imob Nova", plano: "Corretor", status: "criando", diretorEmail: "j@x.com", origem: "site" }));
+  });
+
+  it("comecar: assinatura que já virou Kayser One não cria de novo", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    mpResponde({ id: "PRE9", status: "authorized", auto_recurring: { transaction_amount: 49 } });
+    const repo = { findOne: async () => ({ id: "c9", status: "ativo", cobrancaId: "PRE9" }) };
+    await expect(new ClientesSaasService(repo as any).comecar({ assinatura: "PRE9", empresa: "X Y", diretorNome: "Jo", diretorEmail: "j@x.com" })).rejects.toThrow(/já tem um Kayser One/);
+  });
+});

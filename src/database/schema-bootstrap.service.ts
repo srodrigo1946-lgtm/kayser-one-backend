@@ -490,7 +490,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       )`);
     await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS adicionais varchar NOT NULL DEFAULT ''`);
     await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "valorMensal" numeric`);
-    for (const col of ["cobrancaId", "cobrancaLink", "assinatura"]) {
+    for (const col of ["cobrancaId", "cobrancaLink", "assinatura", "origem"]) {
       await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "${col}" varchar`);
     }
   }

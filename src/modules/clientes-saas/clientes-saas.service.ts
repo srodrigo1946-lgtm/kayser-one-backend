@@ -53,7 +53,13 @@ export function slugSubdominio(texto: string): string {
 }
 
 export function subdominioValido(s: string): boolean {
-  return /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/.test(s) && !RESERVADOS.has(s);
+  // "pendente-..." é o marcador de quem pagou pelo site e ainda não se cadastrou.
+  return /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/.test(s) && !RESERVADOS.has(s) && !s.startsWith("pendente-");
+}
+
+/** Plano de uma assinatura do site pelo valor mensal (49, 110, 330, 530, 750). */
+export function planoPeloValor(valor: unknown): string | null {
+  return Object.keys(PRECO_PLANO).find((p) => PRECO_PLANO[p] === Number(valor)) ?? null;
 }
 
 const REPO = "srodrigo1946-lgtm/kayser-one-backend";
@@ -343,14 +349,83 @@ export class ClientesSaasService {
     if (!id || !tipo.includes("preapproval") || !this.mercadoPagoConfigurado()) return { ok: true };
     const a = await this.mp(`/preapproval/${encodeURIComponent(String(id))}`);
     const ref = String(a.external_reference || "");
-    const c = /^[0-9a-f-]{36}$/i.test(ref) ? await this.repo.findOne({ where: { id: ref } }) : null;
+    const c =
+      (/^[0-9a-f-]{36}$/i.test(ref) ? await this.repo.findOne({ where: { id: ref } }) : null) ??
+      (await this.repo.findOne({ where: { cobrancaId: String(a.id) } }));
     if (c) {
       await this.repo.update(c.id, { assinatura: a.status, cobrancaId: a.id });
       if (a.status !== c.assinatura) await this.avisarRodrigo(`Assinatura ${this.situacao(a.status)} — ${c.empresa}`, `${c.empresa} (${c.plano}): assinatura ${this.situacao(a.status)}.`);
     } else if (a.status === "authorized") {
-      await this.avisarRodrigo(`Nova assinatura pelo site — ${a.reason || "Kayser One"}`, `Chegou uma assinatura nova pelo site: ${a.reason || "(sem nome)"}, R$ ${a.auto_recurring?.transaction_amount ?? "?"}/mês.\nCrie a instalação dela na aba Clientes do Kayser.`);
+      // Pagou pelo site e (ainda) não preencheu "Comece seu Kayser One": entra no painel assim mesmo.
+      const plano = planoPeloValor(a.auto_recurring?.transaction_amount) ?? "Corretor";
+      await this.repo.save(
+        this.repo.create({
+          empresa: "(falta cadastro)",
+          subdominio: `pendente-${String(a.id).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20)}`,
+          plano,
+          limiteUsuarios: PLANOS_SAAS[plano],
+          adicionais: "",
+          diretorNome: "",
+          diretorEmail: String(a.payer_email || ""),
+          status: "aguardando",
+          etapa: "Pago pelo site, falta o cadastro",
+          origem: "site",
+          cobrancaId: String(a.id),
+          assinatura: a.status,
+        })
+      );
+      await this.avisarRodrigo(
+        `Nova assinatura pelo site — ${a.reason || plano}`,
+        `Chegou uma assinatura nova pelo site: ${a.reason || plano}, R$ ${a.auto_recurring?.transaction_amount ?? "?"}/mês.\n` +
+          `Se a pessoa não preencher o cadastro, ela aparece no painel Clientes como "Pago, falta cadastro".`
+      );
     }
     return { ok: true };
+  }
+
+  /**
+   * Página pública "Comece seu Kayser One": quem acabou de assinar pelo site preenche os dados
+   * e a instalação é criada sozinha. Só vale com assinatura PAGA no Mercado Pago (conferida lá).
+   */
+  async comecar(dto: { assinatura: string; empresa: string; subdominio?: string; diretorNome: string; diretorEmail: string }) {
+    this.config();
+    const a = await this.mp(`/preapproval/${encodeURIComponent(dto.assinatura)}`);
+    if (a.status !== "authorized") {
+      throw new BadRequestException(
+        a.status === "pending"
+          ? "O Mercado Pago ainda está confirmando o pagamento. Espere 1 minuto e tente de novo."
+          : "Essa assinatura não está ativa no Mercado Pago."
+      );
+    }
+    const plano = planoPeloValor(a.auto_recurring?.transaction_amount);
+    if (!plano) throw new BadRequestException("Não reconheci o plano dessa assinatura. Fale com contato@kayserone.com.br.");
+    let c = await this.repo.findOne({ where: { cobrancaId: String(a.id) } });
+    if (c && c.status !== "aguardando") throw new BadRequestException("Essa assinatura já tem um Kayser One criado. Veja o e-mail de boas-vindas.");
+    const sub = slugSubdominio(dto.subdominio || dto.empresa);
+    if (!subdominioValido(sub)) throw new BadRequestException(`O endereço "${sub}" não pode ser usado. Escolha outro (só letras, números e hífen).`);
+    const dono = await this.repo.findOne({ where: { subdominio: sub } });
+    if (dono && dono.id !== c?.id) throw new BadRequestException(`O endereço "${sub}.kayserone.com.br" já está em uso. Escolha outro.`);
+    const dados = {
+      empresa: dto.empresa.trim(),
+      subdominio: sub,
+      plano,
+      limiteUsuarios: PLANOS_SAAS[plano],
+      diretorNome: dto.diretorNome.trim(),
+      diretorEmail: dto.diretorEmail.trim().toLowerCase(),
+      status: "criando",
+      etapa: "Começando",
+      origem: "site",
+      cobrancaId: String(a.id),
+      assinatura: a.status,
+    };
+    if (c) await this.repo.update(c.id, dados);
+    else c = await this.repo.save(this.repo.create({ ...dados, adicionais: "" }));
+    this.provisionar(c.id).catch(() => null);
+    await this.avisarRodrigo(
+      `Cliente novo pelo site — ${dados.empresa}`,
+      `${dados.empresa} (${plano}) assinou pelo site e o Kayser One dela está sendo criado em https://${sub}.kayserone.com.br.`
+    );
+    return { ok: true, endereco: `https://${sub}.kayserone.com.br` };
   }
 
   private situacao(s: string) {

@@ -1,11 +1,30 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { IsArray, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
 import { ADICIONAIS, ClientesSaasService, PLANOS_SAAS, PLANO_PERSONALIZADO } from "./clientes-saas.service";
+
+class ComecarDto {
+  // id da assinatura que o Mercado Pago devolve na volta do pagamento (preapproval_id).
+  @IsString() @MinLength(6) @MaxLength(64)
+  assinatura: string;
+
+  @IsString() @MinLength(2) @MaxLength(80)
+  empresa: string;
+
+  @IsOptional() @IsString() @MaxLength(30)
+  subdominio?: string;
+
+  @IsString() @MinLength(2) @MaxLength(80)
+  diretorNome: string;
+
+  @IsEmail() @MaxLength(160)
+  diretorEmail: string;
+}
 
 class AjustarClienteDto {
   @IsOptional() @IsArray() @IsIn(ADICIONAIS, { each: true })
@@ -85,6 +104,14 @@ export class ClientesSaasController {
   @ApiOperation({ summary: "Gera a assinatura mensal do cliente no Mercado Pago e manda o link pro Diretor dele" })
   cobrar(@Param("id", ParseUUIDPipe) id: string) {
     return this.service.cobrar(id);
+  }
+
+  // Público: quem acabou de assinar pelo site preenche os dados e o Kayser One dele é criado.
+  @Post("comecar")
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: "Comece seu Kayser One (público; exige assinatura paga no Mercado Pago)" })
+  comecar(@Body() dto: ComecarDto) {
+    return this.service.comecar(dto);
   }
 
   // Público: o Mercado Pago avisa aqui quando uma assinatura muda (pagou, pausou, cancelou).
