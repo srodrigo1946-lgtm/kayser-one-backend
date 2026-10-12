@@ -183,3 +183,20 @@ describe("Clientes SaaS — cliente assina sozinho pelo site", () => {
     await expect(new ClientesSaasService(repo as any).comecar({ assinatura: "PRE9", empresa: "X Y", diretorNome: "Jo", diretorEmail: "j@x.com" })).rejects.toThrow(/já tem um Kayser One/);
   });
 });
+
+describe("Clientes SaaS — aviso do Mercado Pago de assinatura que não existe", () => {
+  const fetchOriginal = global.fetch;
+  afterEach(() => {
+    global.fetch = fetchOriginal;
+    delete process.env.MP_ACCESS_TOKEN;
+  });
+  it("responde ok sem mexer em nada (ex.: Simular notificação com id 123456)", async () => {
+    process.env.MP_ACCESS_TOKEN = "t";
+    global.fetch = (async () => ({ ok: false, status: 404, json: async () => ({ message: "not found" }) })) as any;
+    const updates: any[] = [];
+    const repo = { findOne: async () => null, update: async () => updates.push(1), save: async () => updates.push(1), create: (x: any) => x };
+    const r = await new ClientesSaasService(repo as any).avisoMercadoPago({ type: "subscription_preapproval", data: { id: "123456" } }, {});
+    expect(r).toEqual({ ok: true });
+    expect(updates).toHaveLength(0);
+  });
+});

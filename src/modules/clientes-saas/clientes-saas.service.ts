@@ -347,7 +347,10 @@ export class ClientesSaasService {
     const tipo = String(corpo?.type || query?.type || query?.topic || "");
     const id = corpo?.data?.id || query?.["data.id"] || query?.id;
     if (!id || !tipo.includes("preapproval") || !this.mercadoPagoConfigurado()) return { ok: true };
-    const a = await this.mp(`/preapproval/${encodeURIComponent(String(id))}`);
+    // Assinatura que não existe no Mercado Pago (ex.: "Simular notificação"): ignora e responde 200,
+    // senão o Mercado Pago fica reenviando.
+    const a = await this.mp(`/preapproval/${encodeURIComponent(String(id))}`).catch(() => null);
+    if (!a) return { ok: true };
     const ref = String(a.external_reference || "");
     const c =
       (/^[0-9a-f-]{36}$/i.test(ref) ? await this.repo.findOne({ where: { id: ref } }) : null) ??
