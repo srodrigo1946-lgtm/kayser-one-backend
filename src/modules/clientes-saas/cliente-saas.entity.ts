@@ -45,6 +45,10 @@ export class ClienteSaas {
   @Column({ type: "varchar", nullable: true })
   origem: string | null;
 
+  // Último pagamento avulso (Pix/cartão) aprovado — "mês pago".
+  @Column({ type: "timestamp", nullable: true })
+  pagoEm: Date | null;
+
   @Column()
   diretorNome: string;
 

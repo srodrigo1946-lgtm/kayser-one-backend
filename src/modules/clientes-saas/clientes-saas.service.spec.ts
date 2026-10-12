@@ -89,7 +89,7 @@ describe("Clientes SaaS — cobrança (Mercado Pago)", () => {
     expect(valorDoCliente({ plano: "Personalizado (CEO)", adicionais: "", valorMensal: null })).toBeNull();
   });
 
-  it("cobrar cria a assinatura mensal com o valor do cliente e guarda o link", async () => {
+  it("cobrar cria um PLANO mensal só do cliente (link que qualquer pessoa paga) e guarda o link", async () => {
     process.env.MP_ACCESS_TOKEN = "teste";
     const enviado: any[] = [];
     global.fetch = (async (url: string, init: any) => {
@@ -102,8 +102,8 @@ describe("Clientes SaaS — cobrança (Mercado Pago)", () => {
     const s = new ClientesSaasService(repo as any);
     const r = await s.cobrar("c1");
     expect(r).toEqual({ link: "https://mp/link", valor: 78 });
-    expect(enviado[0].url).toBe("https://api.mercadopago.com/preapproval");
-    expect(enviado[0].body).toEqual(expect.objectContaining({ external_reference: "c1", payer_email: "a@x.com" }));
+    expect(enviado[0].url).toBe("https://api.mercadopago.com/preapproval_plan");
+    expect(enviado[0].body.payer_email).toBeUndefined(); // não prende o link ao e-mail do Diretor
     expect(enviado[0].body.auto_recurring).toEqual(expect.objectContaining({ transaction_amount: 78, frequency_type: "months" }));
     expect(updates[0]).toEqual({ cobrancaId: "pre1", cobrancaLink: "https://mp/link", assinatura: "pending" });
   });
@@ -198,5 +198,47 @@ describe("Clientes SaaS — aviso do Mercado Pago de assinatura que não existe"
     const r = await new ClientesSaasService(repo as any).avisoMercadoPago({ type: "subscription_preapproval", data: { id: "123456" } }, {});
     expect(r).toEqual({ ok: true });
     expect(updates).toHaveLength(0);
+  });
+});
+
+describe("Clientes SaaS — plano do cliente e Pix", () => {
+  const fetchOriginal = global.fetch;
+  const id = "11111111-2222-3333-4444-555555555555";
+  afterEach(() => {
+    global.fetch = fetchOriginal;
+    delete process.env.MP_ACCESS_TOKEN;
+  });
+
+  it("assinatura feita pelo plano do cliente é reconhecida pelo número do plano", async () => {
+    process.env.MP_ACCESS_TOKEN = "t";
+    global.fetch = (async (url: string) =>
+      ({ ok: true, json: async () => (url.includes("mercadopago") ? { id: "SUB1", status: "authorized", preapproval_plan_id: "PLANO1" } : {}) }) as any) as any;
+    const updates: any[] = [];
+    const repo = {
+      findOne: async ({ where }: any) => (where.cobrancaId === "PLANO1" ? { id, empresa: "Imob", plano: "Corretor", assinatura: "pending" } : null),
+      update: async (_: string, d: any) => updates.push(d),
+    };
+    await new ClientesSaasService(repo as any).avisoMercadoPago({ type: "subscription_preapproval", data: { id: "SUB1" } }, {});
+    expect(updates[0]).toEqual({ assinatura: "authorized", cobrancaId: "SUB1" });
+  });
+
+  it("cobrar Pix gera link avulso do mês com o valor do cliente; pagamento aprovado marca 'pix_pago'", async () => {
+    process.env.MP_ACCESS_TOKEN = "t";
+    const enviado: any[] = [];
+    global.fetch = (async (url: string, init: any) => {
+      enviado.push({ url, body: init?.body ? JSON.parse(init.body) : null });
+      if (url.includes("/v1/payments/")) return { ok: true, json: async () => ({ status: "approved", external_reference: id, transaction_amount: 60, payment_method_id: "pix" }) } as any;
+      return { ok: true, json: async () => ({ id: "PREF1", init_point: "https://mp/pix" }) } as any;
+    }) as any;
+    const updates: any[] = [];
+    const cliente = { id, empresa: "Imob", plano: "Corretor", adicionais: "", valorMensal: 60, diretorNome: "Ana", diretorEmail: "a@x.com", assinatura: null };
+    const repo = { findOne: async () => cliente, update: async (_: string, d: any) => updates.push(d) };
+    const s = new ClientesSaasService(repo as any);
+    expect(await s.cobrarPix(id)).toEqual({ link: "https://mp/pix", valor: 60 });
+    expect(enviado[0].url).toBe("https://api.mercadopago.com/checkout/preferences");
+    expect(enviado[0].body.items[0].unit_price).toBe(60);
+    expect(enviado[0].body.external_reference).toBe(id);
+    await s.avisoMercadoPago({ type: "payment", data: { id: "PAY1" } }, {});
+    expect(updates.at(-1)).toEqual(expect.objectContaining({ assinatura: "pix_pago" }));
   });
 });

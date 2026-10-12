@@ -52,6 +52,10 @@ class CriarClienteDto {
   @IsOptional() @IsArray() @IsIn(ADICIONAIS, { each: true })
   adicionais?: string[];
 
+  // Valor negociado (R$/mês), qualquer valor; vazio = preço de tabela.
+  @IsOptional() @IsNumber() @Min(0) @Max(1_000_000)
+  valorMensal?: number | null;
+
   @IsString() @MinLength(2) @MaxLength(80)
   diretorNome: string;
 
@@ -112,6 +116,15 @@ export class ClientesSaasController {
   @ApiOperation({ summary: "Comece seu Kayser One (público; exige assinatura paga no Mercado Pago)" })
   comecar(@Body() dto: ComecarDto) {
     return this.service.comecar(dto);
+  }
+
+  @Post(":id/cobrar-pix")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Cobrança avulsa do mês (Pix ou cartão) — link do Mercado Pago pro Diretor do cliente" })
+  cobrarPix(@Param("id", ParseUUIDPipe) id: string) {
+    return this.service.cobrarPix(id);
   }
 
   // Público: o Mercado Pago avisa aqui quando uma assinatura muda (pagou, pausou, cancelou).

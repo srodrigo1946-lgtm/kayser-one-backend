@@ -136,7 +136,7 @@ export class ClientesSaasService {
     return { api: c.apiUrl };
   }
 
-  async criar(dto: { empresa: string; subdominio?: string; plano: string; limiteUsuarios?: number; adicionais?: string[]; diretorNome: string; diretorEmail: string }) {
+  async criar(dto: { empresa: string; subdominio?: string; plano: string; limiteUsuarios?: number; adicionais?: string[]; valorMensal?: number | null; diretorNome: string; diretorEmail: string }) {
     this.config();
     const limite = dto.plano === PLANO_PERSONALIZADO ? Math.floor(Number(dto.limiteUsuarios)) : PLANOS_SAAS[dto.plano];
     if (dto.plano === PLANO_PERSONALIZADO && !(limite >= 1)) throw new BadRequestException("Digite a quantidade de usuários do plano personalizado.");
@@ -146,7 +146,7 @@ export class ClientesSaasService {
     if (await this.repo.findOne({ where: { subdominio: sub } })) throw new BadRequestException(`O subdomínio "${sub}" já é de outro cliente.`);
     const email = dto.diretorEmail.trim().toLowerCase();
     const c = await this.repo.save(
-      this.repo.create({ empresa: dto.empresa.trim(), subdominio: sub, plano: dto.plano, limiteUsuarios: limite, adicionais: this.lista(dto.adicionais), diretorNome: dto.diretorNome.trim(), diretorEmail: email, status: "criando", etapa: "Começando" })
+      this.repo.create({ empresa: dto.empresa.trim(), subdominio: sub, plano: dto.plano, limiteUsuarios: limite, adicionais: this.lista(dto.adicionais), valorMensal: dto.valorMensal ?? null, diretorNome: dto.diretorNome.trim(), diretorEmail: email, status: "criando", etapa: "Começando" })
     );
     // Leva alguns minutos (build no Railway): roda em segundo plano e a tela acompanha pelo status.
     this.provisionar(c.id).catch(() => null);
@@ -317,26 +317,28 @@ export class ClientesSaasService {
     return j;
   }
 
-  /** Gera a assinatura mensal do cliente no Mercado Pago e manda o link pro Diretor dele. */
+  /**
+   * Gera um PLANO de assinatura mensal só deste cliente no Mercado Pago e manda o link pro Diretor.
+   * Plano (e não assinatura direta) porque o link de assinatura direta só abre logado com o MESMO
+   * e-mail do Diretor no Mercado Pago; o do plano qualquer pessoa paga (conta ou cartão).
+   * Quando pagar, o aviso chega com o número do plano (preapproval_plan_id) = cobrancaId.
+   */
   async cobrar(id: string) {
     const c = await this.repo.findOne({ where: { id } });
     if (!c) throw new NotFoundException();
     const valor = valorDoCliente(c);
     if (!valor) throw new BadRequestException("Negocie o valor deste cliente antes de cobrar.");
-    const a = await this.mp("/preapproval", {
+    const p = await this.mp("/preapproval_plan", {
       method: "POST",
       body: JSON.stringify({
         reason: `Kayser One — ${c.empresa} (${c.plano})`,
-        external_reference: c.id,
-        payer_email: c.diretorEmail,
         back_url: "https://www.kayserone.com.br",
-        status: "pending",
         auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: valor, currency_id: "BRL" },
       }),
     });
-    await this.repo.update(id, { cobrancaId: a.id, cobrancaLink: a.init_point, assinatura: a.status || "pending" });
-    await this.emailCobranca(c, valor, a.init_point);
-    return { link: a.init_point, valor };
+    await this.repo.update(id, { cobrancaId: p.id, cobrancaLink: p.init_point, assinatura: "pending" });
+    await this.emailCobranca(c, valor, p.init_point);
+    return { link: p.init_point, valor };
   }
 
   /**
@@ -346,15 +348,19 @@ export class ClientesSaasService {
   async avisoMercadoPago(corpo: any, query: any) {
     const tipo = String(corpo?.type || query?.type || query?.topic || "");
     const id = corpo?.data?.id || query?.["data.id"] || query?.id;
-    if (!id || !tipo.includes("preapproval") || !this.mercadoPagoConfigurado()) return { ok: true };
+    if (!id || !this.mercadoPagoConfigurado()) return { ok: true };
+    if (tipo.includes("payment")) return this.avisoPagamentoPix(String(id));
+    if (!tipo.includes("preapproval")) return { ok: true };
     // Assinatura que não existe no Mercado Pago (ex.: "Simular notificação"): ignora e responde 200,
     // senão o Mercado Pago fica reenviando.
     const a = await this.mp(`/preapproval/${encodeURIComponent(String(id))}`).catch(() => null);
     if (!a) return { ok: true };
     const ref = String(a.external_reference || "");
+    // Acha o cliente: pela referência, pela assinatura, ou pelo plano exclusivo dele (botão Cobrar).
     const c =
       (/^[0-9a-f-]{36}$/i.test(ref) ? await this.repo.findOne({ where: { id: ref } }) : null) ??
-      (await this.repo.findOne({ where: { cobrancaId: String(a.id) } }));
+      (await this.repo.findOne({ where: { cobrancaId: String(a.id) } })) ??
+      (a.preapproval_plan_id ? await this.repo.findOne({ where: { cobrancaId: String(a.preapproval_plan_id) } }) : null);
     if (c) {
       await this.repo.update(c.id, { assinatura: a.status, cobrancaId: a.id });
       if (a.status !== c.assinatura) await this.avisarRodrigo(`Assinatura ${this.situacao(a.status)} — ${c.empresa}`, `${c.empresa} (${c.plano}): assinatura ${this.situacao(a.status)}.`);
@@ -431,6 +437,49 @@ export class ClientesSaasService {
       `${dados.empresa} (${plano}) assinou pelo site e o Kayser One dela está sendo criado em https://${sub}.kayserone.com.br.`
     );
     return { ok: true, endereco: `https://${sub}.kayserone.com.br` };
+  }
+
+  /**
+   * Cobrança avulsa do MÊS (Pix ou cartão) — pra quem não quer assinatura no cartão.
+   * O Mercado Pago avisa no mesmo endereço (notification_url) quando o pagamento for aprovado.
+   */
+  async cobrarPix(id: string) {
+    const c = await this.repo.findOne({ where: { id } });
+    if (!c) throw new NotFoundException();
+    const valor = valorDoCliente(c);
+    if (!valor) throw new BadRequestException("Negocie o valor deste cliente antes de cobrar.");
+    const p = await this.mp("/checkout/preferences", {
+      method: "POST",
+      body: JSON.stringify({
+        items: [{ title: `Kayser One — ${c.empresa} (mensalidade)`, quantity: 1, unit_price: valor, currency_id: "BRL" }],
+        external_reference: c.id,
+        notification_url: `${process.env.PUBLIC_API_URL || "https://kayser-one-backend-production.up.railway.app/api/v1"}/clientes-saas/mercadopago`,
+        back_urls: { success: "https://www.kayserone.com.br", failure: "https://www.kayserone.com.br", pending: "https://www.kayserone.com.br" },
+      }),
+    });
+    await this.repo.update(id, { cobrancaLink: p.init_point, assinatura: c.assinatura === "authorized" ? c.assinatura : "pending" });
+    await this.email(
+      c.diretorEmail,
+      `Mensalidade do Kayser One — ${c.empresa}`,
+      `Olá, ${c.diretorNome.split(" ")[0]}!\n\nPara pagar a mensalidade do Kayser One da ${c.empresa} (Pix ou cartão), use este link do Mercado Pago:\n${p.init_point}\n\n` +
+        `Valor: R$ ${valor.toLocaleString("pt-BR")}.\n\nDúvidas: contato@kayserone.com.br\n— Equipe Kayser One`
+    );
+    return { link: p.init_point, valor };
+  }
+
+  /** Pagamento avulso (Pix/cartão) aprovado → marca o mês como pago. Confere no Mercado Pago. */
+  private async avisoPagamentoPix(id: string) {
+    const pg = await this.mp(`/v1/payments/${encodeURIComponent(id)}`).catch(() => null);
+    const ref = String(pg?.external_reference || "");
+    if (!pg || pg.status !== "approved" || !/^[0-9a-f-]{36}$/i.test(ref)) return { ok: true };
+    const c = await this.repo.findOne({ where: { id: ref } });
+    if (!c) return { ok: true };
+    await this.repo.update(c.id, { assinatura: "pix_pago", pagoEm: new Date() });
+    await this.avisarRodrigo(
+      `Mensalidade paga — ${c.empresa}`,
+      `${c.empresa} pagou R$ ${pg.transaction_amount} (${pg.payment_method_id === "pix" ? "Pix" : pg.payment_method_id}).`
+    );
+    return { ok: true };
   }
 
   private situacao(s: string) {

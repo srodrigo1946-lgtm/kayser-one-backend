@@ -493,6 +493,7 @@ export class SchemaBootstrapService implements OnModuleInit {
     for (const col of ["cobrancaId", "cobrancaLink", "assinatura", "origem"]) {
       await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "${col}" varchar`);
     }
+    await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "pagoEm" timestamp`);
   }
 
   /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */
