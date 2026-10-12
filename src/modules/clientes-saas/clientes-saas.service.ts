@@ -389,7 +389,9 @@ export class ClientesSaasService {
    */
   async comecar(dto: { assinatura: string; empresa: string; subdominio?: string; diretorNome: string; diretorEmail: string }) {
     this.config();
-    const a = await this.mp(`/preapproval/${encodeURIComponent(dto.assinatura)}`);
+    const a = await this.mp(`/preapproval/${encodeURIComponent(dto.assinatura)}`).catch(() => {
+      throw new BadRequestException("Não encontrei essa assinatura no Mercado Pago. Abra esta página pelo link que aparece depois de pagar.");
+    });
     if (a.status !== "authorized") {
       throw new BadRequestException(
         a.status === "pending"
