@@ -7,6 +7,7 @@ import { User, UserRole } from "../users/user.entity";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { contaBloqueada, MSG_CONTA_BLOQUEADA } from "../../common/conta-bloqueada";
 import { versaoSenha } from "./jwt-secret";
 
 /** Mapa cargo → cargo do gestor imediatamente acima (para o autocadastro). */
@@ -87,6 +88,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    if (contaBloqueada()) throw new UnauthorizedException(MSG_CONTA_BLOQUEADA);
     // passwordHash é select:false na entidade — addSelect traz todas as colunas + o hash.
     const user = await this.usersRepo
       .createQueryBuilder("u")

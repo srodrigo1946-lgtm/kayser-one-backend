@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Settings, AiProvider } from "./settings.entity";
+import { contaBloqueada } from "../../common/conta-bloqueada";
 import { StorageService } from "../storage/storage.service";
 
 @Injectable()
@@ -61,6 +62,8 @@ export class SettingsService {
       matriz: !!process.env.RAILWAY_API_TOKEN,
       // Plano do cliente (LIMITE_USUARIOS): 1 = corretor sozinho, sem as telas de gestão.
       limiteUsuarios: Number(process.env.LIMITE_USUARIOS) || null,
+      // Conta bloqueada/encerrada pela Kayser (tela de login mostra o aviso).
+      bloqueado: contaBloqueada(),
       // Serviços adicionais comprados (IA de resposta, IA One, Meta). Na Kayser (sem plano) vale tudo.
       adicionais: process.env.LIMITE_USUARIOS ? (process.env.ADICIONAIS || "").split(",").map((a) => a.trim()).filter(Boolean) : ["ia", "ione", "meta"],
     };

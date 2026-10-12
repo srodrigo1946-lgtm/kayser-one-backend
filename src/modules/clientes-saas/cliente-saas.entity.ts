@@ -49,6 +49,20 @@ export class ClienteSaas {
   @Column({ type: "timestamp", nullable: true })
   pagoEm: Date | null;
 
+  // Conta bloqueada (ninguém entra) / encerrada (bloqueada + assinatura cancelada). Dados ficam guardados.
+  @Column({ type: "timestamp", nullable: true })
+  bloqueadoEm: Date | null;
+
+  @Column({ type: "timestamp", nullable: true })
+  encerradoEm: Date | null;
+
+  // Ação marcada pra uma data ("bloquear" | "encerrar") — o relógio de hora em hora executa.
+  @Column({ type: "varchar", nullable: true })
+  agendaAcao: string | null;
+
+  @Column({ type: "timestamp", nullable: true })
+  agendaEm: Date | null;
+
   @Column()
   diretorNome: string;
 

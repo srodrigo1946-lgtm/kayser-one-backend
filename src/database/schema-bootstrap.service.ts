@@ -494,6 +494,22 @@ export class SchemaBootstrapService implements OnModuleInit {
       await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "${col}" varchar`);
     }
     await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "pagoEm" timestamp`);
+    for (const col of ["bloqueadoEm", "encerradoEm", "agendaEm"]) {
+      await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "${col}" timestamp`);
+    }
+    await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "agendaAcao" varchar`);
+    // Caixa do Business K1: pagamentos aprovados no Mercado Pago.
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS pagamentos_saas (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "mpId" varchar NOT NULL UNIQUE,
+        "clienteId" uuid,
+        valor numeric NOT NULL,
+        liquido numeric NOT NULL,
+        meio varchar,
+        "pagoEm" timestamp NOT NULL,
+        "createdAt" timestamp NOT NULL DEFAULT now()
+      )`);
   }
 
   /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */

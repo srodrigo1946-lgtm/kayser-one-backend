@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
-import { IsArray, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsArray, IsDateString, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -24,6 +24,15 @@ class ComecarDto {
 
   @IsEmail() @MaxLength(160)
   diretorEmail: string;
+}
+
+class ContaDto {
+  @IsIn(["bloquear", "desbloquear", "encerrar", "cancelar_agenda"])
+  acao: string;
+
+  // Data marcada (bloquear/encerrar). Vazio ou no passado = agora.
+  @IsOptional() @IsDateString()
+  quando?: string;
 }
 
 class AjustarClienteDto {
@@ -116,6 +125,25 @@ export class ClientesSaasController {
   @ApiOperation({ summary: "Comece seu Kayser One (público; exige assinatura paga no Mercado Pago)" })
   comecar(@Body() dto: ComecarDto) {
     return this.service.comecar(dto);
+  }
+
+  @Get("painel")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Painel do Business K1: clientes, receita, caixa e lucro por mês do ano" })
+  painel(@Query("ano") ano?: string) {
+    const n = Number(ano);
+    return this.service.painel(n >= 2024 && n <= 2100 ? n : new Date().getFullYear());
+  }
+
+  @Post(":id/conta")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Bloquear, desbloquear ou encerrar a conta do cliente (na hora ou numa data)" })
+  conta(@Param("id", ParseUUIDPipe) id: string, @Body() dto: ContaDto) {
+    return this.service.conta(id, dto.acao, dto.quando);
   }
 
   @Post(":id/cobrar-pix")

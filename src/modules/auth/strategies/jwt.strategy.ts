@@ -6,6 +6,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { User } from "../../users/user.entity";
 import { resolveJwtSecret, versaoSenha } from "../jwt-secret";
+import { contaBloqueada, MSG_CONTA_BLOQUEADA } from "../../../common/conta-bloqueada";
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -23,6 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: { sub: string; pv?: string }) {
+    if (contaBloqueada()) throw new UnauthorizedException(MSG_CONTA_BLOQUEADA);
     const user = await this.usersRepo
       .createQueryBuilder("u")
       .addSelect("u.passwordHash")

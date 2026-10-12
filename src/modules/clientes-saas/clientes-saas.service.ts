@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Cron } from "@nestjs/schedule";
+import { Between, IsNull, LessThanOrEqual, Not, Repository } from "typeorm";
 import { Client } from "pg";
 import { ClienteSaas } from "./cliente-saas.entity";
+import { PagamentoSaas } from "./pagamento-saas.entity";
 import { SettingsService } from "../settings/settings.service";
 import { AiProvider } from "../settings/settings.entity";
 
@@ -57,6 +59,25 @@ export function subdominioValido(s: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/.test(s) && !RESERVADOS.has(s) && !s.startsWith("pendente-");
 }
 
+/**
+ * Custos mensais (premissas da planilha do John, docs/simulacao-kayser-one.xlsx) para o lucro
+ * do painel: servidor de cada cliente, IA por usuário quando o adicional está ligado, e fixos
+ * (infra R$ 300 + marketing R$ 500).
+ */
+export const CUSTOS = { servidorPorCliente: 40, iaPorUsuario: 4, ionePorUsuario: 1.5, fixoMensal: 800 };
+
+export function custoDoCliente(c: { adicionais: string; limiteUsuarios: number }): number {
+  const a = c.adicionais ? c.adicionais.split(",") : [];
+  return (
+    CUSTOS.servidorPorCliente +
+    (a.includes("ia") ? CUSTOS.iaPorUsuario * c.limiteUsuarios : 0) +
+    (a.includes("ione") ? CUSTOS.ionePorUsuario * c.limiteUsuarios : 0)
+  );
+}
+
+/** Desconto de quem paga pela assinatura automática no cartão (Mercado Pago). */
+export const DESCONTO_CARTAO = 0.05;
+
 /** Plano de uma assinatura do site pelo valor mensal (49, 110, 330, 530, 750). */
 export function planoPeloValor(valor: unknown): string | null {
   return Object.keys(PRECO_PLANO).find((p) => PRECO_PLANO[p] === Number(valor)) ?? null;
@@ -72,6 +93,7 @@ export class ClientesSaasService {
   constructor(
     @InjectRepository(ClienteSaas) private readonly repo: Repository<ClienteSaas>,
     private readonly settings?: SettingsService,
+    @InjectRepository(PagamentoSaas) private readonly pagamentos?: Repository<PagamentoSaas>,
   ) {}
 
   /** Chave de IA da Kayser (a IA vendida como adicional usa a chave da Kayser; o cliente não vê). */
@@ -326,8 +348,10 @@ export class ClientesSaasService {
   async cobrar(id: string) {
     const c = await this.repo.findOne({ where: { id } });
     if (!c) throw new NotFoundException();
-    const valor = valorDoCliente(c);
-    if (!valor) throw new BadRequestException("Negocie o valor deste cliente antes de cobrar.");
+    const tabelaOuNegociado = valorDoCliente(c);
+    if (!tabelaOuNegociado) throw new BadRequestException("Negocie o valor deste cliente antes de cobrar.");
+    // Assinatura no cartão: 5% de desconto sobre a tabela (regra do Rodrigo). Valor negociado vale como está.
+    const valor = c.valorMensal != null ? tabelaOuNegociado : Math.round(tabelaOuNegociado * (1 - DESCONTO_CARTAO) * 100) / 100;
     const p = await this.mp("/preapproval_plan", {
       method: "POST",
       body: JSON.stringify({
@@ -349,6 +373,7 @@ export class ClientesSaasService {
     const tipo = String(corpo?.type || query?.type || query?.topic || "");
     const id = corpo?.data?.id || query?.["data.id"] || query?.id;
     if (!id || !this.mercadoPagoConfigurado()) return { ok: true };
+    if (tipo.includes("authorized_payment")) return this.avisoParcela(String(id));
     if (tipo.includes("payment")) return this.avisoPagamentoPix(String(id));
     if (!tipo.includes("preapproval")) return { ok: true };
     // Assinatura que não existe no Mercado Pago (ex.: "Simular notificação"): ignora e responde 200,
@@ -475,11 +500,165 @@ export class ClientesSaasService {
     const c = await this.repo.findOne({ where: { id: ref } });
     if (!c) return { ok: true };
     await this.repo.update(c.id, { assinatura: "pix_pago", pagoEm: new Date() });
+    await this.registrarPagamento(pg, c.id);
     await this.avisarRodrigo(
       `Mensalidade paga — ${c.empresa}`,
       `${c.empresa} pagou R$ ${pg.transaction_amount} (${pg.payment_method_id === "pix" ? "Pix" : pg.payment_method_id}).`
     );
     return { ok: true };
+  }
+
+  // ---------- Conta do cliente: bloquear / encerrar (na hora ou numa data) ----------
+
+  /**
+   * bloquear: ninguém entra no Kayser One do cliente (dados guardados).
+   * encerrar: bloqueia + cancela a assinatura no Mercado Pago (dados guardados, dá pra reativar).
+   * desbloquear: reativa. Com `quando` no futuro, fica agendado (o relógio de hora em hora executa).
+   */
+  async conta(id: string, acao: string, quando?: string) {
+    const c = await this.repo.findOne({ where: { id } });
+    if (!c) throw new NotFoundException();
+    if (acao === "cancelar_agenda") {
+      await this.repo.update(id, { agendaAcao: null, agendaEm: null });
+      return { ok: true };
+    }
+    if (quando && (acao === "bloquear" || acao === "encerrar")) {
+      const data = new Date(quando);
+      if (isNaN(data.getTime())) throw new BadRequestException("Data inválida.");
+      if (data.getTime() > Date.now()) {
+        await this.repo.update(id, { agendaAcao: acao, agendaEm: data });
+        return { agendado: data };
+      }
+    }
+    await this.aplicarConta(c, acao);
+    return { ok: true };
+  }
+
+  private async aplicarConta(c: ClienteSaas, acao: string) {
+    if (acao === "desbloquear") {
+      await this.variavelDoCliente(c, "CONTA_BLOQUEADA", "0");
+      await this.repo.update(c.id, { bloqueadoEm: null, encerradoEm: null, agendaAcao: null, agendaEm: null });
+      await this.avisarRodrigo(`Conta reativada — ${c.empresa}`, `${c.empresa} foi desbloqueada e voltou a funcionar.`);
+      return;
+    }
+    if (acao === "encerrar" && c.cobrancaId && c.assinatura === "authorized") {
+      await this.mp(`/preapproval/${encodeURIComponent(c.cobrancaId)}`, { method: "PUT", body: JSON.stringify({ status: "cancelled" }) }).catch(() => null);
+    }
+    await this.variavelDoCliente(c, "CONTA_BLOQUEADA", "1");
+    const agora = new Date();
+    await this.repo.update(c.id, {
+      bloqueadoEm: c.bloqueadoEm ?? agora,
+      ...(acao === "encerrar" ? { encerradoEm: agora, assinatura: c.assinatura === "authorized" ? "cancelled" : c.assinatura } : {}),
+      agendaAcao: null,
+      agendaEm: null,
+    });
+    await this.avisarRodrigo(
+      `Conta ${acao === "encerrar" ? "encerrada" : "bloqueada"} — ${c.empresa}`,
+      `${c.empresa}: conta ${acao === "encerrar" ? "encerrada (assinatura cancelada)" : "bloqueada"}. Os dados continuam guardados.`
+    );
+  }
+
+  /** Grava uma variável no servidor do cliente (o Railway republica sozinho). */
+  private async variavelDoCliente(c: ClienteSaas, name: string, value: string) {
+    if (!c.railwayServiceId) return;
+    const { projectId, environmentId } = this.config();
+    await this.gql(`mutation($input: VariableUpsertInput!) { variableUpsert(input: $input) }`, {
+      input: { projectId, environmentId, serviceId: c.railwayServiceId, name, value },
+    });
+  }
+
+  /** De hora em hora: executa bloqueios/encerramentos marcados pra data. Só na Kayser. */
+  @Cron("0 * * * *")
+  async executarAgendados() {
+    if (!this.configurado()) return;
+    const vencidos = await this.repo.find({ where: { agendaAcao: Not(IsNull()), agendaEm: LessThanOrEqual(new Date()) } });
+    for (const c of vencidos) {
+      await this.aplicarConta(c, c.agendaAcao!).catch((e) => this.logger.error(`Agenda ${c.empresa}: ${(e as Error).message}`));
+    }
+  }
+
+  // ---------- Caixa e painel do Business K1 ----------
+
+  /** Pagamento aprovado no Mercado Pago entra no caixa (uma vez só por pagamento). */
+  private async registrarPagamento(pg: any, clienteId: string | null) {
+    if (!this.pagamentos || !pg?.id) return;
+    await this.pagamentos
+      .createQueryBuilder()
+      .insert()
+      .values({
+        mpId: String(pg.id),
+        clienteId,
+        valor: Number(pg.transaction_amount) || 0,
+        liquido: Number(pg.transaction_details?.net_received_amount ?? pg.transaction_amount) || 0,
+        meio: pg.payment_method_id || pg.payment_type_id || null,
+        pagoEm: new Date(pg.date_approved || pg.date_created || Date.now()),
+      })
+      .orIgnore()
+      .execute()
+      .catch((e) => this.logger.warn(`Caixa: ${(e as Error).message}`));
+  }
+
+  /** Parcela da assinatura no cartão (aviso subscription_authorized_payment) → caixa. */
+  private async avisoParcela(id: string) {
+    const p = await this.mp(`/authorized_payments/${encodeURIComponent(id)}`).catch(() => null);
+    const pagamentoId = p?.payment?.id;
+    if (!pagamentoId) return { ok: true };
+    const pg = await this.mp(`/v1/payments/${encodeURIComponent(String(pagamentoId))}`).catch(() => null);
+    if (!pg || pg.status !== "approved") return { ok: true };
+    const c = p.preapproval_id ? await this.repo.findOne({ where: { cobrancaId: String(p.preapproval_id) } }) : null;
+    await this.registrarPagamento(pg, c?.id ?? null);
+    return { ok: true };
+  }
+
+  /**
+   * Painel do ano: por mês, clientes (ativos, novos, encerrados), receita contratada,
+   * caixa (o que entrou de verdade, líquido) e lucro (caixa − custos das premissas do John).
+   */
+  async painel(ano: number) {
+    const clientes = await this.repo.find();
+    const pagamentos = this.pagamentos
+      ? await this.pagamentos.find({ where: { pagoEm: Between(new Date(ano, 0, 1), new Date(ano + 1, 0, 1)) } })
+      : [];
+    const agora = new Date();
+    const conta = (c: ClienteSaas) => c.status !== "aguardando" && c.status !== "erro";
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const meses = Array.from({ length: 12 }, (_, m) => {
+      const ini = new Date(ano, m, 1);
+      const fim = new Date(ano, m + 1, 1);
+      if (ini > agora) return { mes: m + 1, ativos: 0, novos: 0, encerrados: 0, receita: 0, caixa: 0, custo: 0, lucro: 0, futuro: true };
+      const dentro = (d: Date | string | null) => !!d && new Date(d) >= ini && new Date(d) < fim;
+      const ativos = clientes.filter((c) => conta(c) && new Date(c.createdAt) < fim && !(c.encerradoEm && new Date(c.encerradoEm) < fim));
+      const receita = ativos.reduce((t, c) => t + (valorDoCliente(c) ?? 0), 0);
+      const caixa = pagamentos.filter((p) => dentro(p.pagoEm)).reduce((t, p) => t + p.liquido, 0);
+      const custo = ativos.reduce((t, c) => t + custoDoCliente(c), 0) + CUSTOS.fixoMensal;
+      return {
+        mes: m + 1,
+        ativos: ativos.length,
+        novos: clientes.filter((c) => conta(c) && dentro(c.createdAt)).length,
+        encerrados: clientes.filter((c) => dentro(c.encerradoEm)).length,
+        receita: r2(receita),
+        caixa: r2(caixa),
+        custo: r2(custo),
+        lucro: r2(caixa - custo),
+        futuro: false,
+      };
+    });
+    const soma = (k: "novos" | "encerrados" | "receita" | "caixa" | "custo" | "lucro") => r2(meses.reduce((t, x) => t + x[k], 0));
+    const ultimo = [...meses].reverse().find((x) => !x.futuro);
+    return {
+      ano,
+      meses,
+      total: {
+        ativos: ultimo?.ativos ?? 0,
+        novos: soma("novos"),
+        encerrados: soma("encerrados"),
+        receita: soma("receita"),
+        caixa: soma("caixa"),
+        custo: soma("custo"),
+        lucro: soma("lucro"),
+      },
+      premissas: CUSTOS,
+    };
   }
 
   private situacao(s: string) {
@@ -512,7 +691,7 @@ export class ClientesSaasService {
       `Assinatura do Kayser One — ${c.empresa}`,
       `Olá, ${c.diretorNome.split(" ")[0]}!\n\n` +
         `Para ativar a assinatura mensal do Kayser One da ${c.empresa} (${c.plano}), é só pagar neste link do Mercado Pago:\n${link}\n\n` +
-        `Valor: R$ ${valor.toLocaleString("pt-BR")} por mês. Dá para cancelar quando quiser.\n\n` +
+        `Valor: R$ ${valor.toLocaleString("pt-BR")} por mês${c.valorMensal == null ? " (já com 5% de desconto da assinatura no cartão)" : ""}. Dá para cancelar quando quiser.\n\n` +
         `Dúvidas: contato@kayserone.com.br\n— Equipe Kayser One`
     );
   }

@@ -101,10 +101,10 @@ describe("Clientes SaaS — cobrança (Mercado Pago)", () => {
     const repo = { findOne: async () => cliente, update: async (_: string, d: any) => updates.push(d) };
     const s = new ClientesSaasService(repo as any);
     const r = await s.cobrar("c1");
-    expect(r).toEqual({ link: "https://mp/link", valor: 78 });
+    expect(r).toEqual({ link: "https://mp/link", valor: 74.1 }); // 78 com 5% de desconto do cartão
     expect(enviado[0].url).toBe("https://api.mercadopago.com/preapproval_plan");
     expect(enviado[0].body.payer_email).toBeUndefined(); // não prende o link ao e-mail do Diretor
-    expect(enviado[0].body.auto_recurring).toEqual(expect.objectContaining({ transaction_amount: 78, frequency_type: "months" }));
+    expect(enviado[0].body.auto_recurring).toEqual(expect.objectContaining({ transaction_amount: 74.1, frequency_type: "months" }));
     expect(updates[0]).toEqual({ cobrancaId: "pre1", cobrancaLink: "https://mp/link", assinatura: "pending" });
   });
 
@@ -240,5 +240,86 @@ describe("Clientes SaaS — plano do cliente e Pix", () => {
     expect(enviado[0].body.external_reference).toBe(id);
     await s.avisoMercadoPago({ type: "payment", data: { id: "PAY1" } }, {});
     expect(updates.at(-1)).toEqual(expect.objectContaining({ assinatura: "pix_pago" }));
+  });
+});
+
+describe("Business K1 — conta do cliente, desconto, caixa e painel", () => {
+  const ENV = ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID", "MP_ACCESS_TOKEN"];
+  const fetchOriginal = global.fetch;
+  afterEach(() => {
+    ENV.forEach((k) => delete process.env[k]);
+    global.fetch = fetchOriginal;
+  });
+  const base = { id: "c1", empresa: "Imob", plano: "Corretor", adicionais: "", valorMensal: null, diretorNome: "Ana", diretorEmail: "a@x.com", railwayServiceId: "srv1", assinatura: null, bloqueadoEm: null };
+
+  it("bloquear agora liga CONTA_BLOQUEADA no servidor do cliente; com data futura só agenda", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    const updates: any[] = [];
+    const repo = { findOne: async () => base, update: async (_: string, d: any) => updates.push(d) };
+    const s: any = new ClientesSaasService(repo as any);
+    const vars: any[] = [];
+    s.gql = async (_q: string, v: any) => vars.push(v.input);
+    await s.conta("c1", "bloquear");
+    expect(vars[0]).toEqual(expect.objectContaining({ serviceId: "srv1", name: "CONTA_BLOQUEADA", value: "1" }));
+    expect(updates[0].bloqueadoEm).toBeInstanceOf(Date);
+    const amanha = new Date(Date.now() + 86400000).toISOString();
+    const r = await s.conta("c1", "encerrar", amanha);
+    expect(r.agendado).toBeInstanceOf(Date);
+    expect(updates[1]).toEqual(expect.objectContaining({ agendaAcao: "encerrar" }));
+    expect(vars).toHaveLength(1); // agendado não mexe no servidor ainda
+  });
+
+  it("encerrar cancela a assinatura no Mercado Pago; desbloquear reativa", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    const chamadas: any[] = [];
+    global.fetch = (async (url: string, init: any) => {
+      chamadas.push({ url, method: init?.method, body: init?.body });
+      return { ok: true, json: async () => ({}) } as any;
+    }) as any;
+    const updates: any[] = [];
+    const repo = { findOne: async () => ({ ...base, cobrancaId: "SUB1", assinatura: "authorized" }), update: async (_: string, d: any) => updates.push(d) };
+    const s: any = new ClientesSaasService(repo as any);
+    const vars: any[] = [];
+    s.gql = async (_q: string, v: any) => vars.push(v.input);
+    await s.conta("c1", "encerrar");
+    const mp = chamadas.find((c) => c.url.includes("/preapproval/SUB1"));
+    expect(mp.method).toBe("PUT");
+    expect(JSON.parse(mp.body)).toEqual({ status: "cancelled" });
+    expect(updates[0]).toEqual(expect.objectContaining({ assinatura: "cancelled" }));
+    await s.conta("c1", "desbloquear");
+    expect(vars.at(-1).value).toBe("0");
+    expect(updates.at(-1)).toEqual(expect.objectContaining({ bloqueadoEm: null, encerradoEm: null }));
+  });
+
+  it("assinatura no cartão sai com 5% de desconto sobre a tabela; valor negociado fica igual", async () => {
+    process.env.MP_ACCESS_TOKEN = "t";
+    const corpos: any[] = [];
+    global.fetch = (async (url: string, init: any) => {
+      if (url.includes("mercadopago")) corpos.push(JSON.parse(init.body));
+      return { ok: true, json: async () => ({ id: "P", init_point: "https://mp" }) } as any;
+    }) as any;
+    let cliente: any = { ...base, adicionais: "ia" }; // 49 + 29 = 78
+    const repo = { findOne: async () => cliente, update: async () => null };
+    const s = new ClientesSaasService(repo as any);
+    expect((await s.cobrar("c1")).valor).toBe(74.1);
+    cliente = { ...base, valorMensal: 60 };
+    expect((await s.cobrar("c1")).valor).toBe(60);
+    expect(corpos[1].auto_recurring.transaction_amount).toBe(60);
+  });
+
+  it("painel: clientes ativos, receita, caixa líquido e lucro do mês", async () => {
+    const agora = new Date();
+    const clientes = [
+      { ...base, id: "a", status: "ativo", createdAt: new Date(agora.getFullYear(), agora.getMonth(), 1), adicionais: "", valorMensal: 100, limiteUsuarios: 1, encerradoEm: null },
+      { ...base, id: "b", status: "aguardando", createdAt: agora, limiteUsuarios: 1, encerradoEm: null },
+    ];
+    const pagamentos = [{ liquido: 99, pagoEm: agora }];
+    const repo = { find: async () => clientes };
+    const pags = { find: async () => pagamentos };
+    const s = new ClientesSaasService(repo as any, undefined, pags as any);
+    const p = await s.painel(agora.getFullYear());
+    const mes = p.meses[agora.getMonth()];
+    expect(mes).toEqual(expect.objectContaining({ ativos: 1, novos: 1, receita: 100, caixa: 99, custo: 40 + 800, lucro: 99 - 840 }));
+    expect(p.total.caixa).toBe(99);
   });
 });
