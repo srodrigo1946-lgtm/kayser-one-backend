@@ -3,6 +3,8 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Client } from "pg";
 import { ClienteSaas } from "./cliente-saas.entity";
+import { SettingsService } from "../settings/settings.service";
+import { AiProvider } from "../settings/settings.entity";
 
 /** Planos à venda (página de vendas) → usuários permitidos (LIMITE_USUARIOS). */
 export const PLANOS_SAAS: Record<string, number> = {
@@ -18,6 +20,22 @@ export const PLANO_PERSONALIZADO = "Personalizado (CEO)";
 
 /** Serviços adicionais vendidos à parte (todos os planos): IA de resposta, IA One, Anúncios Meta. */
 export const ADICIONAIS = ["ia", "ione", "meta"];
+
+/** Preços de tabela (R$/mês) — os mesmos da página de vendas e da planilha do John (promo de lançamento). */
+export const PRECO_PLANO: Record<string, number> = { Corretor: 49, "Gerente de Vendas": 110, "Gerente Geral": 330, Superintendente: 530, "Diretor completo": 750 };
+export const PRECO_ADICIONAL: Record<string, Record<string, number>> = {
+  ia: { Corretor: 29, "Gerente de Vendas": 149, "Gerente Geral": 399, Superintendente: 790, "Diretor completo": 1290 },
+  ione: { Corretor: 19, "Gerente de Vendas": 59, "Gerente Geral": 99, Superintendente: 199, "Diretor completo": 449 },
+  meta: { Corretor: 9, "Gerente de Vendas": 29, "Gerente Geral": 59, Superintendente: 79, "Diretor completo": 99 },
+};
+
+/** Quanto o cliente paga por mês: valor negociado, ou plano + adicionais de tabela. */
+export function valorDoCliente(c: { plano: string; adicionais: string; valorMensal: number | null }): number | null {
+  if (c.valorMensal != null) return c.valorMensal;
+  const base = PRECO_PLANO[c.plano];
+  if (base == null) return null; // personalizado sem valor negociado
+  return (c.adicionais ? c.adicionais.split(",") : []).reduce((t, a) => t + (PRECO_ADICIONAL[a]?.[c.plano] ?? 0), base);
+}
 
 /** Subdomínios que não podem ser de cliente. */
 const RESERVADOS = new Set(["www", "demo", "api", "app", "admin", "mail", "email", "rsend", "enviar", "send", "kayser", "kayserone", "suporte", "contato", "teste"]);
@@ -45,7 +63,28 @@ const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class ClientesSaasService {
   private readonly logger = new Logger(ClientesSaasService.name);
 
-  constructor(@InjectRepository(ClienteSaas) private readonly repo: Repository<ClienteSaas>) {}
+  constructor(
+    @InjectRepository(ClienteSaas) private readonly repo: Repository<ClienteSaas>,
+    private readonly settings?: SettingsService,
+  ) {}
+
+  /** Chave de IA da Kayser (a IA vendida como adicional usa a chave da Kayser; o cliente não vê). */
+  private async chaveIaKayser(): Promise<string> {
+    if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+    const s = await this.settings?.get();
+    return s?.aiProvider === AiProvider.ANTHROPIC && s.aiApiKey ? s.aiApiKey : "";
+  }
+
+  /** IA de resposta ou IA One ligada → o servidor do cliente recebe a chave da Kayser; desligada → tira. */
+  private async sincronizarChaveIa(c: { railwayServiceId: string | null }, adicionais: string) {
+    if (!c.railwayServiceId) return;
+    const { projectId, environmentId } = this.config();
+    const usaIa = adicionais.split(",").some((a) => a === "ia" || a === "ione");
+    const chave = usaIa ? await this.chaveIaKayser() : "";
+    const alvo = { projectId, environmentId, serviceId: c.railwayServiceId, name: "ANTHROPIC_API_KEY" };
+    if (chave) await this.gql(`mutation($input: VariableUpsertInput!) { variableUpsert(input: $input) }`, { input: { ...alvo, value: chave } });
+    else await this.gql(`mutation($input: VariableDeleteInput!) { variableDelete(input: $input) }`, { input: alvo }).catch(() => null);
+  }
 
   /** Só a instalação da Kayser tem as chaves do Railway; nas outras, tudo isso fica desligado. */
   private config() {
@@ -138,6 +177,8 @@ export class ClientesSaasService {
     if (!c) throw new NotFoundException();
     const valor = this.lista(adicionais);
     await this.repo.update(id, { adicionais: valor });
+    // A chave vai antes: a troca de ADICIONAIS logo abaixo é que republica o servidor.
+    await this.sincronizarChaveIa(c, valor);
     if (c.railwayServiceId) {
       await this.gql(`mutation($input: VariableUpsertInput!) { variableUpsert(input: $input) }`, {
         input: { projectId, environmentId, serviceId: c.railwayServiceId, name: "ADICIONAIS", value: valor || "nenhum" },
@@ -196,6 +237,7 @@ export class ClientesSaasService {
       }
 
       await this.etapa(id, "Configurando (plano, Diretor, banco)");
+      const chaveIa = (c.adicionais || "").split(",").some((x) => x === "ia" || x === "ione") ? await this.chaveIaKayser() : "";
       await this.gql(`mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }`, {
         input: {
           projectId,
@@ -212,6 +254,8 @@ export class ClientesSaasService {
             SEED_DIRETOR_NAME: c.diretorNome,
             LIMITE_USUARIOS: String(c.limiteUsuarios),
             ADICIONAIS: c.adicionais || "nenhum",
+            // IA vendida como adicional usa a chave da Kayser (ninguém vê nem digita).
+            ...(chaveIa ? { ANTHROPIC_API_KEY: chaveIa } : {}),
             FRONTEND_URL: `https://${c.subdominio}.kayserone.com.br`,
           },
         },
@@ -247,6 +291,101 @@ export class ClientesSaasService {
       this.logger.error(`Cliente ${c.subdominio}: ${msg}`);
       await this.repo.update(id, { status: "erro", erro: msg.slice(0, 500) });
     }
+  }
+
+  // ---------- Cobrança (Mercado Pago, assinatura mensal) ----------
+
+  mercadoPagoConfigurado() {
+    return !!process.env.MP_ACCESS_TOKEN;
+  }
+
+  private async mp(caminho: string, init: RequestInit = {}) {
+    const token = process.env.MP_ACCESS_TOKEN;
+    if (!token) throw new ServiceUnavailableException("Falta configurar o Mercado Pago (MP_ACCESS_TOKEN) no Railway da Kayser.");
+    const r = await fetch(`https://api.mercadopago.com${caminho}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    const j: any = await r.json().catch(() => ({}));
+    if (!r.ok) throw new BadRequestException(`Mercado Pago: ${j.message || r.status}`);
+    return j;
+  }
+
+  /** Gera a assinatura mensal do cliente no Mercado Pago e manda o link pro Diretor dele. */
+  async cobrar(id: string) {
+    const c = await this.repo.findOne({ where: { id } });
+    if (!c) throw new NotFoundException();
+    const valor = valorDoCliente(c);
+    if (!valor) throw new BadRequestException("Negocie o valor deste cliente antes de cobrar.");
+    const a = await this.mp("/preapproval", {
+      method: "POST",
+      body: JSON.stringify({
+        reason: `Kayser One — ${c.empresa} (${c.plano})`,
+        external_reference: c.id,
+        payer_email: c.diretorEmail,
+        back_url: "https://www.kayserone.com.br",
+        status: "pending",
+        auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: valor, currency_id: "BRL" },
+      }),
+    });
+    await this.repo.update(id, { cobrancaId: a.id, cobrancaLink: a.init_point, assinatura: a.status || "pending" });
+    await this.emailCobranca(c, valor, a.init_point);
+    return { link: a.init_point, valor };
+  }
+
+  /**
+   * Aviso do Mercado Pago (público). Não confia no que chega: consulta a assinatura no
+   * Mercado Pago e só então atualiza o cliente. Assinatura do site (sem cliente) avisa o Rodrigo.
+   */
+  async avisoMercadoPago(corpo: any, query: any) {
+    const tipo = String(corpo?.type || query?.type || query?.topic || "");
+    const id = corpo?.data?.id || query?.["data.id"] || query?.id;
+    if (!id || !tipo.includes("preapproval") || !this.mercadoPagoConfigurado()) return { ok: true };
+    const a = await this.mp(`/preapproval/${encodeURIComponent(String(id))}`);
+    const ref = String(a.external_reference || "");
+    const c = /^[0-9a-f-]{36}$/i.test(ref) ? await this.repo.findOne({ where: { id: ref } }) : null;
+    if (c) {
+      await this.repo.update(c.id, { assinatura: a.status, cobrancaId: a.id });
+      if (a.status !== c.assinatura) await this.avisarRodrigo(`Assinatura ${this.situacao(a.status)} — ${c.empresa}`, `${c.empresa} (${c.plano}): assinatura ${this.situacao(a.status)}.`);
+    } else if (a.status === "authorized") {
+      await this.avisarRodrigo(`Nova assinatura pelo site — ${a.reason || "Kayser One"}`, `Chegou uma assinatura nova pelo site: ${a.reason || "(sem nome)"}, R$ ${a.auto_recurring?.transaction_amount ?? "?"}/mês.\nCrie a instalação dela na aba Clientes do Kayser.`);
+    }
+    return { ok: true };
+  }
+
+  private situacao(s: string) {
+    return ({ authorized: "em dia", pending: "aguardando pagamento", paused: "pausada", cancelled: "cancelada" } as Record<string, string>)[s] || s;
+  }
+
+  private async email(para: string, assunto: string, texto: string, copiaRodrigo = true) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return;
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: process.env.SUPPORT_FROM || "Kayser One <onboarding@resend.dev>",
+        to: para,
+        ...(copiaRodrigo ? { bcc: process.env.SUPPORT_NOTIFY_EMAIL || "srodrigo1946@gmail.com" } : {}),
+        subject: assunto,
+        text: texto,
+      }),
+    }).catch((e) => this.logger.warn(`E-mail não enviado: ${(e as Error).message}`));
+  }
+
+  private avisarRodrigo(assunto: string, texto: string) {
+    return this.email(process.env.SUPPORT_NOTIFY_EMAIL || "srodrigo1946@gmail.com", assunto, texto, false);
+  }
+
+  private emailCobranca(c: ClienteSaas, valor: number, link: string) {
+    return this.email(
+      c.diretorEmail,
+      `Assinatura do Kayser One — ${c.empresa}`,
+      `Olá, ${c.diretorNome.split(" ")[0]}!\n\n` +
+        `Para ativar a assinatura mensal do Kayser One da ${c.empresa} (${c.plano}), é só pagar neste link do Mercado Pago:\n${link}\n\n` +
+        `Valor: R$ ${valor.toLocaleString("pt-BR")} por mês. Dá para cancelar quando quiser.\n\n` +
+        `Dúvidas: contato@kayserone.com.br\n— Equipe Kayser One`
+    );
   }
 
   /** E-mail de boas-vindas pro Diretor da imobiliária (cópia pro Rodrigo). */

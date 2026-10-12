@@ -30,6 +30,17 @@ export class ClienteSaas {
   @Column({ type: "numeric", nullable: true, transformer: { to: (v: number | null) => v, from: (v: string | null) => (v == null ? null : Number(v)) } })
   valorMensal: number | null;
 
+  // Cobrança no Mercado Pago (assinatura mensal): id, link de pagamento e situação
+  // (pending = aguardando, authorized = em dia, paused = pausada, cancelled = cancelada).
+  @Column({ type: "varchar", nullable: true })
+  cobrancaId: string | null;
+
+  @Column({ type: "varchar", nullable: true })
+  cobrancaLink: string | null;
+
+  @Column({ type: "varchar", nullable: true })
+  assinatura: string | null;
+
   @Column()
   diretorNome: string;
 

@@ -490,6 +490,9 @@ export class SchemaBootstrapService implements OnModuleInit {
       )`);
     await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS adicionais varchar NOT NULL DEFAULT ''`);
     await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "valorMensal" numeric`);
+    for (const col of ["cobrancaId", "cobrancaLink", "assinatura"]) {
+      await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "${col}" varchar`);
+    }
   }
 
   /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */

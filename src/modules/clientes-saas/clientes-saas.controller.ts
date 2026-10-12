@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -58,7 +58,7 @@ export class ClientesSaasController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   async listar() {
-    return { configurado: this.service.configurado(), faltam: this.service.faltam(), planos: PLANOS_SAAS, personalizado: PLANO_PERSONALIZADO, clientes: await this.service.listar() };
+    return { configurado: this.service.configurado(), faltam: this.service.faltam(), planos: PLANOS_SAAS, personalizado: PLANO_PERSONALIZADO, mercadoPago: this.service.mercadoPagoConfigurado(), clientes: await this.service.listar() };
   }
 
   @Post()
@@ -76,6 +76,23 @@ export class ClientesSaasController {
   @Roles(UserRole.DIRETOR)
   tentarDeNovo(@Param("id", ParseUUIDPipe) id: string) {
     return this.service.tentarDeNovo(id);
+  }
+
+  @Post(":id/cobrar")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Gera a assinatura mensal do cliente no Mercado Pago e manda o link pro Diretor dele" })
+  cobrar(@Param("id", ParseUUIDPipe) id: string) {
+    return this.service.cobrar(id);
+  }
+
+  // Público: o Mercado Pago avisa aqui quando uma assinatura muda (pagou, pausou, cancelou).
+  @Post("mercadopago")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Aviso do Mercado Pago (público; a situação é conferida no Mercado Pago)" })
+  avisoMercadoPago(@Body() corpo: any, @Query() query: any) {
+    return this.service.avisoMercadoPago(corpo, query);
   }
 
   @Post(":id/ajustar")
