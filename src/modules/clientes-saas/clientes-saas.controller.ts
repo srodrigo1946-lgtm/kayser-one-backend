@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { IsArray, IsDateString, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
@@ -24,6 +24,12 @@ class ComecarDto {
 
   @IsEmail() @MaxLength(160)
   diretorEmail: string;
+}
+
+class ApagarDto {
+  // O endereço do cliente digitado (confirmação de que é esse mesmo).
+  @IsString() @MaxLength(40)
+  confirmacao: string;
 }
 
 class ContaDto {
@@ -144,6 +150,15 @@ export class ClientesSaasController {
   @ApiOperation({ summary: "Bloquear, desbloquear ou encerrar a conta do cliente (na hora ou numa data)" })
   conta(@Param("id", ParseUUIDPipe) id: string, @Body() dto: ContaDto) {
     return this.service.conta(id, dto.acao, dto.quando);
+  }
+
+  @Delete(":id")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Apaga DE VEZ um cliente encerrado (servidor, banco e cadastro)" })
+  apagar(@Param("id", ParseUUIDPipe) id: string, @Body() dto: ApagarDto) {
+    return this.service.apagar(id, dto.confirmacao);
   }
 
   @Post(":id/cobrar-pix")

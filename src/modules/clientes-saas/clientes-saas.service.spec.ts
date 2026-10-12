@@ -323,3 +323,18 @@ describe("Business K1 — conta do cliente, desconto, caixa e painel", () => {
     expect(p.total.caixa).toBe(99);
   });
 });
+
+describe("Business K1 — apagar cliente de vez", () => {
+  const ENV = ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID"];
+  afterEach(() => ENV.forEach((k) => delete process.env[k]));
+  const c = { id: "c1", empresa: "Teste K1", subdominio: "testek1", railwayServiceId: "srv1", encerradoEm: null as Date | null };
+
+  it("só apaga conta encerrada e com o endereço digitado certo", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    const repo = { findOne: async () => c, delete: async () => null };
+    const s: any = new ClientesSaasService(repo as any);
+    await expect(s.apagar("c1", "testek1")).rejects.toThrow(/Encerre a conta/);
+    c.encerradoEm = new Date();
+    await expect(s.apagar("c1", "outro")).rejects.toThrow(/Digite exatamente "testek1"/);
+  });
+});

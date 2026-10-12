@@ -558,6 +558,35 @@ export class ClientesSaasService {
     );
   }
 
+  /**
+   * Apaga DE VEZ um cliente encerrado: servidor no Railway, banco dele e o cadastro.
+   * Não tem volta — por isso só vale pra conta já encerrada e com o endereço digitado.
+   * O histórico de pagamentos (caixa) fica.
+   */
+  async apagar(id: string, confirmacao: string) {
+    const c = await this.repo.findOne({ where: { id } });
+    if (!c) throw new NotFoundException();
+    if (!c.encerradoEm) throw new BadRequestException("Encerre a conta antes de apagar.");
+    if ((confirmacao || "").trim().toLowerCase() !== c.subdominio) throw new BadRequestException(`Digite exatamente "${c.subdominio}" para confirmar.`);
+    if (c.railwayServiceId) {
+      this.config();
+      await this.gql(`mutation($id: String!) { serviceDelete(id: $id) }`, { id: c.railwayServiceId });
+    }
+    const banco = `kc_${c.subdominio.replace(/-/g, "_")}`;
+    if (subdominioValido(c.subdominio)) {
+      const db = new Client({ connectionString: await this.pgAdmin(), ssl: { rejectUnauthorized: false } });
+      await db.connect();
+      try {
+        await db.query(`DROP DATABASE IF EXISTS "${banco}" WITH (FORCE)`); // nome vem de subdominioValido (seguro)
+      } finally {
+        await db.end().catch(() => null);
+      }
+    }
+    await this.repo.delete(id);
+    await this.avisarRodrigo(`Cliente apagado — ${c.empresa}`, `${c.empresa} (${c.subdominio}.kayserone.com.br): servidor e banco apagados.`);
+    return { ok: true };
+  }
+
   /** Grava uma variável no servidor do cliente (o Railway republica sozinho). */
   private async variavelDoCliente(c: ClienteSaas, name: string, value: string) {
     if (!c.railwayServiceId) return;
@@ -622,6 +651,8 @@ export class ClientesSaasService {
     const agora = new Date();
     const conta = (c: ClienteSaas) => c.status !== "aguardando" && c.status !== "erro";
     const r2 = (n: number) => Math.round(n * 100) / 100;
+    const primeiro = clientes.filter(conta).reduce<Date | null>((min, c) => (!min || new Date(c.createdAt) < min ? new Date(c.createdAt) : min), null);
+    const inicio = primeiro ? new Date(primeiro.getFullYear(), primeiro.getMonth(), 1) : null;
     const meses = Array.from({ length: 12 }, (_, m) => {
       const ini = new Date(ano, m, 1);
       const fim = new Date(ano, m + 1, 1);
@@ -630,7 +661,8 @@ export class ClientesSaasService {
       const ativos = clientes.filter((c) => conta(c) && new Date(c.createdAt) < fim && !(c.encerradoEm && new Date(c.encerradoEm) < fim));
       const receita = ativos.reduce((t, c) => t + (valorDoCliente(c) ?? 0), 0);
       const caixa = pagamentos.filter((p) => dentro(p.pagoEm)).reduce((t, p) => t + p.liquido, 0);
-      const custo = ativos.reduce((t, c) => t + custoDoCliente(c), 0) + CUSTOS.fixoMensal;
+      // Fixos só contam a partir do mês do primeiro cliente (antes disso o Business K1 não existia).
+      const custo = ativos.reduce((t, c) => t + custoDoCliente(c), 0) + (inicio && ini >= inicio ? CUSTOS.fixoMensal : 0);
       return {
         mes: m + 1,
         ativos: ativos.length,
