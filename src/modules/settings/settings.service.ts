@@ -61,6 +61,8 @@ export class SettingsService {
       matriz: !!process.env.RAILWAY_API_TOKEN,
       // Plano do cliente (LIMITE_USUARIOS): 1 = corretor sozinho, sem as telas de gestão.
       limiteUsuarios: Number(process.env.LIMITE_USUARIOS) || null,
+      // Serviços adicionais comprados (IA de resposta, IA One, Meta). Na Kayser (sem plano) vale tudo.
+      adicionais: process.env.LIMITE_USUARIOS ? (process.env.ADICIONAIS || "").split(",").map((a) => a.trim()).filter(Boolean) : ["ia", "ione", "meta"],
     };
   }
 

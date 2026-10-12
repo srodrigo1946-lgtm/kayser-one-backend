@@ -22,6 +22,14 @@ export class ClienteSaas {
   @Column({ type: "int" })
   limiteUsuarios: number;
 
+  // Serviços adicionais ligados, separados por vírgula: ia, ione, meta.
+  @Column({ default: "" })
+  adicionais: string;
+
+  // Valor mensal negociado pelo Diretor da Kayser (R$). Vazio = preço de tabela (plano + adicionais).
+  @Column({ type: "numeric", nullable: true, transformer: { to: (v: number | null) => v, from: (v: string | null) => (v == null ? null : Number(v)) } })
+  valorMensal: number | null;
+
   @Column()
   diretorNome: string;
 

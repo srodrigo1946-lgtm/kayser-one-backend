@@ -488,6 +488,8 @@ export class SchemaBootstrapService implements OnModuleInit {
         "createdAt" timestamp NOT NULL DEFAULT now(),
         "updatedAt" timestamp NOT NULL DEFAULT now()
       )`);
+    await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS adicionais varchar NOT NULL DEFAULT ''`);
+    await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "valorMensal" numeric`);
   }
 
   /** IA One (04/10/2026): config em settings + conversas da equipe com a One. */

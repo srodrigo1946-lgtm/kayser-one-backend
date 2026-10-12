@@ -16,6 +16,9 @@ export const PLANOS_SAAS: Record<string, number> = {
 /** Acima de 250 (negociado na reunião com o CEO): o Diretor digita a quantidade de usuários. */
 export const PLANO_PERSONALIZADO = "Personalizado (CEO)";
 
+/** Serviços adicionais vendidos à parte (todos os planos): IA de resposta, IA One, Anúncios Meta. */
+export const ADICIONAIS = ["ia", "ione", "meta"];
+
 /** Subdomínios que não podem ser de cliente. */
 const RESERVADOS = new Set(["www", "demo", "api", "app", "admin", "mail", "email", "rsend", "enviar", "send", "kayser", "kayserone", "suporte", "contato", "teste"]);
 
@@ -88,7 +91,7 @@ export class ClientesSaasService {
     return { api: c.apiUrl };
   }
 
-  async criar(dto: { empresa: string; subdominio?: string; plano: string; limiteUsuarios?: number; diretorNome: string; diretorEmail: string }) {
+  async criar(dto: { empresa: string; subdominio?: string; plano: string; limiteUsuarios?: number; adicionais?: string[]; diretorNome: string; diretorEmail: string }) {
     this.config();
     const limite = dto.plano === PLANO_PERSONALIZADO ? Math.floor(Number(dto.limiteUsuarios)) : PLANOS_SAAS[dto.plano];
     if (dto.plano === PLANO_PERSONALIZADO && !(limite >= 1)) throw new BadRequestException("Digite a quantidade de usuários do plano personalizado.");
@@ -98,7 +101,7 @@ export class ClientesSaasService {
     if (await this.repo.findOne({ where: { subdominio: sub } })) throw new BadRequestException(`O subdomínio "${sub}" já é de outro cliente.`);
     const email = dto.diretorEmail.trim().toLowerCase();
     const c = await this.repo.save(
-      this.repo.create({ empresa: dto.empresa.trim(), subdominio: sub, plano: dto.plano, limiteUsuarios: limite, diretorNome: dto.diretorNome.trim(), diretorEmail: email, status: "criando", etapa: "Começando" })
+      this.repo.create({ empresa: dto.empresa.trim(), subdominio: sub, plano: dto.plano, limiteUsuarios: limite, adicionais: this.lista(dto.adicionais), diretorNome: dto.diretorNome.trim(), diretorEmail: email, status: "criando", etapa: "Começando" })
     );
     // Leva alguns minutos (build no Railway): roda em segundo plano e a tela acompanha pelo status.
     this.provisionar(c.id).catch(() => null);
@@ -113,6 +116,34 @@ export class ClientesSaasService {
     await this.repo.update(id, { status: "criando", erro: null, etapa: "Tentando de novo" });
     this.provisionar(id).catch(() => null);
     return { ok: true };
+  }
+
+  private lista(a?: string[]) {
+    return [...new Set((a ?? []).filter((x) => ADICIONAIS.includes(x)))].join(",");
+  }
+
+  /** Ajustes do Diretor da Kayser num cliente: adicionais ligados e/ou valor mensal negociado. */
+  async ajustar(id: string, a: { adicionais?: string[]; valorMensal?: number | null }) {
+    const c = await this.repo.findOne({ where: { id } });
+    if (!c) throw new NotFoundException();
+    // Valor negociado (null = volta para o preço de tabela).
+    if (a.valorMensal !== undefined) await this.repo.update(id, { valorMensal: a.valorMensal });
+    return a.adicionais ? this.mudarAdicionais(id, a.adicionais) : { ok: true };
+  }
+
+  /** Liga/desliga adicionais de um cliente: grava aqui e no servidor dele (o Railway republica sozinho). */
+  async mudarAdicionais(id: string, adicionais: string[]) {
+    const { projectId, environmentId } = this.config();
+    const c = await this.repo.findOne({ where: { id } });
+    if (!c) throw new NotFoundException();
+    const valor = this.lista(adicionais);
+    await this.repo.update(id, { adicionais: valor });
+    if (c.railwayServiceId) {
+      await this.gql(`mutation($input: VariableUpsertInput!) { variableUpsert(input: $input) }`, {
+        input: { projectId, environmentId, serviceId: c.railwayServiceId, name: "ADICIONAIS", value: valor || "nenhum" },
+      });
+    }
+    return { adicionais: valor };
   }
 
   private async etapa(id: string, etapa: string, extra: Partial<ClienteSaas> = {}) {
@@ -180,6 +211,7 @@ export class ClientesSaasService {
             SEED_DIRETOR_EMAIL: c.diretorEmail,
             SEED_DIRETOR_NAME: c.diretorNome,
             LIMITE_USUARIOS: String(c.limiteUsuarios),
+            ADICIONAIS: c.adicionais || "nenhum",
             FRONTEND_URL: `https://${c.subdominio}.kayserone.com.br`,
           },
         },

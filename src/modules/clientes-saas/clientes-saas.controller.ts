@@ -1,11 +1,20 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsArray, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
-import { ClientesSaasService, PLANOS_SAAS, PLANO_PERSONALIZADO } from "./clientes-saas.service";
+import { ADICIONAIS, ClientesSaasService, PLANOS_SAAS, PLANO_PERSONALIZADO } from "./clientes-saas.service";
+
+class AjustarClienteDto {
+  @IsOptional() @IsArray() @IsIn(ADICIONAIS, { each: true })
+  adicionais?: string[];
+
+  // Valor mensal negociado (R$); null volta para o preço de tabela.
+  @IsOptional() @IsNumber() @Min(0) @Max(1_000_000)
+  valorMensal?: number | null;
+}
 
 class CriarClienteDto {
   @IsString() @MinLength(2) @MaxLength(80)
@@ -20,6 +29,9 @@ class CriarClienteDto {
   // Só no plano personalizado (negociado com o CEO).
   @IsOptional() @IsInt() @Min(1) @Max(100000)
   limiteUsuarios?: number;
+
+  @IsOptional() @IsArray() @IsIn(ADICIONAIS, { each: true })
+  adicionais?: string[];
 
   @IsString() @MinLength(2) @MaxLength(80)
   diretorNome: string;
@@ -64,5 +76,14 @@ export class ClientesSaasController {
   @Roles(UserRole.DIRETOR)
   tentarDeNovo(@Param("id", ParseUUIDPipe) id: string) {
     return this.service.tentarDeNovo(id);
+  }
+
+  @Post(":id/ajustar")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Ajusta um cliente: serviços adicionais (IA, IA One, Meta) e valor mensal negociado" })
+  ajustar(@Param("id", ParseUUIDPipe) id: string, @Body() dto: AjustarClienteDto) {
+    return this.service.ajustar(id, dto);
   }
 }

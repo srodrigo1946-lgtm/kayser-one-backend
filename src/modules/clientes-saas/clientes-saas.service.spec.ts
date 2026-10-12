@@ -47,3 +47,23 @@ describe("Clientes SaaS — criação", () => {
     expect(c.limiteUsuarios).toBe(450);
   });
 });
+
+describe("Clientes SaaS — adicionais", () => {
+  const ENV = ["RAILWAY_API_TOKEN", "RAILWAY_CLIENTES_PROJECT_ID", "RAILWAY_CLIENTES_ENV_ID"];
+  afterEach(() => ENV.forEach((k) => delete process.env[k]));
+
+  it("grava só adicionais conhecidos, sem repetir, e manda pro servidor do cliente", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    const updates: any[] = [];
+    const repo = { findOne: async () => ({ id: "c1", railwayServiceId: "srv1" }), update: async (_: string, d: any) => updates.push(d) };
+    const s: any = new ClientesSaasService(repo as any);
+    const chamadas: any[] = [];
+    s.gql = async (_q: string, v: any) => chamadas.push(v.input);
+    const r = await s.mudarAdicionais("c1", ["meta", "ia", "meta", "hack"]);
+    expect(r.adicionais).toBe("meta,ia");
+    expect(updates[0]).toEqual({ adicionais: "meta,ia" });
+    expect(chamadas[0]).toEqual(expect.objectContaining({ serviceId: "srv1", name: "ADICIONAIS", value: "meta,ia" }));
+    expect((await s.mudarAdicionais("c1", [])).adicionais).toBe("");
+    expect(chamadas[1].value).toBe("nenhum");
+  });
+});
