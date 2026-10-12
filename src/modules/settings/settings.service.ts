@@ -57,6 +57,10 @@ export class SettingsService {
       temLogo: !!s.marcaLogo,
       // Muda quando o logo/nome/cor muda — o front usa pra furar o cache do logo.
       versao: s.updatedAt ? new Date(s.updatedAt as any).getTime() : 0,
+      // Só a instalação da Kayser (matriz) vende o sistema; clientes não veem as telas da Kayser.
+      matriz: !!process.env.RAILWAY_API_TOKEN,
+      // Plano do cliente (LIMITE_USUARIOS): 1 = corretor sozinho, sem as telas de gestão.
+      limiteUsuarios: Number(process.env.LIMITE_USUARIOS) || null,
     };
   }
 
