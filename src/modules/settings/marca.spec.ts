@@ -22,6 +22,16 @@ describe("Marca própria (white-label)", () => {
     expect(pub.hasMarcaLogo).toBe(true);
   });
 
+  it("na demo (SEED_DEMO) é sempre K1, mesmo com marca salva por visitante", async () => {
+    process.env.SEED_DEMO = "true";
+    try {
+      const { svc } = montar({ id: 1, marcaNome: "imobgil", marcaCor: "#ff0000", marcaLogo: "data:image/png;base64,AAAA" });
+      expect(await svc.marca()).toEqual(expect.objectContaining({ nome: "K1", cor: null, temLogo: false }));
+    } finally {
+      delete process.env.SEED_DEMO;
+    }
+  });
+
   it("logo só PNG/JPG/WEBP (SVG recusado)", async () => {
     const { svc, salvos } = montar({ id: 1 });
     const svg = { mimetype: "image/svg+xml", buffer: Buffer.from("<svg/>") };

@@ -52,10 +52,12 @@ export class SettingsService {
   /** Marca própria pública (tela de login, título, app instalável): nome, cor e se tem logo. */
   async marca() {
     const s = await this.get();
+    // Demo de vendas (SEED_DEMO): sempre a marca K1, mesmo que um visitante troque nome/cor/logo.
+    const demo = process.env.SEED_DEMO === "true";
     return {
-      nome: s.marcaNome || "K1",
-      cor: s.marcaCor || null,
-      temLogo: !!s.marcaLogo,
+      nome: (!demo && s.marcaNome) || "K1",
+      cor: (!demo && s.marcaCor) || null,
+      temLogo: !demo && !!s.marcaLogo,
       // Muda quando o logo/nome/cor muda — o front usa pra furar o cache do logo.
       versao: s.updatedAt ? new Date(s.updatedAt as any).getTime() : 0,
       // Só a instalação da Kayser (matriz) vende o sistema; clientes não veem as telas da Kayser.
