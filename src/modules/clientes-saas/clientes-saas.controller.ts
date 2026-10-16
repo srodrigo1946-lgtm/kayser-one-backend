@@ -4,6 +4,7 @@ import { Throttle } from "@nestjs/throttler";
 import { IsArray, IsDateString, IsNumber, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
+import { SoMatrizGuard } from "../../common/matriz";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
 import { ADICIONAIS, ClientesSaasService, PLANOS_SAAS, PLANO_PERSONALIZADO } from "./clientes-saas.service";
@@ -93,7 +94,7 @@ export class ClientesSaasController {
 
   @Get()
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   async listar() {
     return { configurado: this.service.configurado(), faltam: this.service.faltam(), planos: PLANOS_SAAS, personalizado: PLANO_PERSONALIZADO, mercadoPago: this.service.mercadoPagoConfigurado(), clientes: await this.service.listar() };
@@ -101,7 +102,7 @@ export class ClientesSaasController {
 
   @Post()
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Criar a instalação de uma imobiliária (Railway + banco + subdomínio + e-mail)" })
   criar(@Body() dto: CriarClienteDto) {
@@ -110,7 +111,7 @@ export class ClientesSaasController {
 
   @Post(":id/tentar-de-novo")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   tentarDeNovo(@Param("id", ParseUUIDPipe) id: string) {
     return this.service.tentarDeNovo(id);
@@ -118,7 +119,7 @@ export class ClientesSaasController {
 
   @Post(":id/cobrar")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Gera a assinatura mensal do cliente no Mercado Pago e manda o link pro Diretor dele" })
   cobrar(@Param("id", ParseUUIDPipe) id: string) {
@@ -135,7 +136,7 @@ export class ClientesSaasController {
 
   @Get("painel")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Painel do Business K1: clientes, receita, caixa e lucro por mês do ano" })
   painel(@Query("ano") ano?: string) {
@@ -145,7 +146,7 @@ export class ClientesSaasController {
 
   @Post(":id/conta")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Bloquear, desbloquear ou encerrar a conta do cliente (na hora ou numa data)" })
   conta(@Param("id", ParseUUIDPipe) id: string, @Body() dto: ContaDto) {
@@ -154,7 +155,7 @@ export class ClientesSaasController {
 
   @Delete(":id")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Apaga DE VEZ um cliente encerrado (servidor, banco e cadastro)" })
   apagar(@Param("id", ParseUUIDPipe) id: string, @Body() dto: ApagarDto) {
@@ -163,7 +164,7 @@ export class ClientesSaasController {
 
   @Post(":id/cobrar-pix")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Cobrança avulsa do mês (Pix ou cartão) — link do Mercado Pago pro Diretor do cliente" })
   cobrarPix(@Param("id", ParseUUIDPipe) id: string) {
@@ -180,7 +181,7 @@ export class ClientesSaasController {
 
   @Post(":id/ajustar")
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SoMatrizGuard, JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Ajusta um cliente: serviços adicionais (IA, IA One, Meta) e valor mensal negociado" })
   ajustar(@Param("id", ParseUUIDPipe) id: string, @Body() dto: AjustarClienteDto) {

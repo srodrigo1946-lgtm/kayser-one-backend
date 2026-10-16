@@ -48,7 +48,9 @@ async function seed() {
   let diretor = await usersRepo.findOne({ where: { email: diretorEmail } });
 
   if (!diretor) {
-    const passwordHash = await bcrypt.hash("123456789", 12);
+    // Cliente novo: senha aleatória posta pelo provisionamento (SEED_DIRETOR_SENHA).
+    const senha = process.env.SEED_DIRETOR_SENHA || "123456789";
+    const passwordHash = await bcrypt.hash(senha, 12);
     diretor = usersRepo.create({
       name: process.env.SEED_DIRETOR_NAME || "Rodrigo (Diretor)",
       email: diretorEmail,
@@ -58,7 +60,7 @@ async function seed() {
       firstLogin: true,
     });
     await usersRepo.save(diretor);
-    console.log(`✅ Diretor criado: ${diretorEmail} (senha padrão: 123456789)`);
+    console.log(`✅ Diretor criado: ${diretorEmail}`);
   } else {
     console.log(`ℹ️  Diretor já existe: ${diretorEmail}`);
   }

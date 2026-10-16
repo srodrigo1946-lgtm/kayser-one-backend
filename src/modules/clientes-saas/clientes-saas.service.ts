@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Cron } from "@nestjs/schedule";
 import { Between, IsNull, LessThanOrEqual, Not, Repository } from "typeorm";
 import { Client } from "pg";
+import { randomBytes } from "crypto";
 import { ClienteSaas } from "./cliente-saas.entity";
 import { PagamentoSaas } from "./pagamento-saas.entity";
 import { SettingsService } from "../settings/settings.service";
@@ -265,6 +266,10 @@ export class ClientesSaasService {
       }
 
       await this.etapa(id, "Configurando (plano, Diretor, banco)");
+      // Senha do 1º acesso aleatória (não mais 123456789). Na nova tentativa reaproveita a que já foi
+      // gravada no servidor, para o e-mail bater com o usuário que o seed criou.
+      const atuais = await this.gql<{ variables: Record<string, string> }>(`query($p: String!, $e: String!, $s: String!) { variables(projectId: $p, environmentId: $e, serviceId: $s) }`, { p: projectId, e: environmentId, s: serviceId }).catch(() => ({ variables: {} as Record<string, string> }));
+      const senha = atuais.variables?.SEED_DIRETOR_SENHA || senhaAleatoria();
       const chaveIa = (c.adicionais || "").split(",").some((x) => x === "ia" || x === "ione") ? await this.chaveIaKayser() : "";
       await this.gql(`mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }`, {
         input: {
@@ -280,6 +285,7 @@ export class ClientesSaasService {
             WHATSAPP_WEBHOOK_TOKEN: "${{secret(32)}}",
             SEED_DIRETOR_EMAIL: c.diretorEmail,
             SEED_DIRETOR_NAME: c.diretorNome,
+            SEED_DIRETOR_SENHA: senha,
             LIMITE_USUARIOS: String(c.limiteUsuarios),
             ADICIONAIS: c.adicionais || "nenhum",
             // IA vendida como adicional usa a chave da Kayser (ninguém vê nem digita).
@@ -309,7 +315,7 @@ export class ClientesSaasService {
         const ok = await fetch(`${apiUrl}/marca`).then((r) => r.ok).catch(() => false);
         if (ok) {
           await this.etapa(id, "Pronto", { status: "ativo", erro: null });
-          await this.boasVindas({ ...c, apiUrl });
+          await this.boasVindas({ ...c, apiUrl }, senha);
           return;
         }
       }
@@ -729,14 +735,14 @@ export class ClientesSaasService {
   }
 
   /** E-mail de boas-vindas pro Diretor da imobiliária (cópia pro Rodrigo). */
-  private async boasVindas(c: ClienteSaas) {
+  private async boasVindas(c: ClienteSaas, senha: string) {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) return;
     const link = `https://${c.subdominio}.kayserone.com.br`;
     const texto =
       `Olá, ${c.diretorNome.split(" ")[0]}!\n\n` +
       `O K1 da ${c.empresa} está pronto: ${link}\n\n` +
-      `Login: ${c.diretorEmail}\nSenha do primeiro acesso: 123456789 (o sistema pede para criar uma nova)\n` +
+      `Login: ${c.diretorEmail}\nSenha do primeiro acesso: ${senha} (o sistema pede para criar uma nova)\n` +
       `Plano: ${c.plano} — até ${c.limiteUsuarios} usuário(s).\n\n` +
       `Primeiros passos: em Configurações → Empresa, coloque o nome, a cor e o logo da sua imobiliária; ` +
       `depois cadastre a equipe em Configurações → Usuários.\n\n` +
@@ -753,4 +759,10 @@ export class ClientesSaasService {
       }),
     }).catch((e) => this.logger.warn(`Boas-vindas não enviado: ${(e as Error).message}`));
   }
+}
+
+/** 10 caracteres sem os que confundem (0/O, 1/l/I). */
+export function senhaAleatoria(): string {
+  const letras = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  return Array.from(randomBytes(10), (b) => letras[b % letras.length]).join("");
 }

@@ -14,8 +14,9 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     // Primeiro acesso: obriga a trocar a senha antes de usar o restante da API.
     if (user.firstLogin) {
       const req = context.switchToHttp().getRequest();
-      const url: string = req.originalUrl || req.url || "";
-      const allowed = ALLOWED_WHEN_FIRST_LOGIN.some((p) => url.includes(p));
+      // Só o caminho, sem a query (?x=/auth/me não pode liberar outra rota).
+      const path: string = (req.originalUrl || req.url || "").split("?")[0];
+      const allowed = ALLOWED_WHEN_FIRST_LOGIN.some((p) => path.endsWith(p));
       if (!allowed) {
         throw new ForbiddenException("Troque sua senha no primeiro acesso para continuar.");
       }
