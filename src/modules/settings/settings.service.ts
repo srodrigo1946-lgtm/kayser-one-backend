@@ -53,7 +53,7 @@ export class SettingsService {
   async marca() {
     const s = await this.get();
     return {
-      nome: s.marcaNome || "Kayser One",
+      nome: s.marcaNome || "K1",
       cor: s.marcaCor || null,
       temLogo: !!s.marcaLogo,
       // Muda quando o logo/nome/cor muda — o front usa pra furar o cache do logo.

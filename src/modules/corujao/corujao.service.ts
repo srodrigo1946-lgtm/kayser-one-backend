@@ -267,7 +267,7 @@ export class CorujaoService {
     const apiKey = this.config.get<string>("RESEND_API_KEY");
     const destinos = corretores.map((c) => c.email).filter((e): e is string => !!e);
     if (!apiKey || destinos.length === 0 || qtd === 0) return 0;
-    const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
+    const from = this.config.get<string>("SUPPORT_FROM", "K1 <onboarding@resend.dev>");
     const html = `
       <div style="font-family:Arial,sans-serif">
         <h2>🦉 Corujão — ${qtd} lead(s) para repescar!</h2>

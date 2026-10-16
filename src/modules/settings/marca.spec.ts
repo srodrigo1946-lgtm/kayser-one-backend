@@ -9,9 +9,9 @@ describe("Marca própria (white-label)", () => {
     return { svc: new SettingsService(repo as any, storage as any) as any, salvos };
   };
 
-  it("sem marca configurada é Kayser One (padrão)", async () => {
+  it("sem marca configurada é K1 (padrão)", async () => {
     const { svc } = montar({ id: 1 });
-    expect(await svc.marca()).toEqual(expect.objectContaining({ nome: "Kayser One", cor: null, temLogo: false }));
+    expect(await svc.marca()).toEqual(expect.objectContaining({ nome: "K1", cor: null, temLogo: false }));
   });
 
   it("devolve nome e cor da imobiliária; não expõe o logo no getPublic", async () => {

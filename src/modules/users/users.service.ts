@@ -142,7 +142,7 @@ export class UsersService {
   }
 
   /**
-   * Plano da instalação (venda do Kayser One): LIMITE_USUARIOS é definido por NÓS no
+   * Plano da instalação (venda do K1): LIMITE_USUARIOS é definido por NÓS no
    * servidor de cada cliente (Railway) — o cliente não muda. Vazio/0 = sem limite (Kayser).
    * Conta usuários ativos e aprovados da equipe (empresa parceira não entra).
    */
@@ -152,7 +152,7 @@ export class UsersService {
     const ativos = await this.usersRepo.count({ where: { active: true, approved: true, empresaId: IsNull() } as any });
     if (ativos >= limite) {
       throw new ForbiddenException(
-        `Seu plano permite até ${limite} usuário(s) ativo(s). Para aumentar o plano, fale com a Kayser One: contato@kayserone.com.br`
+        `Seu plano permite até ${limite} usuário(s) ativo(s). Para aumentar o plano, fale com a K1: contato@kayserone.com.br`
       );
     }
   }

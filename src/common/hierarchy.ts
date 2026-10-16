@@ -1,7 +1,7 @@
 /**
  * Utilitários de hierarquia de usuários.
  *
- * A visibilidade no Kayser One segue a árvore de gestão (managerId):
+ * A visibilidade no K1 segue a árvore de gestão (managerId):
  * cada gestor enxerga TODOS os seus descendentes (gerentes → gerentes → corretores).
  */
 

@@ -215,14 +215,14 @@ export class LeadsService {
     );
     const apiKey = this.config.get<string>("RESEND_API_KEY");
     if (!apiKey || destinos.length === 0) return;
-    const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
+    const from = this.config.get<string>("SUPPORT_FROM", "K1 <onboarding@resend.dev>");
     const html = `
       <div style="font-family:Arial,sans-serif">
         <h2>⚠️ Cliente já cadastrado</h2>
-        <p>Alguém tentou cadastrar de novo um cliente que já está no Kayser One:</p>
+        <p>Alguém tentou cadastrar de novo um cliente que já está no K1:</p>
         <p><b>${dup.name}</b>${dup.phone ? ` — ${dup.phone}` : ""}</p>
         <p>Responsável atual: <b>${dup.responsavel?.name || "—"}</b>. O cadastro duplicado foi bloqueado.</p>
-        <p><a href="https://www.kayserone.com.br/leads">Abrir no Kayser One</a></p>
+        <p><a href="https://www.kayserone.com.br/leads">Abrir no K1</a></p>
       </div>`;
     await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -230,7 +230,7 @@ export class LeadsService {
       body: JSON.stringify({
         from,
         to: destinos,
-        subject: "⚠️ Cliente já cadastrado — Kayser One",
+        subject: "⚠️ Cliente já cadastrado — K1",
         html,
       }),
     }).then((r) => {

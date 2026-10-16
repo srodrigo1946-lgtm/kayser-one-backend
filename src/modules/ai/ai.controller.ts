@@ -20,7 +20,7 @@ export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   @Post("chat")
-  @ApiOperation({ summary: "Chat com a Kayser One AI (usa a IA do usuário logado)" })
+  @ApiOperation({ summary: "Chat com a K1 AI (usa a IA do usuário logado)" })
   // req.user não carrega mais a aiApiKey (select:false) — busca a config pelo id.
   async chat(@Body() dto: ChatDto, @Request() req: any) {
     return this.aiService.chat(dto.messages, await this.aiService.getUserAiConfig(req.user.id));

@@ -122,7 +122,7 @@ class UpdateSettingsDto {
   @IsOptional() @IsArray() @IsString({ each: true })
   leadOrigens?: string[];
 
-  // Marca própria (white-label). Vazio volta pro padrão Kayser One.
+  // Marca própria (white-label). Vazio volta pro padrão K1.
   @IsOptional() @IsString() @MaxLength(60)
   marcaNome?: string;
 

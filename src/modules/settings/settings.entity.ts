@@ -178,7 +178,7 @@ export class Settings {
   tabelaRivaUrl: string;
 
   // Marca própria (white-label): cada imobiliária põe o nome, a cor e o logo dela.
-  // Vazio = Kayser One (padrão).
+  // Vazio = K1 (padrão).
   @Column({ type: "varchar", length: 60, nullable: true })
   marcaNome: string | null;
 

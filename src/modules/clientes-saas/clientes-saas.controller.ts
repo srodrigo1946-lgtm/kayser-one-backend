@@ -78,7 +78,7 @@ class CriarClienteDto {
   diretorEmail: string;
 }
 
-/** Venda do Kayser One: criar a instalação de uma imobiliária (só o Diretor da Kayser). */
+/** Venda do K1: criar a instalação de uma imobiliária (só o Diretor da Kayser). */
 @ApiTags("Clientes (SaaS)")
 @Controller("clientes-saas")
 export class ClientesSaasController {
@@ -125,10 +125,10 @@ export class ClientesSaasController {
     return this.service.cobrar(id);
   }
 
-  // Público: quem acabou de assinar pelo site preenche os dados e o Kayser One dele é criado.
+  // Público: quem acabou de assinar pelo site preenche os dados e o K1 dele é criado.
   @Post("comecar")
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: "Comece seu Kayser One (público; exige assinatura paga no Mercado Pago)" })
+  @ApiOperation({ summary: "Comece seu K1 (público; exige assinatura paga no Mercado Pago)" })
   comecar(@Body() dto: ComecarDto) {
     return this.service.comecar(dto);
   }

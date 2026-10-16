@@ -355,7 +355,7 @@ export class ClientesSaasService {
     const p = await this.mp("/preapproval_plan", {
       method: "POST",
       body: JSON.stringify({
-        reason: `Kayser One — ${c.empresa} (${c.plano})`,
+        reason: `K1 — ${c.empresa} (${c.plano})`,
         back_url: "https://www.kayserone.com.br",
         auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: valor, currency_id: "BRL" },
       }),
@@ -390,7 +390,7 @@ export class ClientesSaasService {
       await this.repo.update(c.id, { assinatura: a.status, cobrancaId: a.id });
       if (a.status !== c.assinatura) await this.avisarRodrigo(`Assinatura ${this.situacao(a.status)} — ${c.empresa}`, `${c.empresa} (${c.plano}): assinatura ${this.situacao(a.status)}.`);
     } else if (a.status === "authorized") {
-      // Pagou pelo site e (ainda) não preencheu "Comece seu Kayser One": entra no painel assim mesmo.
+      // Pagou pelo site e (ainda) não preencheu "Comece seu K1": entra no painel assim mesmo.
       const plano = planoPeloValor(a.auto_recurring?.transaction_amount) ?? "Corretor";
       await this.repo.save(
         this.repo.create({
@@ -418,7 +418,7 @@ export class ClientesSaasService {
   }
 
   /**
-   * Página pública "Comece seu Kayser One": quem acabou de assinar pelo site preenche os dados
+   * Página pública "Comece seu K1": quem acabou de assinar pelo site preenche os dados
    * e a instalação é criada sozinha. Só vale com assinatura PAGA no Mercado Pago (conferida lá).
    */
   async comecar(dto: { assinatura: string; empresa: string; subdominio?: string; diretorNome: string; diretorEmail: string }) {
@@ -436,7 +436,7 @@ export class ClientesSaasService {
     const plano = planoPeloValor(a.auto_recurring?.transaction_amount);
     if (!plano) throw new BadRequestException("Não reconheci o plano dessa assinatura. Fale com contato@kayserone.com.br.");
     let c = await this.repo.findOne({ where: { cobrancaId: String(a.id) } });
-    if (c && c.status !== "aguardando") throw new BadRequestException("Essa assinatura já tem um Kayser One criado. Veja o e-mail de boas-vindas.");
+    if (c && c.status !== "aguardando") throw new BadRequestException("Essa assinatura já tem um K1 criado. Veja o e-mail de boas-vindas.");
     const sub = slugSubdominio(dto.subdominio || dto.empresa);
     if (!subdominioValido(sub)) throw new BadRequestException(`O endereço "${sub}" não pode ser usado. Escolha outro (só letras, números e hífen).`);
     const dono = await this.repo.findOne({ where: { subdominio: sub } });
@@ -459,7 +459,7 @@ export class ClientesSaasService {
     this.provisionar(c.id).catch(() => null);
     await this.avisarRodrigo(
       `Cliente novo pelo site — ${dados.empresa}`,
-      `${dados.empresa} (${plano}) assinou pelo site e o Kayser One dela está sendo criado em https://${sub}.kayserone.com.br.`
+      `${dados.empresa} (${plano}) assinou pelo site e o K1 dela está sendo criado em https://${sub}.kayserone.com.br.`
     );
     return { ok: true, endereco: `https://${sub}.kayserone.com.br` };
   }
@@ -476,7 +476,7 @@ export class ClientesSaasService {
     const p = await this.mp("/checkout/preferences", {
       method: "POST",
       body: JSON.stringify({
-        items: [{ title: `Kayser One — ${c.empresa} (mensalidade)`, quantity: 1, unit_price: valor, currency_id: "BRL" }],
+        items: [{ title: `K1 — ${c.empresa} (mensalidade)`, quantity: 1, unit_price: valor, currency_id: "BRL" }],
         external_reference: c.id,
         notification_url: `${process.env.PUBLIC_API_URL || "https://kayser-one-backend-production.up.railway.app/api/v1"}/clientes-saas/mercadopago`,
         back_urls: { success: "https://www.kayserone.com.br", failure: "https://www.kayserone.com.br", pending: "https://www.kayserone.com.br" },
@@ -485,9 +485,9 @@ export class ClientesSaasService {
     await this.repo.update(id, { cobrancaLink: p.init_point, assinatura: c.assinatura === "authorized" ? c.assinatura : "pending" });
     await this.email(
       c.diretorEmail,
-      `Mensalidade do Kayser One — ${c.empresa}`,
-      `Olá, ${c.diretorNome.split(" ")[0]}!\n\nPara pagar a mensalidade do Kayser One da ${c.empresa} (Pix ou cartão), use este link do Mercado Pago:\n${p.init_point}\n\n` +
-        `Valor: R$ ${valor.toLocaleString("pt-BR")}.\n\nDúvidas: contato@kayserone.com.br\n— Equipe Kayser One`
+      `Mensalidade do K1 — ${c.empresa}`,
+      `Olá, ${c.diretorNome.split(" ")[0]}!\n\nPara pagar a mensalidade do K1 da ${c.empresa} (Pix ou cartão), use este link do Mercado Pago:\n${p.init_point}\n\n` +
+        `Valor: R$ ${valor.toLocaleString("pt-BR")}.\n\nDúvidas: contato@kayserone.com.br\n— Equipe K1`
     );
     return { link: p.init_point, valor };
   }
@@ -511,7 +511,7 @@ export class ClientesSaasService {
   // ---------- Conta do cliente: bloquear / encerrar (na hora ou numa data) ----------
 
   /**
-   * bloquear: ninguém entra no Kayser One do cliente (dados guardados).
+   * bloquear: ninguém entra no K1 do cliente (dados guardados).
    * encerrar: bloqueia + cancela a assinatura no Mercado Pago (dados guardados, dá pra reativar).
    * desbloquear: reativa. Com `quando` no futuro, fica agendado (o relógio de hora em hora executa).
    */
@@ -704,7 +704,7 @@ export class ClientesSaasService {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.SUPPORT_FROM || "Kayser One <onboarding@resend.dev>",
+        from: process.env.SUPPORT_FROM || "K1 <onboarding@resend.dev>",
         to: para,
         ...(copiaRodrigo ? { bcc: process.env.SUPPORT_NOTIFY_EMAIL || "srodrigo1946@gmail.com" } : {}),
         subject: assunto,
@@ -720,11 +720,11 @@ export class ClientesSaasService {
   private emailCobranca(c: ClienteSaas, valor: number, link: string) {
     return this.email(
       c.diretorEmail,
-      `Assinatura do Kayser One — ${c.empresa}`,
+      `Assinatura do K1 — ${c.empresa}`,
       `Olá, ${c.diretorNome.split(" ")[0]}!\n\n` +
-        `Para ativar a assinatura mensal do Kayser One da ${c.empresa} (${c.plano}), é só pagar neste link do Mercado Pago:\n${link}\n\n` +
+        `Para ativar a assinatura mensal do K1 da ${c.empresa} (${c.plano}), é só pagar neste link do Mercado Pago:\n${link}\n\n` +
         `Valor: R$ ${valor.toLocaleString("pt-BR")} por mês${c.valorMensal == null ? " (já com 5% de desconto da assinatura no cartão)" : ""}. Dá para cancelar quando quiser.\n\n` +
-        `Dúvidas: contato@kayserone.com.br\n— Equipe Kayser One`
+        `Dúvidas: contato@kayserone.com.br\n— Equipe K1`
     );
   }
 
@@ -735,20 +735,20 @@ export class ClientesSaasService {
     const link = `https://${c.subdominio}.kayserone.com.br`;
     const texto =
       `Olá, ${c.diretorNome.split(" ")[0]}!\n\n` +
-      `O Kayser One da ${c.empresa} está pronto: ${link}\n\n` +
+      `O K1 da ${c.empresa} está pronto: ${link}\n\n` +
       `Login: ${c.diretorEmail}\nSenha do primeiro acesso: 123456789 (o sistema pede para criar uma nova)\n` +
       `Plano: ${c.plano} — até ${c.limiteUsuarios} usuário(s).\n\n` +
       `Primeiros passos: em Configurações → Empresa, coloque o nome, a cor e o logo da sua imobiliária; ` +
       `depois cadastre a equipe em Configurações → Usuários.\n\n` +
-      `Dúvidas: contato@kayserone.com.br\n— Equipe Kayser One`;
+      `Dúvidas: contato@kayserone.com.br\n— Equipe K1`;
     await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.SUPPORT_FROM || "Kayser One <onboarding@resend.dev>",
+        from: process.env.SUPPORT_FROM || "K1 <onboarding@resend.dev>",
         to: c.diretorEmail,
         bcc: process.env.SUPPORT_NOTIFY_EMAIL || "srodrigo1946@gmail.com",
-        subject: `Seu Kayser One está pronto — ${c.empresa}`,
+        subject: `Seu K1 está pronto — ${c.empresa}`,
         text: texto,
       }),
     }).catch((e) => this.logger.warn(`Boas-vindas não enviado: ${(e as Error).message}`));

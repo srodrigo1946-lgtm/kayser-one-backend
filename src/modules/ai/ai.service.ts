@@ -22,7 +22,7 @@ export interface UserAiConfig {
   apiKey?: string | null;
 }
 
-const DEFAULT_MASTER_PROMPT = `Você é a Kayser One AI.
+const DEFAULT_MASTER_PROMPT = `Você é a K1 AI.
 Sua função é atuar como consultora comercial inteligente para o mercado imobiliário.
 Sempre seja educada, objetiva e profissional.
 Nunca invente informações. Utilize apenas os dados presentes na Base de Conhecimento fornecida.

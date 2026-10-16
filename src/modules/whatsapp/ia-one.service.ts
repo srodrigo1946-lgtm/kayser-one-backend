@@ -319,7 +319,7 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
     if (pendente && codigo) {
       if (Date.now() > pendente.expira) {
         this.vinculosPendentes.delete(phone);
-        return "Esse código expirou ⏰ Me manda de novo o *e-mail do Kayser One* que eu envio outro.";
+        return "Esse código expirou ⏰ Me manda de novo o *e-mail do K1* que eu envio outro.";
       }
       if (codigo !== pendente.codigo) {
         pendente.tentativas++;
@@ -337,13 +337,13 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
       }
       await this.users.update(alvo.id, { whatsapp: phone, whatsappVinculadoEm: new Date() } as any);
       this.logger.log(`IA One: WhatsApp final ${phone.slice(-4)} vinculado a ${alvo.name} (código do e-mail confirmado).`);
-      return `Pronto, ${alvo.name.split(" ")[0]}! ✅ Vinculei este WhatsApp ao seu cadastro do Kayser One.\nComo posso te ajudar? (suporte do sistema, empreendimentos, simulação de pagamento…)`;
+      return `Pronto, ${alvo.name.split(" ")[0]}! ✅ Vinculei este WhatsApp ao seu cadastro do K1.\nComo posso te ajudar? (suporte do sistema, empreendimentos, simulação de pagamento…)`;
     }
 
     const email = (texto.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [])[0]?.toLowerCase();
     if (!email) {
       if (pendente) return "Me manda aqui o *código de 6 números* que enviei pro seu e-mail (vale 15 minutos). Não chegou? Olhe o spam ou me mande o e-mail de novo.";
-      return "Oi! Eu sou a *One*, assistente da equipe Kayser One. 👋\nNão reconheci este número. Me manda o *e-mail que você usa pra entrar no Kayser One* que eu te mando um código de confirmação.";
+      return "Oi! Eu sou a *One*, assistente da equipe K1. 👋\nNão reconheci este número. Me manda o *e-mail que você usa pra entrar no K1* que eu te mando um código de confirmação.";
     }
 
     const umaHora = Date.now() - 60 * 60_000;
@@ -352,7 +352,7 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
       return "Já mandei vários códigos na última hora 🔒 Espere um pouco ou fale com o seu gestor.";
     }
     const neutra =
-      "Se esse e-mail for de um usuário do Kayser One, acabei de enviar um *código de 6 números* pra ele 📧\nMe manda o código aqui (vale 15 minutos). Não chegou? Olhe o spam ou fale com o seu gestor.";
+      "Se esse e-mail for de um usuário do K1, acabei de enviar um *código de 6 números* pra ele 📧\nMe manda o código aqui (vale 15 minutos). Não chegou? Olhe o spam ou fale com o seu gestor.";
     const alvo = (await this.users.find()).find((u) => (u.email || "").trim().toLowerCase() === email);
     // Só manda código pra quem pode ser vinculado (ativo, da equipe, sem telefone). Resposta igual pra todos.
     if (!alvo || alvo.active === false || alvo.empresaId || final8(alvo.phone) || final8((alvo as any).whatsapp)) {
@@ -380,11 +380,11 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: process.env.SUPPORT_FROM || "Kayser One <onboarding@resend.dev>",
+          from: process.env.SUPPORT_FROM || "K1 <onboarding@resend.dev>",
           to: u.email,
           subject: `Seu código da One: ${codigo}`,
           text:
-            `Oi, ${u.name.split(" ")[0]}!\n\nSeu código para vincular o WhatsApp à One (Kayser One) é: ${codigo}\n` +
+            `Oi, ${u.name.split(" ")[0]}!\n\nSeu código para vincular o WhatsApp à One (K1) é: ${codigo}\n` +
             `Ele vale 15 minutos. Mande esse número na conversa com a One.\n\n` +
             `Não foi você? Ignore este e-mail — nada muda na sua conta.`,
         }),
@@ -460,17 +460,17 @@ ${textoSimulacao(r2, rotulo || "unidade")}`, simulacao: [r1, r2] };
       .map((x) => x.name)
       .join(", ");
     const hoje = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "long", year: "numeric" });
-    return `Você é a **One**, assistente da equipe comercial do Kayser One (imobiliária/CRM). Fala com CORRETORES e GESTORES pelo WhatsApp — nunca com cliente final.
+    return `Você é a **One**, assistente da equipe comercial do K1 (imobiliária/CRM). Fala com CORRETORES e GESTORES pelo WhatsApp — nunca com cliente final.
 Hoje é ${hoje}. Responda em português, curto e direto (WhatsApp), com emojis leves. Use *negrito* do WhatsApp quando ajudar.
 RESPONDA SEMPRE A ÚLTIMA MENSAGEM, direto ao ponto: "Ilhamar preço" = já mande os preços/unidades do Ilhamar. NÃO comente nem peça desculpas por mensagens anteriores, NÃO repita o menu de opções se a pergunta já está clara. Só pergunte algo se faltar uma informação essencial.
 
 QUEM ESTÁ FALANDO: ${this.statusConta(user)}
 
 O QUE VOCÊ FAZ:
-1) SUPORTE do Kayser One (sistema):
+1) SUPORTE do K1 (sistema):
 - Instalar: abrir kayserone.com.br no celular → "Adicionar à tela inicial".
 - Primeiro acesso: senha padrão 123456789; o sistema pede pra criar a senha nova.
-- NÃO CONSEGUE ENTRAR / ESQUECEU A SENHA: peça o E-MAIL cadastrado no Kayser One e use a ferramenta resetar_senha com ele. Deu certo → passe a SENHA PROVISÓRIA que a ferramenta devolveu (exatamente como veio) e diga pra entrar em kayserone.com.br com o e-mail e essa senha e criar a senha nova. Deu erro → explique o motivo (sem revelar o e-mail cadastrado). Se a conta estiver aguardando aprovação ou desativada, o problema não é a senha: fale com o gestor.
+- NÃO CONSEGUE ENTRAR / ESQUECEU A SENHA: peça o E-MAIL cadastrado no K1 e use a ferramenta resetar_senha com ele. Deu certo → passe a SENHA PROVISÓRIA que a ferramenta devolveu (exatamente como veio) e diga pra entrar em kayserone.com.br com o e-mail e essa senha e criar a senha nova. Deu erro → explique o motivo (sem revelar o e-mail cadastrado). Se a conta estiver aguardando aprovação ou desativada, o problema não é a senha: fale com o gestor.
 - Cadastro novo precisa ser APROVADO pelo gestor (sino 🔔). Conta desativada → falar com o gestor.
 - Check-in do plantão: automático pelo GPS ao abrir o Kayser no stand; até 500 m do stand; abre 1 h antes e fecha na hora do início do turno (09:00 ok, 09:01 fora). Precisa PERMITIR a localização. GPS demorando → ligar Localização e Wi-Fi, ir pra perto da janela. Não deu → o Diretor vê o motivo no painel e pode liberar.
 - Bloqueado no plantão → falar com o gestor (bloqueio do Diretor só o Diretor tira).
@@ -533,10 +533,10 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
       },
       {
         name: "resetar_senha",
-        description: "Reseta a senha do Kayser One de QUEM ESTÁ FALANDO pra uma senha provisória aleatória (a ferramenta devolve), se o e-mail informado bater com o cadastro. Use quando não conseguir entrar ou esqueceu a senha.",
+        description: "Reseta a senha do K1 de QUEM ESTÁ FALANDO pra uma senha provisória aleatória (a ferramenta devolve), se o e-mail informado bater com o cadastro. Use quando não conseguir entrar ou esqueceu a senha.",
         input_schema: {
           type: "object",
-          properties: { email: { type: "string", description: "E-mail cadastrado no Kayser One, informado pelo corretor" } },
+          properties: { email: { type: "string", description: "E-mail cadastrado no K1, informado pelo corretor" } },
           required: ["email"],
         },
       },
@@ -687,7 +687,7 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
       return { ok: true };
     }
     if (user.active === false) {
-      await this.enviar(phone, "Oi! Sua conta no Kayser One está desativada. Fale com o seu gestor pra reativar. 🙏", user, p.pushName, para);
+      await this.enviar(phone, "Oi! Sua conta no K1 está desativada. Fale com o seu gestor pra reativar. 🙏", user, p.pushName, para);
       return { ok: true };
     }
 

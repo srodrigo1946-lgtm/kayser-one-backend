@@ -87,7 +87,7 @@ export class AppointmentsService {
     const lines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//Kayser One//CRM//PT-BR",
+      "PRODID:-//K1//CRM//PT-BR",
       "CALSCALE:GREGORIAN",
       "BEGIN:VEVENT",
       `UID:${a.id}@kayserone`,

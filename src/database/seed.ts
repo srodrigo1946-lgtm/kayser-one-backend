@@ -9,7 +9,7 @@ import { Property } from "../modules/properties/property.entity";
 dotenv.config();
 
 /**
- * Seed inicial do Kayser One.
+ * Seed inicial do K1.
  * Cria APENAS o usuário Diretor (primeiro acesso com senha padrão 123456789).
  * NÃO cria leads de exemplo (nada de dados/telefones fake em produção).
  *

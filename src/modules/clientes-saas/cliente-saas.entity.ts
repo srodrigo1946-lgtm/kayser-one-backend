@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 
 /**
- * Imobiliária que comprou o Kayser One (venda SaaS). Só existe na instalação da Kayser:
+ * Imobiliária que comprou o K1 (venda SaaS). Só existe na instalação da Kayser:
  * cada linha é uma instalação própria do cliente (serviço no Railway + banco próprio),
  * acessada por `subdominio`.kayserone.com.br.
  */

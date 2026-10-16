@@ -176,11 +176,11 @@ describe("Clientes SaaS — cliente assina sozinho pelo site", () => {
     expect(updates[0]).toEqual(expect.objectContaining({ empresa: "Imob Nova", plano: "Corretor", status: "criando", diretorEmail: "j@x.com", origem: "site" }));
   });
 
-  it("comecar: assinatura que já virou Kayser One não cria de novo", async () => {
+  it("comecar: assinatura que já virou K1 não cria de novo", async () => {
     ENV.forEach((k) => (process.env[k] = "x"));
     mpResponde({ id: "PRE9", status: "authorized", auto_recurring: { transaction_amount: 49 } });
     const repo = { findOne: async () => ({ id: "c9", status: "ativo", cobrancaId: "PRE9" }) };
-    await expect(new ClientesSaasService(repo as any).comecar({ assinatura: "PRE9", empresa: "X Y", diretorNome: "Jo", diretorEmail: "j@x.com" })).rejects.toThrow(/já tem um Kayser One/);
+    await expect(new ClientesSaasService(repo as any).comecar({ assinatura: "PRE9", empresa: "X Y", diretorNome: "Jo", diretorEmail: "j@x.com" })).rejects.toThrow(/já tem um K1/);
   });
 });
 

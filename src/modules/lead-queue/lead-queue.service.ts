@@ -66,13 +66,13 @@ export class LeadQueueService {
       const user = await this.usersRepo.findOne({ where: { id: userId } });
       if (!user?.email) return;
       const primeiroNome = (user.name || "").split(" ")[0] || "corretor";
-      const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
+      const from = this.config.get<string>("SUPPORT_FROM", "K1 <onboarding@resend.dev>");
       const html = `
         <div style="font-family:Arial,sans-serif">
           <h2>📥 Você recebeu um novo lead!</h2>
-          <p>Olá, ${primeiroNome}! Caiu um novo lead pra você no Kayser One.</p>
+          <p>Olá, ${primeiroNome}! Caiu um novo lead pra você no K1.</p>
           <p>Entre no sistema e atenda o quanto antes — o tempo conta na distribuição da fila.</p>
-          <p><a href="https://www.kayserone.com.br/whatsapp">Abrir o Kayser One</a></p>
+          <p><a href="https://www.kayserone.com.br/whatsapp">Abrir o K1</a></p>
         </div>`;
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -80,7 +80,7 @@ export class LeadQueueService {
         body: JSON.stringify({
           from,
           to: [user.email],
-          subject: "📥 Você recebeu um novo lead — Kayser One",
+          subject: "📥 Você recebeu um novo lead — K1",
           html,
         }),
       });

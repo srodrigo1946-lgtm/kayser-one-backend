@@ -40,11 +40,11 @@ export class SupportService {
     const apiKey = this.config.get<string>("RESEND_API_KEY");
     if (!apiKey) return;
     const to = this.config.get<string>("SUPPORT_NOTIFY_EMAIL", "srodrigo1946@gmail.com");
-    const from = this.config.get<string>("SUPPORT_FROM", "Kayser One <onboarding@resend.dev>");
+    const from = this.config.get<string>("SUPPORT_FROM", "K1 <onboarding@resend.dev>");
     // "ceo" = formulário "Falar com o CEO" da página de vendas (rede com +250 usuários).
     const tipo = msg.type === "reclamacao" ? "Reclamação" : msg.type === "ceo" ? "Reunião com o CEO (site)" : "Suporte";
     const text =
-      `Nova mensagem de ${tipo} pela tela do Kayser One:\n\n` +
+      `Nova mensagem de ${tipo} pela tela do K1:\n\n` +
       `Nome: ${msg.name || "—"}\n` +
       `E-mail: ${msg.email || "—"}\n\n` +
       `Mensagem:\n${msg.message}\n`;
@@ -55,7 +55,7 @@ export class SupportService {
         body: JSON.stringify({
           from,
           to,
-          subject: `[${tipo}] Kayser One — ${msg.name || "contato"}`,
+          subject: `[${tipo}] K1 — ${msg.name || "contato"}`,
           text,
           reply_to: msg.email || undefined,
         }),

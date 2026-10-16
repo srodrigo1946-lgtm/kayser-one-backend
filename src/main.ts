@@ -59,7 +59,7 @@ async function bootstrap() {
   // Swagger só fora de produção — não expor o mapa da API publicamente.
   if (!isProd) {
     const config = new DocumentBuilder()
-      .setTitle("Kayser One API")
+      .setTitle("K1 API")
       .setDescription("CRM Inteligente com IA para Gestão Comercial")
       .setVersion("1.0")
       .addBearerAuth()
@@ -71,7 +71,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  console.log(`🚀 Kayser One API rodando em: http://localhost:${port}`);
+  console.log(`🚀 K1 API rodando em: http://localhost:${port}`);
   console.log(`📚 Swagger Docs: http://localhost:${port}/api/docs`);
 }
 
