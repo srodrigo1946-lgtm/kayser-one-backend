@@ -21,6 +21,7 @@ import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
 import { zeraContagemNaEtapa } from "./followup-regras";
+import { checarZipBomba } from "../../common/zip-guard";
 
 /** Cabeçalho normalizado: minúsculo, sem acento, só letras/números ("Nome Completo" → "nomecompleto"). */
 function normCab(h: any): string {
@@ -473,6 +474,7 @@ export class LeadsService {
     if (user.role !== UserRole.DIRETOR && !nomeTime) {
       throw new BadRequestException("Informe o nome do time da planilha (ex.: Time Isaac).");
     }
+    checarZipBomba(file.buffer);
     const wb = XLSX.read(file.buffer, { type: "buffer" });
     // Acha a aba e a LINHA de cabeçalho (pode não ser a 1ª) que tenha telefone/celular.
     let linhas: any[][] = [];

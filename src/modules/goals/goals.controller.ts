@@ -48,15 +48,15 @@ export class GoalsController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
   @ApiOperation({ summary: "Definir/atualizar meta de um usuário" })
-  upsert(@Body() dto: UpsertGoalDto) {
-    return this.goalsService.upsert(dto);
+  upsert(@Body() dto: UpsertGoalDto, @Request() req: any) {
+    return this.goalsService.upsert(dto, req.user);
   }
 
   @Delete(":id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR, UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE)
   @ApiOperation({ summary: "Remover meta" })
-  remove(@Param("id") id: string) {
-    return this.goalsService.remove(id);
+  remove(@Param("id") id: string, @Request() req: any) {
+    return this.goalsService.remove(id, req.user);
   }
 }

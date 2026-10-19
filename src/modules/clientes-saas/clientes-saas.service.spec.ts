@@ -162,7 +162,7 @@ describe("Clientes SaaS — cliente assina sozinho pelo site", () => {
       findOne: async ({ where }: any) => (where.cobrancaId ? aguardando : null),
       create: (x: any) => x,
       save: async (x: any) => x,
-      update: async (_: string, d: any) => updates.push(d),
+      update: async (_: any, d: any) => (updates.push(d), { affected: 1 }),
     };
     const s: any = new ClientesSaasService(repo as any);
     s.provisionar = async () => null;
@@ -174,6 +174,20 @@ describe("Clientes SaaS — cliente assina sozinho pelo site", () => {
     const r = await s.comecar({ assinatura: "PRE9", empresa: "Imob Nova", diretorNome: "João", diretorEmail: "J@X.com" });
     expect(r.endereco).toBe("https://imobnova.kayserone.com.br");
     expect(updates[0]).toEqual(expect.objectContaining({ empresa: "Imob Nova", plano: "Corretor", status: "criando", diretorEmail: "j@x.com", origem: "site" }));
+  });
+
+  it("comecar: dois pedidos ao mesmo tempo — só um pega a assinatura", async () => {
+    ENV.forEach((k) => (process.env[k] = "x"));
+    mpResponde({ id: "PRE9", status: "authorized", auto_recurring: { transaction_amount: 49 } });
+    const repo = {
+      findOne: async ({ where }: any) => (where.cobrancaId ? { id: "c9", status: "aguardando", cobrancaId: "PRE9" } : null),
+      update: async () => ({ affected: 0 }), // o outro pedido já trocou o status
+    };
+    const s: any = new ClientesSaasService(repo as any);
+    let criou = false;
+    s.provisionar = async () => (criou = true);
+    await expect(s.comecar({ assinatura: "PRE9", empresa: "Imob Nova", diretorNome: "Jo", diretorEmail: "j@x.com" })).rejects.toThrow(/já tem um K1/);
+    expect(criou).toBe(false);
   });
 
   it("comecar: assinatura que já virou K1 não cria de novo", async () => {

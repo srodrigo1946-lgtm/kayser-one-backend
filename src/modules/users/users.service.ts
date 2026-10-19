@@ -135,7 +135,11 @@ export class UsersService {
     );
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, requester?: User) {
+    // Cada cargo só vê o próprio time; o Diretor vê tudo (auditoria 19/10).
+    if (requester && requester.role !== UserRole.DIRETOR && !(await this.getDescendantIds(requester.id)).includes(id)) {
+      throw new NotFoundException("Usuário não encontrado.");
+    }
     const user = await this.usersRepo.findOne({ where: { id }, relations: ["manager", "subordinates"] });
     if (!user) throw new NotFoundException("Usuário não encontrado.");
     return this.clean(user);
@@ -160,6 +164,14 @@ export class UsersService {
   async create(dto: CreateUserDto, creator: User) {
     const exists = await this.usersRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException("E-mail já cadastrado.");
+    if (creator.role !== UserRole.DIRETOR) {
+      // Só o Diretor cria Diretor; o gestor só cadastra gente no próprio time (auditoria 19/10).
+      if (dto.role === UserRole.DIRETOR) throw new ForbiddenException("Só o Diretor cria outro Diretor.");
+      if (!dto.managerId) dto.managerId = creator.id;
+      else if (!(await this.getDescendantIds(creator.id)).includes(dto.managerId)) {
+        throw new ForbiddenException("O chefe precisa ser do seu time.");
+      }
+    }
     await this.checarLimitePlano();
 
     const passwordHash = await bcrypt.hash("123456789", 12);
@@ -401,6 +413,8 @@ export class UsersService {
   async reject(id: string, requester: User) {
     const target = await this.usersRepo.findOne({ where: { id } });
     if (!target) throw new NotFoundException("Usuário não encontrado.");
+    // Recusar é só para autocadastro pendente; quem já foi aprovado se desativa (auditoria 19/10).
+    if (target.approved !== false) throw new BadRequestException("Este usuário já foi aprovado. Use desativar.");
     await this.assertCanManage(target, requester);
     await this.usersRepo.remove(target);
     return { message: "Cadastro recusado e removido." };

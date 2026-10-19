@@ -58,7 +58,13 @@ export class BackupService {
       await this.pruneOldBackups().catch(() => {});
       return { ok: true, key, size: buffer.length };
     } catch (err) {
-      const reason = ((err as any)?.stderr || (err as Error)?.message || String(err)).toString().slice(0, 500);
+      // Nunca devolve a URL do banco (tem senha) na mensagem de erro (auditoria 19/10).
+      const reason = ((err as any)?.stderr || (err as Error)?.message || String(err))
+        .toString()
+        .split(url).join("***")
+        .split(databaseUrl).join("***")
+        .replace(/postgres(ql)?:\/\/[^\s"]+/gi, "***")
+        .slice(0, 500);
       this.logger.error(`Backup falhou: ${reason}`);
       return { ok: false, reason };
     } finally {

@@ -120,6 +120,11 @@ export class ConversationsService {
    * Escopo de GESTÃO da conversa (igual ao list): Diretor tudo; demais só a sua
    * equipe. Impede mexer (atribuir/etiquetar) em conversa fora do escopo por id.
    */
+  /** Envio manual (/whatsapp/send): só em conversa do próprio time (auditoria 19/10). */
+  assertPodeEnviar(conv: Conversation, user: User) {
+    return this.assertConvScope(conv, user);
+  }
+
   private async assertConvScope(conv: Conversation, user: User) {
     const scopeIds = await this.users.getScopeIds(user);
     if (scopeIds === null) return; // Diretor

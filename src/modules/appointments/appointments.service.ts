@@ -27,12 +27,28 @@ export class AppointmentsService {
     });
   }
 
-  create(dto: Partial<Appointment>, user: User) {
+  async create(dto: Partial<Appointment>, user: User) {
     const appointment = this.repo.create({
       ...dto,
       userId: dto.userId || user.id,
     });
+    await this.assertAlvos(appointment, user);
     return this.repo.save(appointment);
+  }
+
+  /** O responsável e o lead do compromisso precisam ser do time de quem grava (auditoria 19/10). */
+  private async assertAlvos(a: Partial<Appointment>, user: User) {
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds === null) return; // Diretor
+    if (a.userId && !scopeIds.includes(a.userId)) {
+      throw new ForbiddenException("O responsável precisa ser do seu time.");
+    }
+    if (a.leadId) {
+      const [lead] = await this.repo.query(`SELECT "responsavelId" FROM leads WHERE id = $1`, [a.leadId]);
+      if (!lead || !scopeIds.includes(lead.responsavelId)) {
+        throw new ForbiddenException("Esse lead não é do seu time.");
+      }
+    }
   }
 
   /** Escopo por equipe: só acessa/edita compromissos do seu time (Diretor tudo). */
@@ -49,7 +65,9 @@ export class AppointmentsService {
     const appointment = await this.repo.findOne({ where: { id } });
     if (!appointment) throw new NotFoundException("Agendamento não encontrado.");
     await this.assertScope(appointment, user);
-    Object.assign(appointment, dto);
+    const { id: _id, createdAt: _c, ...campos } = dto as any;
+    Object.assign(appointment, campos);
+    if (user) await this.assertAlvos(appointment, user);
     return this.repo.save(appointment);
   }
 

@@ -3,6 +3,9 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { WhatsappService } from "./whatsapp.service";
 import { WhatsappFlowService } from "./whatsapp-flow.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../users/user.entity";
 
 @ApiTags("WhatsApp")
 @ApiBearerAuth()
@@ -15,6 +18,8 @@ export class WhatsappController {
   ) {}
 
   @Get("instances")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR) // lista de todos os números: só Diretor (auditoria 19/10)
   @ApiOperation({ summary: "Listar sessões WhatsApp ativas" })
   listInstances() {
     return this.whatsappService.listInstances();
@@ -44,7 +49,7 @@ export class WhatsappController {
     @Body() body: { to: string; text: string },
     @Request() req: any
   ) {
-    return this.flowService.sendManual(req.user.id, body.to, body.text);
+    return this.flowService.sendManual(req.user.id, body.to, body.text, req.user);
   }
 
   @Post("send-media")
@@ -59,7 +64,7 @@ export class WhatsappController {
       mimetype: body.mimetype,
       fileName: body.fileName,
       caption: body.caption,
-    });
+    }, req.user);
   }
 
   @Delete("instance")

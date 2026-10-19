@@ -89,8 +89,8 @@ export class UsersController {
 
   @Get(":id")
   @ApiOperation({ summary: "Buscar usuário por ID" })
-  findOne(@Param("id") id: string) {
-    return this.usersService.findOne(id);
+  findOne(@Param("id") id: string, @Request() req: any) {
+    return this.usersService.findOne(id, req.user);
   }
 
   @Post()

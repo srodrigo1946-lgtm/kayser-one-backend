@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Between, In, Repository } from "typeorm";
 import { Goal } from "./goal.entity";
@@ -39,8 +39,20 @@ export class GoalsService {
     return this.goalsRepo.find({ where, relations: ["user"], order: { targetSales: "DESC" } });
   }
 
+  /** Cada gestor só mexe na meta do próprio time; o Diretor em todas (auditoria 19/10). */
+  private async assertNoTime(userId: string, user: User) {
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null && !scopeIds.includes(userId)) {
+      throw new ForbiddenException("Essa pessoa não é do seu time.");
+    }
+  }
+
   /** Cria ou atualiza a meta do usuário/mês/ano. */
-  async upsert(dto: { userId: string; month: number; year: number; targetSales?: number; targetVisits?: number }) {
+  async upsert(
+    dto: { userId: string; month: number; year: number; targetSales?: number; targetVisits?: number },
+    user?: User
+  ) {
+    if (user) await this.assertNoTime(dto.userId, user);
     let goal = await this.goalsRepo.findOne({
       where: { userId: dto.userId, month: dto.month, year: dto.year },
     });
@@ -53,9 +65,10 @@ export class GoalsService {
     return this.goalsRepo.save(goal);
   }
 
-  async remove(id: string) {
+  async remove(id: string, user?: User) {
     const goal = await this.goalsRepo.findOne({ where: { id } });
     if (!goal) throw new NotFoundException("Meta não encontrada.");
+    if (user) await this.assertNoTime(goal.userId, user);
     await this.goalsRepo.remove(goal);
     return { message: "Meta removida." };
   }

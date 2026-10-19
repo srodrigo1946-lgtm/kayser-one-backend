@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcryptjs";
@@ -42,8 +42,16 @@ export class EmpresasService {
     if (user.role !== UserRole.DIRETOR) {
       throw new ForbiddenException("Apenas o Diretor libera empresas parceiras.");
     }
+    if (!["pendente", "aprovada", "reprovada"].includes(status)) throw new BadRequestException("Status inválido.");
     const emp = await this.repo.findOne({ where: { id } });
     if (!emp) throw new NotFoundException("Empresa não encontrada.");
+    if (status === "aprovada") {
+      // Nunca toma uma conta que já existe com esse e-mail (auditoria 19/10).
+      const dono = await this.usersRepo.findOne({ where: { email: emp.email } });
+      if (dono && dono.empresaId !== emp.id) {
+        throw new ConflictException("Esse e-mail já é de um usuário do K1. Peça outro e-mail para a empresa.");
+      }
+    }
     emp.status = status;
     const saved = await this.repo.save(emp);
     let credenciais: { email: string; senhaProvisoria: string } | undefined;
@@ -98,8 +106,14 @@ export class EmpresasService {
    * colisão). Cargo CORRETOR + empresaId (o marcador de "é empresa").
    */
   private async ensureEmpresaLogin(emp: Empresa) {
-    const passwordHash = await bcrypt.hash("123456789", 12);
     const existing = await this.usersRepo.findOne({ where: { email: emp.email } });
+    if (existing) {
+      // Login da própria empresa (reaprovação): só reativa, sem trocar a senha.
+      if (existing.empresaId !== emp.id) throw new ConflictException("Esse e-mail já é de um usuário do K1.");
+      await this.usersRepo.update(existing.id, { active: true, approved: true } as any);
+      return undefined;
+    }
+    const passwordHash = await bcrypt.hash("123456789", 12);
     const base = {
       name: emp.nome || emp.email,
       email: emp.email,
@@ -110,11 +124,7 @@ export class EmpresasService {
       approved: true,
       active: true,
     };
-    if (existing) {
-      await this.usersRepo.save({ ...existing, ...base });
-    } else {
-      await this.usersRepo.save(this.usersRepo.create(base));
-    }
+    await this.usersRepo.save(this.usersRepo.create(base));
     return { email: emp.email, senhaProvisoria: "123456789" };
   }
 }

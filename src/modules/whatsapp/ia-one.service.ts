@@ -690,6 +690,11 @@ REGRAS: você NÃO consegue repassar recado, avisar depois nem falar com gestor/
       await this.enviar(phone, "Oi! Sua conta no K1 está desativada. Fale com o seu gestor pra reativar. 🙏", user, p.pushName, para);
       return { ok: true };
     }
+    // Autocadastro ainda não aprovado não usa a One (auditoria 19/10).
+    if (user.approved === false) {
+      await this.enviar(phone, "Oi! Seu cadastro no K1 ainda está aguardando a aprovação do seu gestor. Assim que ele aprovar, eu te ajudo. 🙏", user, p.pushName, para);
+      return { ok: true };
+    }
 
     try {
       const bruto = await this.responder(user, phone, texto);

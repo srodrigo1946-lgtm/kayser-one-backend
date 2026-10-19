@@ -41,6 +41,11 @@ export class PastasService {
     }
     const lead = await this.leadsRepo.findOne({ where: { id: dto.leadId } });
     if (!lead) throw new NotFoundException("Cliente não encontrado.");
+    // Só cria pasta de lead do próprio time (auditoria 19/10).
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null && !scopeIds.includes(lead.responsavelId as string)) {
+      throw new NotFoundException("Cliente não encontrado.");
+    }
     // Próximo número da análise (global). max+1 => recomeça em 1 se as pastas forem apagadas.
     const row = await this.repo.query(`SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM analysis_folders`);
     const numero = Number(row?.[0]?.n) || 1;

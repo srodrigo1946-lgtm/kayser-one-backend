@@ -30,6 +30,19 @@ class CreateAppointmentDto {
   @IsOptional() @IsString() userId?: string;
 }
 
+// Classe (não Partial<>) para o ValidationPipe validar e barrar campos extras como "id".
+class UpdateAppointmentDto {
+  @IsOptional() @IsString() title?: string;
+  @IsOptional() @IsEnum(AppointmentType) type?: AppointmentType;
+  @IsOptional() @IsEnum(AppointmentStatus) status?: AppointmentStatus;
+  @IsOptional() @IsDateString() scheduledAt?: string;
+  @IsOptional() @IsInt() durationMin?: number;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsString() leadId?: string;
+  @IsOptional() @IsString() userId?: string;
+}
+
 @ApiTags("Agenda")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -61,7 +74,7 @@ export class AppointmentsController {
 
   @Put(":id")
   @ApiOperation({ summary: "Atualizar agendamento" })
-  update(@Param("id") id: string, @Body() dto: Partial<CreateAppointmentDto>, @Request() req: any) {
+  update(@Param("id") id: string, @Body() dto: UpdateAppointmentDto, @Request() req: any) {
     const patch: any = { ...dto };
     if (dto.scheduledAt) patch.scheduledAt = new Date(dto.scheduledAt);
     return this.appointmentsService.update(id, patch, req.user);

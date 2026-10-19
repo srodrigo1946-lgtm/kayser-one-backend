@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as XLSX from "xlsx";
 import AdmZip from "adm-zip";
+import { checarZipBomba } from "../../common/zip-guard";
 import { KnowledgeItem, KnowledgeType } from "./knowledge.entity";
 import { KnowledgeChunk } from "./knowledge-chunk.entity";
 import { EmbeddingService } from "./embedding.service";
@@ -121,6 +122,7 @@ export class KnowledgeService {
     opts: { title?: string; type?: KnowledgeType; propertyId?: string } = {}
   ) {
     if (!file) throw new BadRequestException("Nenhum arquivo enviado.");
+    checarZipBomba(file.buffer);
     const name = file.originalname || "documento";
     const ext = name.split(".").pop()?.toLowerCase() || "";
 

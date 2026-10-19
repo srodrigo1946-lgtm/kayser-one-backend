@@ -497,6 +497,10 @@ export class SchemaBootstrapService implements OnModuleInit {
     for (const col of ["bloqueadoEm", "encerradoEm", "agendaEm"]) {
       await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "${col}" timestamp`);
     }
+    // Uma assinatura = uma instalação (auditoria 19/10). Se já houver repetida, só loga.
+    await this.dataSource
+      .query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_saas_cobranca ON clientes_saas ("cobrancaId") WHERE "cobrancaId" IS NOT NULL`)
+      .catch((e) => this.logger.warn(`idx_clientes_saas_cobranca: ${e?.message}`));
     await this.dataSource.query(`ALTER TABLE clientes_saas ADD COLUMN IF NOT EXISTS "agendaAcao" varchar`);
     // Caixa do Business K1: pagamentos aprovados no Mercado Pago.
     await this.dataSource.query(`

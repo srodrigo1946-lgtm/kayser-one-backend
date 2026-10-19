@@ -460,8 +460,16 @@ export class ClientesSaasService {
       cobrancaId: String(a.id),
       assinatura: a.status,
     };
-    if (c) await this.repo.update(c.id, dados);
-    else c = await this.repo.save(this.repo.create({ ...dados, adicionais: "" }));
+    // Atômico: só um pedido "pega" a assinatura; os simultâneos caem aqui (auditoria 19/10).
+    const jaTem = new BadRequestException("Essa assinatura já tem um K1 criado. Veja o e-mail de boas-vindas.");
+    if (c) {
+      const r = await this.repo.update({ id: c.id, status: "aguardando" } as any, dados);
+      if (!r.affected) throw jaTem;
+    } else {
+      c = await this.repo.save(this.repo.create({ ...dados, adicionais: "" })).catch(() => {
+        throw jaTem; // índice único em cobrancaId
+      });
+    }
     this.provisionar(c.id).catch(() => null);
     await this.avisarRodrigo(
       `Cliente novo pelo site — ${dados.empresa}`,

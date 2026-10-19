@@ -5,7 +5,7 @@ import { AiService } from "../ai/ai.service";
 import { WhatsappService, pedeParar } from "./whatsapp.service";
 import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
-import { UserRole } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { IaOneService, IA_ONE_INSTANCIA } from "./ia-one.service";
 import { ReengajamentoService } from "./reengajamento.service";
@@ -528,8 +528,9 @@ export class WhatsappFlowService {
     return this.whatsapp.pausaEntreDisparos();
   }
 
-  async sendManual(senderUserId: string, remoteJid: string, text: string) {
+  async sendManual(senderUserId: string, remoteJid: string, text: string, requester?: User) {
     const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
+    if (requester) await this.conversations.assertPodeEnviar(conv, requester);
     // Sem dono de instância na conversa: sai pelo número CENTRAL (cargo não tem WhatsApp
     // conectado — antes caía em "user_<corretor>" e a mensagem falhava calada).
     const central = await this.conversations.diretorCentralId();
@@ -556,9 +557,11 @@ export class WhatsappFlowService {
   async sendManualMedia(
     senderUserId: string,
     remoteJid: string,
-    file: { base64: string; mimetype: string; fileName: string; caption?: string }
+    file: { base64: string; mimetype: string; fileName: string; caption?: string },
+    requester?: User
   ) {
     const conv = await this.conversations.findOrCreateByPhone(remoteJid, senderUserId);
+    if (requester) await this.conversations.assertPodeEnviar(conv, requester);
     const instanceOwner = conv.instanceOwnerId || senderUserId;
     const ehImagem = file.mimetype.startsWith("image/");
     const rotulo = file.caption?.trim() || (ehImagem ? "📷 Imagem" : `📎 ${file.fileName}`);
