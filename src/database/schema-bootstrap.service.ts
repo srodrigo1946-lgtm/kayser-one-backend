@@ -37,6 +37,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureMeetingsTable", () => this.ensureMeetingsTable()],
       ["ensureConversationIsGroup", () => this.ensureConversationIsGroup()],
       ["ensureEscalaTable", () => this.ensureEscalaTable()],
+      ["escalaHorarios1910", () => this.escalaHorarios1910()],
       ["ensureAdInvestmentTable", () => this.ensureAdInvestmentTable()],
       ["ensureAdInvestmentDayTable", () => this.ensureAdInvestmentDayTable()],
       ["ensureFeedbackTable", () => this.ensureFeedbackTable()],
@@ -355,6 +356,20 @@ export class SchemaBootstrapService implements OnModuleInit {
         "horaFim" varchar NOT NULL,
         "atendenteIds" text DEFAULT ''
       )`);
+  }
+
+  /**
+   * Novos horários dos plantões de segunda a sexta (Rodrigo, 19/10/2026): 09–14, 14–18, 18–22.
+   * Só troca o que ainda está no horário antigo (09–13, 13–17, 17–21) — roda uma vez na prática.
+   */
+  private async escalaHorarios1910() {
+    const pares = [["09:00", "13:00", "09:00", "14:00"], ["13:00", "17:00", "14:00", "18:00"], ["17:00", "21:00", "18:00", "22:00"]];
+    for (const [ai, af, ni, nf] of pares) {
+      await this.dataSource.query(
+        `UPDATE escala_turnos SET "horaInicio" = $3, "horaFim" = $4 WHERE "diaSemana" BETWEEN 1 AND 5 AND "horaInicio" = $1 AND "horaFim" = $2`,
+        [ai, af, ni, nf]
+      );
+    }
   }
 
   /** Marca conversas de grupo (@g.us) — grupo nunca vira lead. */

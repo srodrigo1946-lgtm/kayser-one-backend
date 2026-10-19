@@ -4,7 +4,7 @@ import { Repository } from "typeorm";
 import { EscalaTurno } from "./escala-turno.entity";
 
 // Seg-Sex e Sáb-Dom têm faixas diferentes (decisão do Rodrigo).
-const SEMANA: [string, string][] = [["09:00", "13:00"], ["13:00", "17:00"], ["17:00", "21:00"]];
+const SEMANA: [string, string][] = [["09:00", "14:00"], ["14:00", "18:00"], ["18:00", "22:00"]]; // 19/10/2026
 const FDS: [string, string][] = [["09:00", "12:00"], ["12:00", "15:00"], ["15:00", "18:00"]];
 
 @Injectable()
