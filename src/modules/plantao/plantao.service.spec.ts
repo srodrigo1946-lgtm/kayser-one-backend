@@ -198,9 +198,11 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     expect(longeDoStand(650, 500)).toBeNull();
   });
 
-  it("o plantão das 21h não entra na regra", () => {
+  it("o plantão das 18h–22h não entra na regra", () => {
+    expect(turnoLivreDoStand("18:00")).toBe(true);
     expect(turnoLivreDoStand("21:00")).toBe(true);
     expect(turnoLivreDoStand("09:00")).toBe(false);
+    expect(turnoLivreDoStand("14:00")).toBe(false);
     expect(turnoLivreDoStand("15:00")).toBe(false);
   });
 
@@ -226,8 +228,8 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     expect(updates[0]).toEqual(expect.objectContaining({ id: "c1", saiuEm: expect.any(Date) }));
   });
 
-  it("no plantão das 21h pode sair do stand à vontade", async () => {
-    const { s, updates } = montar("21:00", { id: "c1", propertyId: "p1", standNome: "Stand" });
+  it("no plantão das 18h pode sair do stand à vontade", async () => {
+    const { s, updates } = montar("18:00", { id: "c1", propertyId: "p1", standNome: "Stand" });
     for (let i = 0; i < 3; i++) expect((await s.posicao({ id: "u1" } as any, longe.lat, longe.lng, 10)).status).toBe("livre");
     expect(updates).toHaveLength(0);
   });

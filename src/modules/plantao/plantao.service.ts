@@ -174,8 +174,8 @@ export function longeDoStand(distancia: number, precisao?: number | null): boole
 }
 /** Leituras seguidas longe do stand pra sair do plantão (o app manda a posição a cada 2 min). */
 export const SAIDA_LEITURAS = 2;
-/** Plantão das 21h em diante: pode sair do stand sem perder o plantão (decisão do Rodrigo 11/10). */
-export const turnoLivreDoStand = (horaInicio: string) => (horaInicio || "") >= "21:00";
+/** Plantão das 18h em diante: pode sair do stand sem perder o plantão (Rodrigo 11/10; 18h–22h desde 20/10). */
+export const turnoLivreDoStand = (horaInicio: string) => (horaInicio || "") >= "18:00";
 
 type Stand = { propertyId: string; nome: string; endereco: string; lat: number; lng: number };
 
@@ -235,13 +235,14 @@ export class PlantaoService implements OnModuleInit {
    * corretor; antigo = só os da escala). Sem check-in: livre = todos os corretores;
    * antigo = a escala. Bloqueados nunca entram.
    */
-  async idsDoTurno(turno: { id: string; atendenteIds: string[] }): Promise<string[]> {
+  async idsDoTurno(turno: { id: string; atendenteIds: string[]; horaInicio?: string }): Promise<string[]> {
     const [livre, checkin, bloq] = await Promise.all([this.modoLivre(), this.exigeCheckin(), this.bloqueadosIds()]);
     let ids: string[];
     if (checkin) {
-      // Quem saiu do stand depois do check-in não conta mais.
+      // Quem saiu do stand depois do check-in não conta mais (menos no plantão da noite).
+      const podeSair = turnoLivreDoStand(turno.horaInicio || "");
       const feitos = (await this.checkins.find({ where: { turnoId: turno.id, data: hojeSP() }, order: { createdAt: "ASC" } }))
-        .filter((c) => !c.saiuEm)
+        .filter((c) => podeSair || !c.saiuEm)
         .map((c) => c.userId);
       ids = livre ? feitos : (turno.atendenteIds || []).filter((id) => feitos.includes(id));
     } else if (livre) {
@@ -500,13 +501,14 @@ export class PlantaoService implements OnModuleInit {
           horaFim: t.horaFim,
           atendentes: ids.map((id) => {
             const c = cks.find((x) => x.userId === id && x.turnoId === t.id);
+            const saiu = !!c?.saiuEm && !turnoLivreDoStand(t.horaInicio);
             return {
               id,
               nome: nomes.get(id) ?? "—",
-              entrou: !!c && !c.saiuEm,
+              entrou: !!c && !saiu,
               como: c?.standNome ?? null,
               bloqueado: bloq.has(id),
-              saiu: c?.saiuEm ? { hora: c.saiuEm, distancia: c.saiuDistancia } : null,
+              saiu: saiu ? { hora: c!.saiuEm, distancia: c!.saiuDistancia } : null,
             };
           }),
         };
