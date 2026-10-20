@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as XLSX from "xlsx";
 import AdmZip from "adm-zip";
+import { PDFDocument } from "pdf-lib";
 import { checarZipBomba } from "../../common/zip-guard";
 import { KnowledgeItem, KnowledgeType } from "./knowledge.entity";
 import { KnowledgeChunk } from "./knowledge-chunk.entity";
@@ -81,6 +82,62 @@ export class KnowledgeService {
    * Imagem (tabela de preços, folder, planta, print) → texto, lido pela IA (Claude
    * com visão). Usa a chave Anthropic da empresa (Configurações) ou a do servidor.
    */
+  private async clienteIa(): Promise<{ client: Anthropic; model: string }> {
+    const s = await this.settings.get();
+    const empresaAnthropic = !s.aiProvider || s.aiProvider === AiProvider.ANTHROPIC;
+    const apiKey = (empresaAnthropic && s.aiApiKey) || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new BadRequestException("Para ler imagens, configure a chave da IA (Anthropic) na página IA Agente.");
+    }
+    return { client: new Anthropic({ apiKey }), model: (empresaAnthropic && s.aiModel) || "claude-sonnet-5" };
+  }
+
+  /**
+   * PDF só de imagens (book de empreendimento): a IA lê as páginas.
+   * Divide em partes de ~8 MB (folga no limite de envio da IA) e lê as partes ao mesmo tempo.
+   */
+  private async lerPdfImagem(buffer: Buffer): Promise<string> {
+    const { client, model } = await this.clienteIa();
+    const doc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const total = doc.getPageCount();
+    const porParte = Math.max(1, Math.floor((total * 8 * 1024 * 1024) / buffer.length));
+    const partes: Buffer[] = [];
+    for (let i = 0; i < total; i += porParte) {
+      const nova = await PDFDocument.create();
+      const paginas = await nova.copyPages(doc, Array.from({ length: Math.min(porParte, total - i) }, (_, k) => i + k));
+      paginas.forEach((p) => nova.addPage(p));
+      partes.push(Buffer.from(await nova.save()));
+    }
+    const textos = await Promise.all(
+      partes.map((parte, n) =>
+        client.messages
+          .create({
+            model,
+            max_tokens: 4096,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "document", source: { type: "base64", media_type: "application/pdf", data: parte.toString("base64") } } as any,
+                  {
+                    type: "text",
+                    text:
+                      "Estas páginas são do book de um empreendimento imobiliário e vão para a base de conhecimento de um assistente " +
+                      "que responde clientes. Transcreva TODO o texto e números visíveis (nome, endereço, plantas, metragens, quartos, " +
+                      "vagas, lazer, diferenciais, preços, condições, prazos, construtora), organizando tabelas linha a linha. " +
+                      "Para imagens sem texto (fachada, decorado, área de lazer), descreva em 1 linha o que mostram. " +
+                      "Não invente nada que não esteja nas páginas. Responda em português.",
+                  },
+                ],
+              },
+            ],
+          })
+          .then((r: any) => `[Páginas da parte ${n + 1}]\n` + r.content.map((c: any) => (c.type === "text" ? c.text : "")).join("\n").trim())
+      )
+    );
+    return textos.join("\n\n");
+  }
+
   private async lerImagem(buffer: Buffer, mediaType: (typeof IMAGEM_MIME)[string]): Promise<string> {
     if (buffer.length > 5 * 1024 * 1024) {
       throw new BadRequestException("Imagem muito grande (máx. 5 MB). Reduza e envie de novo.");
@@ -131,6 +188,8 @@ export class KnowledgeService {
       if (ext === "pdf") {
         const pdfParse = require("pdf-parse");
         text = (await pdfParse(file.buffer)).text;
+        // Book só de imagens (sem texto): a IA lê as páginas.
+        if ((text || "").replace(/\s+/g, "").length < 200) text = await this.lerPdfImagem(file.buffer);
       } else if (ext === "docx" || ext === "doc") {
         const mammoth = require("mammoth");
         text = (await mammoth.extractRawText({ buffer: file.buffer })).value;
