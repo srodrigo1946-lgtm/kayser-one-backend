@@ -180,7 +180,9 @@ export class KnowledgeService {
   ) {
     if (!file) throw new BadRequestException("Nenhum arquivo enviado.");
     checarZipBomba(file.buffer);
-    const name = file.originalname || "documento";
+    // O navegador manda o nome em UTF-8, mas o upload lê como latin1 ("ApresentaÃ§Ã£o"): corrige.
+    const bruto = file.originalname || "documento";
+    const name = /[ÃÂ]/.test(bruto) ? Buffer.from(bruto, "latin1").toString("utf8") : bruto;
     const ext = name.split(".").pop()?.toLowerCase() || "";
 
     let text = "";
