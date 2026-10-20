@@ -62,7 +62,7 @@ export class KnowledgeController {
   @UseGuards(RolesGuard)
   @Roles(...GESTORES)
   @ApiOperation({ summary: "Treinar a IA enviando um arquivo (PDF, imagem, DOCX, XLSX, CSV, TXT)" })
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 30 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 100 * 1024 * 1024 } })) // books de empreendimento passam de 30 MB (20/10)
   upload(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { title?: string; type?: KnowledgeType; propertyId?: string }
