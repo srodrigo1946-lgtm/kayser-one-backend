@@ -187,9 +187,11 @@ export class KnowledgeService {
     try {
       if (ext === "pdf") {
         const pdfParse = require("pdf-parse");
-        text = (await pdfParse(file.buffer)).text;
-        // Book só de imagens (sem texto): a IA lê as páginas.
-        if ((text || "").replace(/\s+/g, "").length < 200) text = await this.lerPdfImagem(file.buffer);
+        const lido = await pdfParse(file.buffer);
+        text = lido.text;
+        // Book feito de imagens (pouco texto por página): a IA lê as páginas.
+        const letras = (text || "").replace(/\s+/g, "").length;
+        if (letras < 200 || letras / Math.max(1, lido.numpages || 1) < 300) text = await this.lerPdfImagem(file.buffer);
       } else if (ext === "docx" || ext === "doc") {
         const mammoth = require("mammoth");
         text = (await mammoth.extractRawText({ buffer: file.buffer })).value;
