@@ -238,9 +238,9 @@ export class ConversationsService {
       }
       // Agendamento cria um compromisso na Agenda.
       if (et === "agendamento") {
-        const quando = new Date();
-        quando.setDate(quando.getDate() + 1);
-        quando.setHours(10, 0, 0, 0);
+        // Amanhã às 10h de Brasília (13h UTC) — o servidor roda em UTC e caía às 07h.
+        const quando = new Date(Date.now() - 3 * 3_600_000 + 86_400_000); // dia de amanhã em Brasília
+        quando.setUTCHours(13, 0, 0, 0);
         try {
           await this.appointments.create(
             {
