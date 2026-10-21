@@ -52,8 +52,8 @@ export class AppointmentsController {
 
   @Get()
   @ApiOperation({ summary: "Listar agendamentos (por hierarquia, com filtro de período)" })
-  findAll(@Request() req: any, @Query("from") from?: string, @Query("to") to?: string) {
-    return this.appointmentsService.findAll(req.user, from, to);
+  findAll(@Request() req: any, @Query("from") from?: string, @Query("to") to?: string, @Query("equipe") equipe?: string) {
+    return this.appointmentsService.findAll(req.user, from, to, equipe === "1");
   }
 
   @Get("ranking")

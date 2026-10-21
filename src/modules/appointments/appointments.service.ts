@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { LeadStatus } from "../leads/lead.entity";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Between, IsNull, Repository } from "typeorm";
+import { Between, In, IsNull, Repository } from "typeorm";
 import { Appointment } from "./appointment.entity";
 import { User, UserRole } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
@@ -14,10 +14,19 @@ export class AppointmentsService {
     private readonly users: UsersService
   ) {}
 
-  async findAll(user: User, from?: string, to?: string) {
+  async findAll(user: User, from?: string, to?: string, equipe = false) {
     // Cada cargo vê só a PRÓPRIA agenda (Rodrigo 21/10). O Diretor também vê as
     // visitas sem dono (IA fora do plantão), pra não sumirem antes de ir pro corretor.
     const periodo = from && to ? { scheduledAt: Between(new Date(from), new Date(to)) } : {};
+    // "Equipe" (botão na Agenda): gestor vê o time, Diretor vê todos. Corretor sempre só a dele.
+    if (equipe && user.role !== UserRole.CORRETOR) {
+      const scopeIds = await this.users.getScopeIds(user);
+      return this.repo.find({
+        where: scopeIds === null ? periodo : { ...periodo, userId: In(scopeIds) },
+        relations: ["lead", "user"],
+        order: { scheduledAt: "ASC" },
+      });
+    }
     const where: any[] = [{ ...periodo, userId: user.id }];
     if (user.role === UserRole.DIRETOR) where.push({ ...periodo, userId: IsNull() });
 

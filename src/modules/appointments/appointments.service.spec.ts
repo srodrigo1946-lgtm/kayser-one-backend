@@ -42,6 +42,14 @@ describe("AppointmentsService", () => {
     expect(repo.query.mock.calls[0][1][2]).toEqual(["a", "b", "c"]); // escopo da equipe vai pra consulta
   });
 
+  it("botão Equipe: gestor vê o time; corretor continua só a dele", async () => {
+    users.getScopeIds.mockResolvedValue(["g1", "c1"]);
+    await service.findAll({ id: "g1", role: UserRole.GERENTE } as any, undefined, undefined, true);
+    expect((repo.find.mock.calls[0][0].where.userId as any).value).toEqual(["g1", "c1"]);
+    await service.findAll({ id: "c1", role: UserRole.CORRETOR } as any, undefined, undefined, true);
+    expect(repo.find.mock.calls[1][0].where).toEqual([{ userId: "c1" }]);
+  });
+
   it("cada cargo lista só a própria agenda (gestor não vê a do time)", async () => {
     users.getScopeIds.mockResolvedValue(["g1", "c1", "c2"]);
     await service.findAll({ id: "g1", role: UserRole.GERENTE } as any);
