@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Between, In, Repository } from "typeorm";
+import { Between, IsNull, Repository } from "typeorm";
 import { Appointment } from "./appointment.entity";
-import { User } from "../users/user.entity";
+import { User, UserRole } from "../users/user.entity";
 import { UsersService } from "../users/users.service";
 
 @Injectable()
@@ -14,11 +14,11 @@ export class AppointmentsService {
   ) {}
 
   async findAll(user: User, from?: string, to?: string) {
-    const where: any = {};
-    // Escopo por equipe: Diretor (null) vê tudo; demais veem os compromissos do seu time.
-    const scopeIds = await this.users.getScopeIds(user);
-    if (scopeIds !== null) where.userId = In(scopeIds);
-    if (from && to) where.scheduledAt = Between(new Date(from), new Date(to));
+    // Cada cargo vê só a PRÓPRIA agenda (Rodrigo 21/10). O Diretor também vê as
+    // visitas sem dono (IA fora do plantão), pra não sumirem antes de ir pro corretor.
+    const periodo = from && to ? { scheduledAt: Between(new Date(from), new Date(to)) } : {};
+    const where: any[] = [{ ...periodo, userId: user.id }];
+    if (user.role === UserRole.DIRETOR) where.push({ ...periodo, userId: IsNull() });
 
     return this.repo.find({
       where,

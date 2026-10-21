@@ -30,18 +30,19 @@ describe("AppointmentsService", () => {
     expect(arg.userId).toBe("c2");
   });
 
-  it("corretor só lista os próprios agendamentos (escopo por equipe)", async () => {
-    users.getScopeIds.mockResolvedValue(["c1"]);
-    await service.findAll({ id: "c1", role: UserRole.CORRETOR } as any);
+  it("cada cargo lista só a própria agenda (gestor não vê a do time)", async () => {
+    users.getScopeIds.mockResolvedValue(["g1", "c1", "c2"]);
+    await service.findAll({ id: "g1", role: UserRole.GERENTE } as any);
     const arg = repo.find.mock.calls[0][0];
-    expect((arg.where.userId as any).value).toEqual(["c1"]);
+    expect(arg.where).toEqual([{ userId: "g1" }]);
   });
 
-  it("diretor lista todos (sem filtro de usuário)", async () => {
-    users.getScopeIds.mockResolvedValue(null);
+  it("diretor vê a própria agenda + visitas sem dono (IA), não a de todos", async () => {
     await service.findAll({ id: "d1", role: UserRole.DIRETOR } as any);
     const arg = repo.find.mock.calls[0][0];
-    expect(arg.where.userId).toBeUndefined();
+    expect(arg.where).toHaveLength(2);
+    expect(arg.where[0]).toEqual({ userId: "d1" });
+    expect(arg.where[1].userId).toBeDefined(); // IsNull()
   });
 
   it("buildIcs gera um VCALENDAR válido com os dados do compromisso", () => {
