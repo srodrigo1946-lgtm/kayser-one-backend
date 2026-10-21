@@ -30,6 +30,18 @@ describe("AppointmentsService", () => {
     expect(arg.userId).toBe("c2");
   });
 
+  it("ranking: ordena por visitas, depois agendamentos, e tira quem está zerado", async () => {
+    repo.query = jest.fn().mockResolvedValue([
+      { id: "a", nome: "Ana", role: "corretor", agendamentos: 5, visitas: 1 },
+      { id: "b", nome: "Bia", role: "corretor", agendamentos: 2, visitas: 3 },
+      { id: "c", nome: "Caio", role: "gerente", agendamentos: 0, visitas: 0 },
+    ]);
+    users.getScopeIds.mockResolvedValue(["a", "b", "c"]);
+    const r = await service.ranking({ id: "g", role: UserRole.GERENTE } as any);
+    expect(r.map((x: any) => x.nome)).toEqual(["Bia", "Ana"]);
+    expect(repo.query.mock.calls[0][1][2]).toEqual(["a", "b", "c"]); // escopo da equipe vai pra consulta
+  });
+
   it("cada cargo lista só a própria agenda (gestor não vê a do time)", async () => {
     users.getScopeIds.mockResolvedValue(["g1", "c1", "c2"]);
     await service.findAll({ id: "g1", role: UserRole.GERENTE } as any);

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { LeadStatus } from "../leads/lead.entity";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Between, IsNull, Repository } from "typeorm";
 import { Appointment } from "./appointment.entity";
@@ -25,6 +26,27 @@ export class AppointmentsService {
       relations: ["lead", "user"],
       order: { scheduledAt: "ASC" },
     });
+  }
+
+  /**
+   * Ranking por pessoa (com cargo) igual ao Kanban: leads que estão AGORA nas
+   * colunas "Agendamento" e "Visita realizada" (Rodrigo 21/10: "está no kanban").
+   * Escopo por equipe, como o Kanban: Diretor vê todos, gestor o time, corretor ele.
+   */
+  async ranking(user: User) {
+    const scopeIds = await this.users.getScopeIds(user);
+    const rows: any[] = await this.repo.query(
+      `SELECT u.id, u.name AS nome, u.role,
+         COUNT(l.id) FILTER (WHERE l.status = $1)::int AS agendamentos,
+         COUNT(l.id) FILTER (WHERE l.status = $2)::int AS visitas
+       FROM users u JOIN leads l ON l."responsavelId" = u.id
+       WHERE ($3::uuid[] IS NULL OR u.id = ANY($3::uuid[]))
+       GROUP BY u.id, u.name, u.role`,
+      [LeadStatus.AGENDAMENTO, LeadStatus.VISITA_REALIZADA, scopeIds]
+    );
+    return rows
+      .filter((r) => r.agendamentos > 0 || r.visitas > 0)
+      .sort((a, b) => b.visitas - a.visitas || b.agendamentos - a.agendamentos || a.nome.localeCompare(b.nome));
   }
 
   async create(dto: Partial<Appointment>, user: User) {

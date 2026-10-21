@@ -56,6 +56,12 @@ export class AppointmentsController {
     return this.appointmentsService.findAll(req.user, from, to);
   }
 
+  @Get("ranking")
+  @ApiOperation({ summary: "Ranking por pessoa: leads nas colunas Agendamento e Visita realizada do Kanban" })
+  ranking(@Request() req: any) {
+    return this.appointmentsService.ranking(req.user);
+  }
+
   @Post()
   @ApiOperation({ summary: "Criar agendamento" })
   create(@Body() dto: CreateAppointmentDto, @Request() req: any) {
