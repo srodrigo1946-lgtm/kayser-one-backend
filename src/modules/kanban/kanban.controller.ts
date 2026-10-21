@@ -40,10 +40,10 @@ export class KanbanController {
   @ApiOperation({ summary: "Mover card para outra coluna" })
   moveCard(
     @Param("leadId") leadId: string,
-    @Body() body: { status: string; order: number },
+    @Body() body: { status: string; order: number; dataAgendamento?: string },
     @Request() req: any
   ) {
-    return this.kanbanService.moveCard(leadId, body.status, body.order, req.user);
+    return this.kanbanService.moveCard(leadId, body.status, body.order, req.user, body.dataAgendamento);
   }
 
   @Post("columns")

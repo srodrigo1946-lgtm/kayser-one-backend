@@ -166,6 +166,10 @@ export class Lead {
   @Column({ type: "varchar", nullable: true })
   transferidoPorId: string | null;
 
+  // Dia/hora do agendamento, perguntado ao mover o card pra coluna "Agendamento" (21/10).
+  @Column({ type: "timestamp", nullable: true })
+  dataAgendamento: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

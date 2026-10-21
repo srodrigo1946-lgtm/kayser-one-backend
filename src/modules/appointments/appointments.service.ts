@@ -35,17 +35,27 @@ export class AppointmentsService {
    */
   async ranking(user: User) {
     const scopeIds = await this.users.getScopeIds(user);
+    // Mês e ano de Brasília (UTC-3): o "dia do agendamento" perguntado no Kanban.
+    const sp = new Date(Date.now() - 3 * 3_600_000);
+    const y = sp.getUTCFullYear();
+    const m = sp.getUTCMonth();
+    const iniMes = new Date(Date.UTC(y, m, 1, 3));
+    const fimMes = new Date(Date.UTC(y, m + 1, 1, 3));
+    const iniAno = new Date(Date.UTC(y, 0, 1, 3));
+    const fimAno = new Date(Date.UTC(y + 1, 0, 1, 3));
     const rows: any[] = await this.repo.query(
       `SELECT u.id, u.name AS nome, u.role,
          COUNT(l.id) FILTER (WHERE l.status = $1)::int AS agendamentos,
-         COUNT(l.id) FILTER (WHERE l.status = $2)::int AS visitas
+         COUNT(l.id) FILTER (WHERE l.status = $2)::int AS visitas,
+         COUNT(l.id) FILTER (WHERE l."dataAgendamento" >= $4 AND l."dataAgendamento" < $5)::int AS "agMes",
+         COUNT(l.id) FILTER (WHERE l."dataAgendamento" >= $6 AND l."dataAgendamento" < $7)::int AS "agAno"
        FROM users u JOIN leads l ON l."responsavelId" = u.id
        WHERE ($3::uuid[] IS NULL OR u.id = ANY($3::uuid[]))
        GROUP BY u.id, u.name, u.role`,
-      [LeadStatus.AGENDAMENTO, LeadStatus.VISITA_REALIZADA, scopeIds]
+      [LeadStatus.AGENDAMENTO, LeadStatus.VISITA_REALIZADA, scopeIds, iniMes, fimMes, iniAno, fimAno]
     );
     return rows
-      .filter((r) => r.agendamentos > 0 || r.visitas > 0)
+      .filter((r) => r.agendamentos > 0 || r.visitas > 0 || r.agAno > 0)
       .sort((a, b) => b.visitas - a.visitas || b.agendamentos - a.agendamentos || a.nome.localeCompare(b.nome));
   }
 

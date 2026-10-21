@@ -1,7 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, In } from "typeorm";
-import { Lead } from "../leads/lead.entity";
+import { Lead, LeadStatus } from "../leads/lead.entity";
+import { Appointment, AppointmentStatus, AppointmentType } from "../appointments/appointment.entity";
+
+/** Marca do compromisso criado pelo Kanban (pra trocar a data sem duplicar). */
+export const MARCA_AGENDAMENTO_KANBAN = "Agendado pelo Kanban";
 import { User } from "../users/user.entity";
 import { LeadsService } from "../leads/leads.service";
 import { UsersService } from "../users/users.service";
@@ -102,13 +106,44 @@ export class KanbanService {
     }));
   }
 
-  async moveCard(leadId: string, toStatus: string, toOrder: number, user?: User) {
+  async moveCard(leadId: string, toStatus: string, toOrder: number, user?: User, dataAgendamento?: string) {
     if (user && !ehGestor(user)) {
       const destino = await this.columnsRepo.findOne({ where: { key: toStatus } });
       if (destino?.somenteGestores) throw new ForbiddenException("Essa coluna é só para gerentes.");
     }
     // Delega ao LeadsService para registrar o histórico da movimentação.
-    return this.leadsService.updateStatus(leadId, toStatus, toOrder, user);
+    const r = await this.leadsService.updateStatus(leadId, toStatus, toOrder, user);
+    if (toStatus === LeadStatus.AGENDAMENTO && dataAgendamento) await this.gravarAgendamento(leadId, new Date(dataAgendamento));
+    return r;
+  }
+
+  /**
+   * Dia do agendamento (perguntado no Kanban): grava no lead e põe na Agenda do
+   * responsável. Mover de novo pra Agendamento só troca a data (não duplica).
+   */
+  private async gravarAgendamento(leadId: string, quando: Date) {
+    if (isNaN(quando.getTime())) throw new BadRequestException("Data do agendamento inválida.");
+    await this.leadsRepo.update(leadId, { dataAgendamento: quando } as any);
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
+    if (!lead) return;
+    const appts = this.leadsRepo.manager.getRepository(Appointment);
+    const ja = await appts.findOne({ where: { leadId, notes: MARCA_AGENDAMENTO_KANBAN, status: AppointmentStatus.AGENDADO } });
+    if (ja) {
+      await appts.update(ja.id, { scheduledAt: quando, userId: lead.responsavelId } as any);
+      return;
+    }
+    await appts.save(
+      appts.create({
+        title: `Agendamento — ${lead.name}`,
+        type: AppointmentType.VISITA,
+        status: AppointmentStatus.AGENDADO,
+        scheduledAt: quando,
+        location: lead.empreendimento || undefined,
+        notes: MARCA_AGENDAMENTO_KANBAN,
+        leadId,
+        userId: lead.responsavelId || undefined,
+      })
+    );
   }
 
   /* ---------------- Edição de colunas (somente Diretor) ---------------- */
