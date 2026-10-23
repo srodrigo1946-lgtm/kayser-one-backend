@@ -24,6 +24,12 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsString } from "class-validator";
+
+class TransferirLeadsDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @IsString({ each: true }) leadIds: string[];
+  @IsString() responsavelId: string;
+}
 
 @ApiTags("Leads")
 @ApiBearerAuth()
@@ -79,6 +85,12 @@ export class LeadsController {
   @ApiOperation({ summary: "Criar novo lead" })
   create(@Body() dto: CreateLeadDto, @Request() req: any) {
     return this.leadsService.create(dto, req.user);
+  }
+
+  @Post("transferir")
+  @ApiOperation({ summary: "Transferir vários leads de uma vez (Diretor: qualquer um; gestor: dentro do time; corretor: não)" })
+  transferir(@Body() dto: TransferirLeadsDto, @Request() req: any) {
+    return this.leadsService.transferirEmMassa(dto.leadIds, dto.responsavelId, req.user);
   }
 
   @Put(":id")

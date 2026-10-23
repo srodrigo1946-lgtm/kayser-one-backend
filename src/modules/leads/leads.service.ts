@@ -329,6 +329,49 @@ export class LeadsService {
     return saved;
   }
 
+  /**
+   * Transferência em massa (Rodrigo 23/10): Diretor manda qualquer lead pra qualquer um;
+   * gestor só leads do time e só pra alguém do time; corretor não transfere.
+   */
+  async transferirEmMassa(leadIds: string[], responsavelId: string, user: User) {
+    if (user.role === UserRole.CORRETOR) throw new ForbiddenException("Corretor não transfere leads.");
+    const ids = [...new Set(leadIds)].slice(0, 500);
+    if (!ids.length) throw new BadRequestException("Selecione pelo menos um lead.");
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null && !scopeIds.includes(responsavelId)) {
+      throw new ForbiddenException("Você só pode transferir para alguém da sua equipe.");
+    }
+    const destino = await this.leadsRepo.manager.getRepository(User).findOne({ where: { id: responsavelId } });
+    if (!destino || destino.active === false) throw new BadRequestException("Escolha alguém ativo para receber os leads.");
+
+    const leads = await this.leadsRepo.find({ where: { id: In(ids) } });
+    if (scopeIds !== null && leads.some((l) => !l.responsavelId || !scopeIds.includes(l.responsavelId))) {
+      throw new ForbiddenException("Tem lead fora da sua equipe na seleção.");
+    }
+    const mover = leads.filter((l) => l.responsavelId !== responsavelId);
+    if (!mover.length) return { transferidos: 0 };
+    const moverIds = mover.map((l) => l.id);
+    // Update direto (sem save de entidade com relação carregada — ver GOTCHA do update()).
+    await this.leadsRepo.update({ id: In(moverIds) }, {
+      responsavelId,
+      ...(responsavelId !== user.id ? { transferidoEm: new Date(), transferidoPorId: user.id } : {}),
+    } as any);
+    await this.convRepo.update({ leadId: In(moverIds) }, { assignedToId: responsavelId });
+    const nomes = new Map(
+      (await this.leadsRepo.manager.getRepository(User).find({ where: { id: In(mover.map((l) => l.responsavelId).filter(Boolean)) } }))
+        .map((u) => [u.id, u.name])
+    );
+    for (const l of mover) {
+      await this.history.log({
+        leadId: l.id,
+        type: LeadHistoryType.SISTEMA,
+        description: `Transferido de ${nomes.get(l.responsavelId) ?? "sem responsável"} para ${destino.name} por ${user.name} (em massa).`,
+        userId: user.id,
+      });
+    }
+    return { transferidos: mover.length };
+  }
+
   async updateStatus(id: string, status: string, order?: number, user?: User) {
     const lead = await this.findOne(id, user);
     const fromStatus = lead.status;
