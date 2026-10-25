@@ -109,4 +109,13 @@ describe("LeadsService", () => {
     // responsavelId vira um operador In(["c1"]) quando há escopo de equipe.
     expect((arg.where.responsavelId as any).value).toEqual(["c1"]);
   });
+
+  it("filtro 'Equipe de X': gestor + time dele, sem sair do escopo de quem pede", async () => {
+    users.getDescendantIds = jest.fn().mockResolvedValue(["j1", "c1", "c2"]);
+    await service.findAll({ equipeDe: "j1", user: diretor });
+    expect((leadsRepo.findAndCount.mock.calls[0][0].where.responsavelId as any).value).toEqual(["j1", "c1", "c2"]);
+    users.getScopeIds.mockResolvedValue(["g1", "c1"]); // gerente que só tem o c1
+    await service.findAll({ equipeDe: "j1", user: { id: "g1", role: UserRole.GERENTE } as any });
+    expect((leadsRepo.findAndCount.mock.calls[1][0].where.responsavelId as any).value).toEqual(["c1"]);
+  });
 });

@@ -92,12 +92,13 @@ export class LeadsService {
   async findAll(params: {
     status?: string;
     responsavelId?: string;
+    equipeDe?: string;
     search?: string;
     page?: number;
     limit?: number;
     user: User;
   }) {
-    const { status, responsavelId, search, user } = params;
+    const { status, responsavelId, equipeDe, search, user } = params;
     // Query sem page/limit chega como NaN (transform do ValidationPipe) → dava 500.
     const page = Math.max(1, Math.floor(Number(params.page)) || 1);
     const limit = Math.max(1, Math.floor(Number(params.limit)) || 50);
@@ -117,6 +118,11 @@ export class LeadsService {
       }
     } else if (responsavelId) {
       where.responsavelId = responsavelId;
+    }
+    // "Equipe de X" (transferência em massa): o gestor + todos abaixo dele, sempre dentro do escopo.
+    if (equipeDe) {
+      const time = await this.users.getDescendantIds(equipeDe);
+      where.responsavelId = In(scopeIds === null ? time : time.filter((id) => scopeIds.includes(id)));
     }
 
     if (status) where.status = status as LeadStatus;
