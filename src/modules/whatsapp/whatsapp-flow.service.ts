@@ -118,37 +118,26 @@ export class WhatsappFlowService {
   }
 
   /**
-   * Envia a resposta da IA: em ÁUDIO (voz masculina) quando o cliente mandou áudio —
-   * regra do Rodrigo —, senão em texto. Se a voz falhar, cai pro texto. Registra na conversa.
+   * Envia a resposta da IA: SEMPRE em texto e, logo depois, o mesmo em ÁUDIO (voz masculina)
+   * — regra do Rodrigo 25/10 ("texto + áudio sempre"). Se a voz falhar, fica só o texto.
    */
-  private async enviarResposta(
-    convId: string,
-    instanceName: string | undefined,
-    remoteJidFull: string,
-    reply: string,
-    emAudio: boolean
-  ) {
-    if (emAudio && instanceName) {
-      const voz = await this.ai.falarTexto(reply).catch(() => null);
-      if (voz) {
-        try {
-          await this.whatsapp.sendAudio(instanceName, remoteJidFull, voz.base64);
-          await this.conversations.addMessage(convId, `🔊 Áudio: "${reply}"`, "out", true, {
-            mediaType: "audio",
-            mediaMime: voz.mimetype,
-            base64: voz.base64,
-          });
-          return;
-        } catch (err) {
-          this.logger.warn(`Falha ao enviar áudio, vai em texto: ${(err as Error).message}`);
-        }
-      }
-    }
+  private async enviarResposta(convId: string, instanceName: string | undefined, remoteJidFull: string, reply: string) {
     await this.conversations.addMessage(convId, reply, "out", true);
-    if (instanceName) {
-      await this.whatsapp
-        .sendText(instanceName, remoteJidFull, reply)
-        .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
+    if (!instanceName) return;
+    await this.whatsapp
+      .sendText(instanceName, remoteJidFull, reply)
+      .catch((err) => this.logger.warn(`Falha ao enviar via WhatsApp: ${(err as Error).message}`));
+    const voz = await this.ai.falarTexto(reply).catch(() => null);
+    if (!voz) return;
+    try {
+      await this.whatsapp.sendAudio(instanceName, remoteJidFull, voz.base64);
+      await this.conversations.addMessage(convId, "🔊 Áudio da resposta acima", "out", true, {
+        mediaType: "audio",
+        mediaMime: voz.mimetype,
+        base64: voz.base64,
+      });
+    } catch (err) {
+      this.logger.warn(`Falha ao enviar o áudio (o texto já foi): ${(err as Error).message}`);
     }
   }
 
@@ -419,7 +408,7 @@ export class WhatsappFlowService {
       reply = textoIa;
 
       if (reply || fotosPedidas.length) {
-        if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, responderEmAudio);
+        if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply);
 
         // Score do lead: agendado logo na entrada da mensagem (agendarScore).
         await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
@@ -472,7 +461,7 @@ export class WhatsappFlowService {
     reply = textoIa;
     if (!reply && !fotosPedidas.length) return { persisted: true, autoReply: false, central: true };
 
-    if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply, clienteMandouAudio);
+    if (reply) await this.enviarResposta(conv.id, instanceName, remoteJidFull, reply);
     await this.enviarFotos(conv.id, instanceName, remoteJidFull, fotosPedidas);
 
     // Em segundo plano: visita combinada → Agenda (o score é agendado na entrada). Falha em silêncio.
