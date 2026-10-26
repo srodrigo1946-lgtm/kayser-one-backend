@@ -226,9 +226,10 @@ export class PlantaoService implements OnModuleInit {
          SELECT ck.uid AS "userId", u.name AS nome,
                 count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3)::int AS mes,
                 count(DISTINCT ck.data)::int AS ano,
-                count(*) FILTER (WHERE ck.data LIKE $3 AND per = 'manha')::int AS manha,
-                count(*) FILTER (WHERE ck.data LIKE $3 AND per = 'tarde')::int AS tarde,
-                count(*) FILTER (WHERE ck.data LIKE $3 AND per = 'noite')::int AS noite
+                -- Turno também 1 por dia: sábado/domingo têm 2 tardes (12h e 15h) e contavam 2x.
+                count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'manha')::int AS manha,
+                count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'tarde')::int AS tarde,
+                count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'noite')::int AS noite
            FROM ck JOIN users u ON u.id::text = ck.uid
           GROUP BY ck.uid, u.name
           ORDER BY mes DESC, ano DESC, u.name`,
@@ -244,9 +245,9 @@ export class PlantaoService implements OnModuleInit {
     // Hoje, por turno: quantos fizeram check-in de manhã, de tarde e à noite.
     const [turnosHoje] = await this.checkins.query(
       `${ck} /* turnosHoje */
-       SELECT count(*) FILTER (WHERE per = 'manha')::int AS manha,
-              count(*) FILTER (WHERE per = 'tarde')::int AS tarde,
-              count(*) FILTER (WHERE per = 'noite')::int AS noite
+       SELECT count(DISTINCT uid) FILTER (WHERE per = 'manha')::int AS manha,
+              count(DISTINCT uid) FILTER (WHERE per = 'tarde')::int AS tarde,
+              count(DISTINCT uid) FILTER (WHERE per = 'noite')::int AS noite
          FROM ck WHERE ck.data = $3`,
       [`${ano}%`, escopo, hoje]
     );
