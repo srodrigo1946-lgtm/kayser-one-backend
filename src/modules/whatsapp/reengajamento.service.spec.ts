@@ -56,10 +56,11 @@ describe("Fila da Equipe (25/10)", () => {
     expect(enviados[0]).toContain("*Caio*");
   });
 
-  it("sem corretor escolhido, o rodízio usa todos os corretores da equipe", async () => {
-    const { s, updates } = montar({ ...base }, [], 0);
-    await s.tratarResposta("L1", "quero saber", "inst", "55219");
-    expect(updates[0].responsavelId).toBe("c1");
+  it("sem corretor no rodízio, o lead fica com o gestor (ninguém recebe)", async () => {
+    const { s, updates, enviados } = montar({ ...base }, [], 0);
+    expect(await s.tratarResposta("L1", "quero saber", "inst", "55219")).toBe(true);
+    expect(updates).toHaveLength(0);
+    expect(enviados[0]).toContain("especialista da Kayser");
   });
 
   it("lead de equipe nunca cai na fila central: resposta solta fica com o gestor", async () => {

@@ -236,7 +236,7 @@ export class ReengajamentoService {
     );
   }
 
-  /** Próximo do rodízio da equipe: os escolhidos pelo gestor (ou todos os corretores do time). */
+  /** Próximo do rodízio da equipe: só os corretores que o gestor colocou (nenhum = fica com o gestor). */
   async proximoDaEquipe(gestorId: string): Promise<{ id: string; name: string } | null> {
     const time = await this.corretoresDaEquipe(gestorId);
     const [row] = await this.leads.query(`SELECT "memberIds", pointer FROM fila_equipe WHERE "gestorId" = $1`, [gestorId]);
@@ -246,7 +246,7 @@ export class ReengajamentoService {
     } catch {
       escolhidos = [];
     }
-    const roda = escolhidos.length ? escolhidos : time.map((c) => c.id);
+    const roda = escolhidos;
     if (!roda.length) return null;
     const p = (Number(row?.pointer) || 0) % roda.length;
     await this.leads.query(
@@ -292,14 +292,14 @@ export class ReengajamentoService {
     return {
       gestorId,
       ativo: !!row?.ativo,
-      corretores: time.map((c) => ({ ...c, noRodizio: escolhidos.length ? escolhidos.includes(c.id) : true })),
+      corretores: time.map((c) => ({ ...c, noRodizio: escolhidos.includes(c.id) })),
       ...contagem,
       ...fila,
       ultimas,
     };
   }
 
-  /** Gestor escolhe os corretores do rodízio (vazio = todos os corretores da equipe). */
+  /** Gestor coloca/remove corretores do rodízio (só da equipe dele; vazio = ninguém recebe). */
   async salvarCorretores(gestorId: string, memberIds: string[]) {
     const time = await this.corretoresDaEquipe(gestorId);
     const validos = memberIds.filter((id) => time.some((c) => c.id === id));
