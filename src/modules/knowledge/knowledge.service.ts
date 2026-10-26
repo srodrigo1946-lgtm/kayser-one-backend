@@ -64,7 +64,7 @@ const IMAGEM_MIME: Record<string, "image/jpeg" | "image/png" | "image/webp" | "i
 // Limite de caracteres por documento para manter a indexação gerenciável.
 const MAX_CONTENT = 50000;
 const CHUNK_SIZE = 1000;
-const TOP_K = 6;
+const TOP_K = 8;
 
 @Injectable()
 export class KnowledgeService {
@@ -352,6 +352,13 @@ export class KnowledgeService {
    * Contexto do lead pro Kayser: de qual empreendimento/anúncio ele veio. Sem isso a IA
    * perguntava "qual empreendimento?" pra quem acabou de clicar no anúncio de um deles.
    */
+  /** Empreendimento de interesse do lead (o da busca nos books vem primeiro). */
+  async propertyIdDoLead(leadId: string | null | undefined): Promise<string | null> {
+    if (!leadId) return null;
+    const lead = await this.repo.manager.getRepository(Lead).findOne({ where: { id: leadId }, select: ["id", "propertyId"] });
+    return lead?.propertyId ?? null;
+  }
+
   async contextoDoLead(leadId: string | null | undefined): Promise<string> {
     if (!leadId) return "";
     const lead = await this.repo.manager.getRepository(Lead).findOne({ where: { id: leadId } });
@@ -488,17 +495,24 @@ Este cliente chegou por um ANÚNCIO com o título "${lead.campanha}". Use o tít
    * Recupera os trechos mais relevantes para a consulta (RAG).
    * Usa similaridade do cosseno quando há embeddings; senão, pontuação por palavra-chave.
    */
-  async retrieve(query: string, k = TOP_K): Promise<string> {
-    const chunks = await this.chunkRepo.find();
+  async retrieve(query: string, k = TOP_K, propertyId?: string | null): Promise<string> {
+    const chunks = await this.chunkRepo.find({ relations: ["item"] });
     if (!chunks.length) return this.buildContext();
+    // Nome do empreendimento de cada trecho (o arquivo pode ter nome feio, ex.: "JOB9517_PF.pdf").
+    const props = await this.repo.manager.getRepository(Property).find({ select: ["id", "name"] });
+    const nomeProp = new Map(props.map((p) => [p.id, p.name]));
+    const rotulo = (c: KnowledgeChunk) => {
+      const nome = c.item?.propertyId ? nomeProp.get(c.item.propertyId) : null;
+      return nome ? `[Empreendimento: ${nome}]\n${c.content}` : c.content;
+    };
 
     const queryEmbedding = query ? await this.embeddings.embed(query) : null;
 
-    let ranked: { content: string; score: number }[];
+    let ranked: { content: string; score: number; doImovel: boolean }[];
     if (queryEmbedding) {
       ranked = chunks
         .filter((c) => c.embedding)
-        .map((c) => ({ content: c.content, score: EmbeddingService.cosine(queryEmbedding, c.embedding as number[]) }))
+        .map((c) => ({ content: rotulo(c), score: EmbeddingService.cosine(queryEmbedding, c.embedding as number[]), doImovel: !!propertyId && c.item?.propertyId === propertyId }))
         .sort((a, b) => b.score - a.score);
     } else {
       const terms = query.toLowerCase().split(/\W+/).filter((t) => t.length > 2);
@@ -506,12 +520,16 @@ Este cliente chegou por um ANÚNCIO com o título "${lead.campanha}". Use o tít
         .map((c) => {
           const lc = c.content.toLowerCase();
           const score = terms.reduce((s, t) => s + (lc.includes(t) ? 1 : 0), 0);
-          return { content: c.content, score };
+          return { content: rotulo(c), score, doImovel: !!propertyId && c.item?.propertyId === propertyId };
         })
         .sort((a, b) => b.score - a.score);
     }
 
-    const top = ranked.slice(0, k).filter((r) => r.score > 0);
+    // Empreendimento de interesse do cliente: os trechos DELE entram primeiro (antes a busca
+    // pegava trechos de qualquer book e a mesma pergunta tinha respostas diferentes — 25/10).
+    const doImovel = ranked.filter((r) => r.doImovel).slice(0, k);
+    const resto = ranked.filter((r) => !r.doImovel);
+    const top = [...doImovel, ...resto.slice(0, doImovel.length ? 3 : k).filter((r) => r.score > 0 || !doImovel.length)];
     const chosen = top.length ? top : ranked.slice(0, k);
     return chosen.map((r) => r.content).join("\n\n---\n\n");
   }

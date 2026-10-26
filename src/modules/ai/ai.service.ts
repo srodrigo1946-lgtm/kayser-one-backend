@@ -95,10 +95,10 @@ export class AiService {
   }
 
   /** Monta o prompt de sistema a partir das configurações + conhecimento relevante (RAG). */
-  private async buildSystemPrompt(query = ""): Promise<string> {
+  private async buildSystemPrompt(query = "", propertyId?: string | null): Promise<string> {
     const settings = await this.settingsService.get();
     const base = settings.masterPrompt?.trim() || DEFAULT_MASTER_PROMPT;
-    const context = await this.knowledgeService.retrieve(query);
+    const context = await this.knowledgeService.retrieve(query, undefined, propertyId);
     if (!context) return base;
     return `${base}\n\n=== BASE DE CONHECIMENTO (use apenas estas informações) ===\n${context}`;
   }
@@ -134,11 +134,12 @@ export class AiService {
     return { provider, model, apiKey };
   }
 
-  async chat(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string) {
+  async chat(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string, propertyId?: string | null) {
     const { provider, model, apiKey } = await this.resolveConfig(userAi);
-    // Usa a última mensagem do usuário como consulta para o RAG.
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    const base = await this.buildSystemPrompt(lastUser?.content || "");
+    // Consulta do RAG = as 3 últimas mensagens do cliente (uma pergunta solta como
+    // "e as condições?" sozinha não diz de qual empreendimento ele fala).
+    const doCliente = messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n");
+    const base = await this.buildSystemPrompt(doCliente, propertyId);
     const system = extraSystem ? `${base}
 
 ${extraSystem}` : base;
@@ -201,8 +202,8 @@ ${extraSystem}` : base;
   }
 
   /** Gera apenas o texto de resposta (usado pelo fluxo automático de WhatsApp). */
-  async generateReply(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string): Promise<string> {
-    const { content } = await this.chat(messages, userAi, extraSystem);
+  async generateReply(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string, propertyId?: string | null): Promise<string> {
+    const { content } = await this.chat(messages, userAi, extraSystem, propertyId);
     return content;
   }
 

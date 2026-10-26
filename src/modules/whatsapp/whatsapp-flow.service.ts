@@ -407,7 +407,8 @@ export class WhatsappFlowService {
         ]
           .filter(Boolean)
           .join("\n\n");
-        reply = paraWhatsapp(await this.ai.generateReply(history, userAi, extra));
+        const imovel = await this.knowledge.propertyIdDoLead(conv.leadId).catch(() => null);
+        reply = paraWhatsapp(await this.ai.generateReply(history, userAi, extra, imovel));
       } catch (err) {
         this.logger.warn(`IA não respondeu (chave/config?): ${(err as Error).message}`);
         return { persisted: true, autoReply: false };
@@ -458,7 +459,8 @@ export class WhatsappFlowService {
             clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : "",
           ]
             .filter(Boolean)
-            .join("\n\n")
+            .join("\n\n"),
+          await this.knowledge.propertyIdDoLead(conv.leadId).catch(() => null)
         )
       );
     } catch (err) {

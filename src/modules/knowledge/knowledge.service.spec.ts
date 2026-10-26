@@ -8,7 +8,10 @@ describe("KnowledgeService (RAG)", () => {
   let service: KnowledgeService;
 
   beforeEach(() => {
-    repo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn((x) => x), save: jest.fn(async (x) => ({ id: "k1", ...x })) };
+    repo = {
+      find: jest.fn(), findOne: jest.fn(), create: jest.fn((x) => x), save: jest.fn(async (x) => ({ id: "k1", ...x })),
+      manager: { getRepository: () => ({ find: async () => [{ id: "p-duet", name: "Duet Barra" }, { id: "p-ilha", name: "Ilha Stay" }] }) },
+    };
     chunkRepo = { find: jest.fn(), delete: jest.fn(), create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
     embeddings = { embed: jest.fn() };
     storage = { isEnabled: false };
@@ -39,6 +42,17 @@ describe("KnowledgeService (RAG)", () => {
     ]);
     const ctx = await service.retrieve("financiamento");
     expect(ctx).toContain("financiamento");
+  });
+
+  it("trechos do empreendimento do cliente vêm primeiro e com o nome dele", async () => {
+    embeddings.embed.mockResolvedValue([1, 0]);
+    chunkRepo.find.mockResolvedValue([
+      { content: "Ilha: entrada de 10%", embedding: [1, 0], item: { propertyId: "p-ilha" } },
+      { content: "Duet: entrada em 60x", embedding: [0.6, 0.8], item: { propertyId: "p-duet" } },
+    ]);
+    const ctx = await service.retrieve("condições de pagamento", 8, "p-duet");
+    expect(ctx.startsWith("[Empreendimento: Duet Barra]\nDuet: entrada em 60x")).toBe(true);
+    expect(ctx).toContain("[Empreendimento: Ilha Stay]"); // outros entram depois, como apoio
   });
 
   it("usa o contexto completo quando não há chunks indexados", async () => {
