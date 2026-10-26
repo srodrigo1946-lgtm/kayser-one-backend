@@ -4,7 +4,7 @@ import { IaOneMensagem } from "./ia-one-mensagem.entity";
 import { IaOneService } from "./ia-one.service";
 import { IaOneController } from "./ia-one.controller";
 import { ReengajamentoService } from "./reengajamento.service";
-import { ReengajamentoController } from "./reengajamento.controller";
+import { ReengajamentoController, FilaEquipeController } from "./reengajamento.controller";
 import { Lead } from "../leads/lead.entity";
 import { User } from "../users/user.entity";
 import { WhatsappController } from "./whatsapp.controller";
@@ -21,7 +21,7 @@ import { PropertiesModule } from "../properties/properties.module";
 
 @Module({
   imports: [TypeOrmModule.forFeature([IaOneMensagem, User, Lead]), ConversationsModule, SettingsModule, AiModule, forwardRef(() => LeadQueueModule), UsersModule, KnowledgeModule, PropertiesModule],
-  controllers: [WhatsappController, WhatsappWebhookController, IaOneController, ReengajamentoController],
+  controllers: [WhatsappController, WhatsappWebhookController, IaOneController, ReengajamentoController, FilaEquipeController],
   providers: [WhatsappService, WhatsappFlowService, IaOneService, ReengajamentoService],
   exports: [WhatsappService, WhatsappFlowService],
 })

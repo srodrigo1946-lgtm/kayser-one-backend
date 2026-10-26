@@ -486,8 +486,10 @@ export class LeadsService {
     return { key: col[0].key };
   }
 
-  async importFromExcel(file: Express.Multer.File, user: User, time?: string, status?: string, lotesJson?: string) {
+  async importFromExcel(file: Express.Multer.File, user: User, time?: string, status?: string, lotesJson?: string, filaEquipe = false) {
     if (!file?.buffer) throw new BadRequestException("Envie a planilha.");
+    // Fila da Equipe: só gestor abaixo do Diretor (a fila do Diretor é a central, com check-in).
+    const paraFilaEquipe = filaEquipe && ehGestor(user) && user.role !== UserRole.DIRETOR;
     // Coluna do Kanban onde os leads entram (vazio = Novo Lead).
     const padrao = await this.resolverColuna(status, user);
     const colunaStatus = padrao.key;
@@ -619,6 +621,8 @@ export class LeadsService {
         ...(lote?.status ? { status: lote.status } : {}),
         ...(lote?.dono ? { responsavelId: lote.dono } : {}),
         ...(lote?.origem ? { origem: lote.origem, source: LeadSource.TIME } : {}),
+        // Fila da Equipe: o que fica com o gestor (não mandado em lote pra outra pessoa) entra na fila dele.
+        ...(paraFilaEquipe && !lote?.responsavelId && !lote?.dono && !donoColuna ? { filaEquipeId: user.id } : {}),
       } as Partial<Lead>);
       leads.push(entity);
     }

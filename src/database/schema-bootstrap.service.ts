@@ -294,6 +294,15 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "transferidoPorId" varchar`);
     // Dia do agendamento perguntado no Kanban ao mover pra "Agendamento" (21/10/2026).
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "dataAgendamento" timestamp`);
+    // Fila da Equipe (25/10/2026): lead da planilha do gestor + corretores do rodízio dele.
+    await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "filaEquipeId" varchar`);
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS fila_equipe (
+        "gestorId" varchar PRIMARY KEY,
+        "memberIds" text NOT NULL DEFAULT '[]',
+        pointer int NOT NULL DEFAULT 0,
+        ativo boolean NOT NULL DEFAULT false
+      )`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoLastRun" text`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoAutoQtd" int NOT NULL DEFAULT 0`);
     await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "corujaoAgendadoPara" timestamp`);
@@ -571,6 +580,8 @@ export class SchemaBootstrapService implements OnModuleInit {
       INSERT INTO reengajamento_eventos ("leadId", nome, phone, tipo, "createdAt")
       SELECT id::varchar, name, phone, 'enviado', "reengajadoEm" FROM leads
       WHERE "reengajadoEm" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM reengajamento_eventos)`);
+    // Fila da Equipe (25/10/2026): de qual gestor é o envio (painel de cada equipe).
+    await this.dataSource.query(`ALTER TABLE reengajamento_eventos ADD COLUMN IF NOT EXISTS "filaEquipeId" varchar`);
   }
 
   /** Reuniões em vídeo (aba Reuniões). */

@@ -12,8 +12,23 @@ import { AiService } from "../ai/ai.service";
 import { PropertiesService } from "../properties/properties.service";
 import { acharPorNome } from "./ia-one.util";
 
-/** 25 por hora, das 9h às 21h (último lote às 20h) — pedido do Rodrigo 06/10/2026. */
+/** 25 por hora, das 9h às 22h (último lote às 21h) — Rodrigo 06/10, horário até 22h em 25/10/2026. */
 export const REENGAJAR_POR_HORA = 25;
+
+/** 1º contato com lead da planilha de um gestor (Fila da Equipe) — variado, como o reengajamento. */
+export function mensagemPrimeiroContato(nome: string | null | undefined, empreendimento: string | null | undefined, i: number): string {
+  const n = primeiroNome(nome);
+  const oi = n ? `Oi, ${n}!` : "Oi!";
+  const emp = (empreendimento || "").trim();
+  const sobre = emp ? `o ${emp}` : "imóveis com condições especiais";
+  const modelos = [
+    `${oi} Tudo bem? Aqui é da Kayser 😊 Você demonstrou interesse em ${sobre}. Ainda está procurando o seu imóvel?`,
+    `${oi} Aqui é da Kayser. Temos novidades sobre ${sobre} e lembrei de você 🏡 Posso te contar?`,
+    `${oi} Tudo certo? Sou da Kayser e estou entrando em contato sobre ${sobre}. Ainda faz sentido pra você?`,
+    `${oi} Aqui é da Kayser 😊 Pensando em sair do aluguel? Separei condições sobre ${sobre}. Quer saber mais?`,
+  ];
+  return `${modelos[i % modelos.length]}\n\n(Se não quiser receber, é só responder NÃO.)`;
+}
 
 const primeiroNome = (n?: string | null) => ((n || "").trim().split(/\s+/)[0] || "").replace(/^\w/, (c) => c.toUpperCase());
 
@@ -66,22 +81,44 @@ export class ReengajamentoService {
     private readonly imoveis: PropertiesService
   ) {}
 
-  /** Todo dia, de hora em hora das 9h às 20h (termina ~21h): manda pra 25 "sem interesse". */
-  @Cron("0 9-20 * * *", { timeZone: "America/Sao_Paulo" })
+  /**
+   * Todo dia, de hora em hora das 9h às 21h (termina ~22h), até 25 mensagens pelo número
+   * central: primeiro os leads das Filas da Equipe ligadas pelo Diretor (1º contato), depois
+   * os "sem interesse" (reengajamento). O total por hora não muda — protege o número.
+   */
+  @Cron("0 9-21 * * *", { timeZone: "America/Sao_Paulo" })
   async loteDaHora() {
     const s: any = await this.settings.get().catch(() => null);
-    if (!s || s.reengajarAtivo === false || this.rodando) return;
+    if (!s || this.rodando) return;
     const central = await this.conversations.diretorCentralId();
     if (!central || !(await this.whatsapp.conectado(`user_${central}`))) {
       this.logger.warn("Reengajamento: número central desconectado — lote pulado.");
       return;
     }
-    const lote = await this.leads.find({
-      where: { status: LeadStatus.VENDA_PERDIDA, reengajadoEm: IsNull(), naoPerturbe: false } as any,
-      order: { updatedAt: "ASC" },
-      take: REENGAJAR_POR_HORA * 2, // sobra pra pular quem não tem telefone
-    });
-    const fila = lote.filter((l) => (l.phone || l.whatsapp || "").replace(/\D/g, "").length >= 10).slice(0, REENGAJAR_POR_HORA);
+    const temTelefone = (l: any) => (l.phone || l.whatsapp || "").replace(/\D/g, "").length >= 10;
+    // Fila da Equipe: só filas LIGADAS (o Diretor liga/desliga) e lead ainda com o gestor.
+    const daEquipe: any[] = (
+      await this.leads
+        .query(
+          `SELECT l.id, l.name, l.phone, l.whatsapp, l.empreendimento, l."filaEquipeId" FROM leads l
+             JOIN fila_equipe f ON f."gestorId" = l."filaEquipeId" AND f.ativo = true
+            WHERE l."reengajadoEm" IS NULL AND l."naoPerturbe" = false AND l."responsavelId"::text = l."filaEquipeId"
+            ORDER BY l."createdAt" ASC LIMIT $1`,
+          [REENGAJAR_POR_HORA * 2]
+        )
+        .catch(() => [])
+    ).filter(temTelefone);
+    const semInteresse =
+      s.reengajarAtivo === false
+        ? []
+        : (
+            await this.leads.find({
+              where: { status: LeadStatus.VENDA_PERDIDA, reengajadoEm: IsNull(), naoPerturbe: false } as any,
+              order: { updatedAt: "ASC" },
+              take: REENGAJAR_POR_HORA * 2, // sobra pra pular quem não tem telefone
+            })
+          ).filter(temTelefone);
+    const fila: any[] = [...daEquipe, ...semInteresse].slice(0, REENGAJAR_POR_HORA);
     if (!fila.length) return;
     // Só cita empreendimento que EXISTE no cadastro (o campo às vezes guarda resposta de formulário, ex.: "Agende sua visita!").
     const nomesImoveis = ((await this.imoveis.findAll().catch(() => [])) as any[]).map((p) => p.name as string);
@@ -97,10 +134,13 @@ export class ReengajamentoService {
         try {
           const conv = await this.conversations.findOrCreateByPhone(phone, central);
           if (!conv.leadId) await this.conversations.setLead(conv.id, l.id, l.name).catch(() => null);
-          const texto = mensagemReengajar(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
+          const equipe = l.filaEquipeId as string | undefined;
+          // Lead da equipe: a conversa aparece pro gestor em Conversas ao vivo até ir pro corretor.
+          if (equipe) await this.leads.query(`UPDATE conversations SET "assignedToId" = $1 WHERE id = $2`, [equipe, conv.id]).catch(() => null);
+          const texto = (equipe ? mensagemPrimeiroContato : mensagemReengajar)(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
           await this.whatsapp.sendText(`user_${central}`, phone, texto);
           await this.conversations.addMessage(conv.id, texto, "out", true);
-          await this.registrar(l, "enviado");
+          await this.registrar(l, "enviado", undefined, equipe);
           enviados++;
         } catch (e) {
           this.logger.warn(`Reengajamento: falhou pro lead ${l.id} (${(e as Error).message}).`);
@@ -121,6 +161,7 @@ export class ReengajamentoService {
    */
   async tratarResposta(leadId: string, texto: string, instancia: string, destino: string): Promise<boolean> {
     const lead = await this.leads.findOne({ where: { id: leadId } });
+    if (lead?.filaEquipeId) return this.respostaDaEquipe(lead, texto, instancia, destino);
     const quando = (lead as any)?.reengajadoEm ? new Date((lead as any).reengajadoEm).getTime() : 0;
     if (!lead || lead.status !== LeadStatus.VENDA_PERDIDA || !quando || Date.now() - quando > 15 * 86_400_000) return false;
     // Palavras conhecidas primeiro; o que não der pra saber, a IA decide.
@@ -129,15 +170,7 @@ export class ReengajamentoService {
     if (r === "outro") return false;
     const nome = primeiroNome(lead.name);
     await this.registrar(lead, r, texto);
-    if (r === "nao") {
-      await this.whatsapp
-        .sendText(instancia, destino, `Tudo bem${nome ? `, ${nome}` : ""}! Não vamos mais te enviar mensagens. Obrigado pela atenção 🙏`)
-        .catch(() => null);
-      await bloquearTelefones(this.leads.manager, lead.phone, lead.whatsapp).catch(() => null);
-      await this.leads.remove(lead).catch((e) => this.logger.warn(`Reengajamento: não removi o lead ${lead.id} (${e.message}).`));
-      this.logger.log(`Reengajamento: lead ${lead.id} disse NÃO — removido do Kayser.`);
-      return true;
-    }
+    if (r === "nao") return this.removerPorNao(lead, instancia, destino);
     await this.leads.update(lead.id, { status: LeadStatus.NOVO_LEAD } as any);
     await this.whatsapp
       .sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com um especialista da Kayser.`)
@@ -145,6 +178,158 @@ export class ReengajamentoService {
     const f = await this.fila.distribuirLeadManual(lead.id).catch(() => null);
     this.logger.log(`Reengajamento: lead ${lead.id} tem interesse — fila: ${f?.status ?? "erro"}.`);
     return true;
+  }
+
+  /** Cliente disse NÃO: agradece, bloqueia o telefone e tira o lead do Kayser. */
+  private async removerPorNao(lead: Lead, instancia: string, destino: string): Promise<boolean> {
+    const nome = primeiroNome(lead.name);
+    await this.whatsapp
+      .sendText(instancia, destino, `Tudo bem${nome ? `, ${nome}` : ""}! Não vamos mais te enviar mensagens. Obrigado pela atenção 🙏`)
+      .catch(() => null);
+    await bloquearTelefones(this.leads.manager, lead.phone, lead.whatsapp).catch(() => null);
+    await this.leads.remove(lead).catch((e) => this.logger.warn(`Reengajamento: não removi o lead ${lead.id} (${e.message}).`));
+    this.logger.log(`Reengajamento: lead ${lead.id} disse NÃO — removido do Kayser.`);
+    return true;
+  }
+
+  /**
+   * Resposta de lead da Fila da Equipe. Sempre "tratado" (true): lead de equipe não cai na
+   * fila central (com check-in) nem é atendido pela IA — é da equipe do gestor.
+   * "sim" → rodízio entre os corretores da equipe (sem check-in); "não" → sai do Kayser;
+   * outra coisa → fica com o gestor em Conversas ao vivo.
+   */
+  private async respostaDaEquipe(lead: Lead, texto: string, instancia: string, destino: string): Promise<boolean> {
+    if (lead.responsavelId !== lead.filaEquipeId || !(lead as any).reengajadoEm) return true; // já é do corretor / ainda não chamado
+    let r = classificarResposta(texto);
+    if (r === "outro") r = await this.ai.classificarInteresse(texto);
+    if (r === "outro") return true;
+    await this.registrar(lead, r, texto, lead.filaEquipeId);
+    if (r === "nao") return this.removerPorNao(lead, instancia, destino);
+    const nome = primeiroNome(lead.name);
+    const corretor = await this.proximoDaEquipe(lead.filaEquipeId as string);
+    if (!corretor) {
+      await this.whatsapp.sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com um especialista da Kayser.`).catch(() => null);
+      this.logger.warn(`Fila da Equipe: gestor ${lead.filaEquipeId} sem corretor ativo — lead ${lead.id} ficou com o gestor.`);
+      return true;
+    }
+    // Vai pro corretor com o aviso de fogos (transferidoEm) e a conversa junto.
+    await this.leads.update(lead.id, { responsavelId: corretor.id, transferidoEm: new Date(), transferidoPorId: lead.filaEquipeId } as any);
+    await this.leads.query(`UPDATE conversations SET "assignedToId" = $1 WHERE "leadId" = $2`, [corretor.id, lead.id]).catch(() => null);
+    await this.whatsapp
+      .sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com *${primeiroNome(corretor.name)}*, especialista da Kayser.`)
+      .catch(() => null);
+    this.logger.log(`Fila da Equipe: lead ${lead.id} disse SIM → corretor ${corretor.id}.`);
+    return true;
+  }
+
+  /** Corretores ativos da equipe do gestor (ele + todos abaixo), por nome. */
+  async corretoresDaEquipe(gestorId: string): Promise<{ id: string; name: string }[]> {
+    return this.leads.query(
+      `WITH RECURSIVE t AS (
+         SELECT id::text AS id FROM users WHERE id::text = $1
+         UNION SELECT u.id::text FROM users u JOIN t ON u."managerId"::text = t.id
+       )
+       SELECT u.id::text AS id, u.name FROM users u JOIN t ON t.id = u.id::text
+        WHERE u.role = 'corretor' AND u.active = true AND u.approved = true AND u."empresaId" IS NULL
+        ORDER BY u.name`,
+      [gestorId]
+    );
+  }
+
+  /** Próximo do rodízio da equipe: os escolhidos pelo gestor (ou todos os corretores do time). */
+  async proximoDaEquipe(gestorId: string): Promise<{ id: string; name: string } | null> {
+    const time = await this.corretoresDaEquipe(gestorId);
+    const [row] = await this.leads.query(`SELECT "memberIds", pointer FROM fila_equipe WHERE "gestorId" = $1`, [gestorId]);
+    let escolhidos: string[] = [];
+    try {
+      escolhidos = (JSON.parse(row?.memberIds || "[]") as string[]).filter((id) => time.some((c) => c.id === id));
+    } catch {
+      escolhidos = [];
+    }
+    const roda = escolhidos.length ? escolhidos : time.map((c) => c.id);
+    if (!roda.length) return null;
+    const p = (Number(row?.pointer) || 0) % roda.length;
+    await this.leads.query(
+      `INSERT INTO fila_equipe ("gestorId", pointer) VALUES ($1, $2) ON CONFLICT ("gestorId") DO UPDATE SET pointer = $2`,
+      [gestorId, p + 1]
+    );
+    return time.find((c) => c.id === roda[p]) ?? null;
+  }
+
+  /** Painel de uma Fila da Equipe: ligada?, corretores do rodízio e os números (só da equipe). */
+  async painelEquipe(gestorId: string) {
+    const hojeSP = `("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = (now() AT TIME ZONE 'America/Sao_Paulo')::date`;
+    const [row] = await this.leads.query(`SELECT "memberIds", ativo FROM fila_equipe WHERE "gestorId" = $1`, [gestorId]);
+    let escolhidos: string[] = [];
+    try {
+      escolhidos = JSON.parse(row?.memberIds || "[]");
+    } catch {
+      escolhidos = [];
+    }
+    const time = await this.corretoresDaEquipe(gestorId);
+    const [contagem] = await this.leads.query(
+      `SELECT
+         count(*) FILTER (WHERE tipo = 'enviado' AND ${hojeSP})::int AS "enviadosHoje",
+         count(*) FILTER (WHERE tipo = 'sim' AND ${hojeSP})::int AS "simHoje",
+         count(*) FILTER (WHERE tipo = 'nao' AND ${hojeSP})::int AS "naoHoje",
+         count(*) FILTER (WHERE tipo = 'enviado')::int AS "enviadosTotal",
+         count(*) FILTER (WHERE tipo = 'sim')::int AS "simTotal",
+         count(*) FILTER (WHERE tipo = 'nao')::int AS "naoTotal"
+       FROM reengajamento_eventos WHERE "filaEquipeId" = $1`,
+      [gestorId]
+    );
+    const [fila] = await this.leads.query(
+      `SELECT
+         count(*) FILTER (WHERE "reengajadoEm" IS NOT NULL AND "responsavelId"::text = $1)::int AS aguardando,
+         count(*) FILTER (WHERE "reengajadoEm" IS NULL AND "naoPerturbe" = false AND "responsavelId"::text = $1)::int AS faltam
+       FROM leads WHERE "filaEquipeId" = $1`,
+      [gestorId]
+    );
+    const ultimas = await this.leads.query(
+      `SELECT nome, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE "filaEquipeId" = $1 AND tipo <> 'enviado' ORDER BY "createdAt" DESC LIMIT 20`,
+      [gestorId]
+    );
+    return {
+      gestorId,
+      ativo: !!row?.ativo,
+      corretores: time.map((c) => ({ ...c, noRodizio: escolhidos.length ? escolhidos.includes(c.id) : true })),
+      ...contagem,
+      ...fila,
+      ultimas,
+    };
+  }
+
+  /** Gestor escolhe os corretores do rodízio (vazio = todos os corretores da equipe). */
+  async salvarCorretores(gestorId: string, memberIds: string[]) {
+    const time = await this.corretoresDaEquipe(gestorId);
+    const validos = memberIds.filter((id) => time.some((c) => c.id === id));
+    await this.leads.query(
+      `INSERT INTO fila_equipe ("gestorId", "memberIds") VALUES ($1, $2) ON CONFLICT ("gestorId") DO UPDATE SET "memberIds" = $2`,
+      [gestorId, JSON.stringify(validos)]
+    );
+    return this.painelEquipe(gestorId);
+  }
+
+  /** Só o Diretor liga/desliga a fila de um gestor. */
+  async ligarFila(gestorId: string, ativo: boolean) {
+    await this.leads.query(
+      `INSERT INTO fila_equipe ("gestorId", ativo) VALUES ($1, $2) ON CONFLICT ("gestorId") DO UPDATE SET ativo = $2`,
+      [gestorId, ativo]
+    );
+    return this.painelEquipe(gestorId);
+  }
+
+  /** Diretor: todas as filas de gestor (com lead na fila ou configurada). */
+  async listarFilas() {
+    return this.leads.query(
+      `SELECT u.id::text AS "gestorId", u.name, u.role, COALESCE(f.ativo, false) AS ativo,
+              (SELECT count(*)::int FROM leads l WHERE l."filaEquipeId" = u.id::text AND l."reengajadoEm" IS NULL AND l."responsavelId"::text = u.id::text) AS faltam,
+              (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'enviado') AS enviados,
+              (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'sim') AS sim
+         FROM users u LEFT JOIN fila_equipe f ON f."gestorId" = u.id::text
+        WHERE u.role IN ('superintendente', 'gerente_geral', 'gerente') AND u.active = true
+        ORDER BY u.name`
+    );
   }
 
   /** LGPD: depois de 90 dias o histórico fica só com a contagem (sem nome, telefone e texto). */
@@ -159,14 +344,15 @@ export class ReengajamentoService {
   }
 
   /** Guarda o que aconteceu (o lead do "não" é apagado, o histórico fica). */
-  private async registrar(lead: Lead, tipo: "enviado" | "sim" | "nao", texto?: string) {
+  private async registrar(lead: Lead, tipo: "enviado" | "sim" | "nao", texto?: string, filaEquipeId?: string | null) {
     await this.leads
-      .query(`INSERT INTO reengajamento_eventos ("leadId", nome, phone, tipo, texto) VALUES ($1, $2, $3, $4, $5)`, [
+      .query(`INSERT INTO reengajamento_eventos ("leadId", nome, phone, tipo, texto, "filaEquipeId") VALUES ($1, $2, $3, $4, $5, $6)`, [
         lead.id,
         lead.name ?? null,
         lead.phone || lead.whatsapp || null,
         tipo,
         texto ? texto.slice(0, 500) : null,
+        filaEquipeId ?? null,
       ])
       .catch((e) => this.logger.warn(`Reengajamento: não registrei evento (${e.message}).`));
   }

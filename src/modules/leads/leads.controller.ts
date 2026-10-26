@@ -127,9 +127,10 @@ export class LeadsController {
     @Body("time") time: string,
     @Body("status") status: string,
     @Body("lotes") lotes: string,
-    @Request() req: any
+    @Request() req: any,
+    @Body("filaEquipe") filaEquipe?: string
   ) {
-    return this.leadsService.importFromExcel(file, req.user, time, status, lotes);
+    return this.leadsService.importFromExcel(file, req.user, time, status, lotes, filaEquipe === "1");
   }
 
   @Get("import/lista")

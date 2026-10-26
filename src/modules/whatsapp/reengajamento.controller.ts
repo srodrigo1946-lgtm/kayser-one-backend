@@ -1,5 +1,6 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Param, Put, Query, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { IsArray, IsBoolean, IsString } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -19,5 +20,57 @@ export class ReengajamentoController {
   @ApiOperation({ summary: "Enviados, sim (fila), não (removidos), aguardando e últimas respostas" })
   painel() {
     return this.reengajamento.painel();
+  }
+}
+
+class CorretoresDto {
+  @IsArray() @IsString({ each: true }) memberIds: string[];
+}
+class LigarDto {
+  @IsBoolean() ativo: boolean;
+}
+
+const GESTORES = [UserRole.SUPERINTENDENTE, UserRole.GERENTE_GERAL, UserRole.GERENTE];
+
+/**
+ * Fila da Equipe (25/10/2026): leads da planilha do gestor, 1º contato pelo número central
+ * (9h–22h, sem check-in) e o "sim" vai em rodízio pros corretores dele. Gestor vê só a dele
+ * e escolhe os corretores; só o Diretor liga e desliga.
+ */
+@ApiTags("Fila da Equipe")
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller("fila-equipe")
+export class FilaEquipeController {
+  constructor(private readonly reengajamento: ReengajamentoService) {}
+
+  @Get("minha")
+  @Roles(UserRole.DIRETOR, ...GESTORES)
+  @ApiOperation({ summary: "Painel da fila da equipe (gestor: a dele; Diretor: ?gestorId=)" })
+  minha(@Request() req: any, @Query("gestorId") gestorId?: string) {
+    const alvo = req.user.role === UserRole.DIRETOR ? gestorId : req.user.id;
+    if (!alvo) throw new ForbiddenException("Escolha o gestor.");
+    return this.reengajamento.painelEquipe(alvo);
+  }
+
+  @Put("minha/corretores")
+  @Roles(...GESTORES)
+  @ApiOperation({ summary: "Gestor escolhe os corretores do rodízio da fila dele" })
+  corretores(@Request() req: any, @Body() dto: CorretoresDto) {
+    return this.reengajamento.salvarCorretores(req.user.id, dto.memberIds);
+  }
+
+  @Get()
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Diretor: todas as filas de gestor" })
+  listar() {
+    return this.reengajamento.listarFilas();
+  }
+
+  @Put(":gestorId/ativo")
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Diretor liga/desliga a fila de um gestor" })
+  ligar(@Param("gestorId") gestorId: string, @Body() dto: LigarDto) {
+    return this.reengajamento.ligarFila(gestorId, dto.ativo);
   }
 }

@@ -166,6 +166,11 @@ export class Lead {
   @Column({ type: "varchar", nullable: true })
   transferidoPorId: string | null;
 
+  // Fila da Equipe (25/10): gestor dono da fila. O K1 faz o 1º contato pelo número central
+  // (9h–22h, sem check-in) e, no "sim", o lead vai em rodízio pra um corretor da equipe dele.
+  @Column({ type: "varchar", nullable: true })
+  filaEquipeId: string | null;
+
   // Dia/hora do agendamento, perguntado ao mover o card pra coluna "Agendamento" (21/10).
   @Column({ type: "timestamp", nullable: true })
   dataAgendamento: Date | null;
