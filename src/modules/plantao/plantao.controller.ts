@@ -103,6 +103,14 @@ export class PlantaoController {
     return this.plantao.liberar(req.user, dto.userId, dto.turnoId);
   }
 
+  @Get("ranking")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Ranking de check-in no mês e no ano + corretores com check-in hoje/mês/ano (só Diretor)" })
+  ranking(@Request() req: any) {
+    return this.plantao.rankingCheckin(req.user);
+  }
+
   @Get("equipe")
   @ApiOperation({ summary: "Corretores que posso bloquear no plantão (Diretor: todos; gestor: equipe)" })
   equipe(@Request() req: any) {

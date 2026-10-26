@@ -206,6 +206,26 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     expect(turnoLivreDoStand("15:00")).toBe(false);
   });
 
+  it("ranking de check-in: mês, ano, gráfico dos 12 meses e escopo da equipe", async () => {
+    const chamadas: any[] = [];
+    const checkins = {
+      query: async (q: string, p: any[]) => {
+        chamadas.push(p);
+        if (q.includes("DISTINCT")) return [{ hoje: 4, mes: 12, ano: 30 }];
+        return q.includes("substr") ? [{ m: "10", n: 7 }, { m: "09", n: 3 }] : [{ userId: "c1", nome: "Ana", mes: 5, ano: 9 }];
+      },
+    };
+    const usersService = { getScopeIds: async () => ["g1", "c1"] };
+    const s = new Svc(checkins as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, usersService as any);
+    const r = await s.rankingCheckin({ id: "g1", role: "gerente" } as any);
+    expect(r.linhas[0]).toEqual({ userId: "c1", nome: "Ana", mes: 5, ano: 9 });
+    expect(r.porMes).toHaveLength(12);
+    expect(r.porMes[9]).toBe(7);
+    expect(r.porMes[8]).toBe(3);
+    expect(chamadas[0][2]).toEqual(["g1", "c1"]); // escopo vai pra consulta
+    expect(r.corretores).toEqual({ hoje: 4, mes: 12, ano: 30 });
+  });
+
   const montar = (horaInicio: string, ck: any) => {
     const updates: any[] = [];
     const checkins = { findOne: async () => (ck ? { ...ck, saiuEm: ck.saiuEm ?? null } : null), update: async (id: string, d: any) => { updates.push({ id, ...d }); if (ck) Object.assign(ck, d); } };

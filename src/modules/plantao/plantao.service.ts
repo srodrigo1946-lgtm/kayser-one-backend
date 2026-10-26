@@ -205,6 +205,43 @@ export class PlantaoService implements OnModuleInit {
     return !!s?.plantaoLivreDesde && hojeSP() >= s.plantaoLivreDesde;
   }
 
+  /**
+   * Ranking de check-in (25/10): quantos plantões cada um fez no mês e no ano (Brasília).
+   * Escopo da equipe: Diretor todos, gestor o time, corretor ele mesmo.
+   */
+  async rankingCheckin(user: User) {
+    const escopo = await this.usersService.getScopeIds(user);
+    const hoje = hojeSP();
+    const mes = hoje.slice(0, 7), ano = hoje.slice(0, 4);
+    const linhas: { userId: string; nome: string; mes: number; ano: number }[] = await this.checkins.query(
+      `SELECT c."userId"::text AS "userId", u.name AS nome,
+              count(*) FILTER (WHERE c.data LIKE $1)::int AS mes,
+              count(*)::int AS ano
+         FROM plantao_checkins c JOIN users u ON u.id::text = c."userId"::text
+        WHERE c.data LIKE $2 AND ($3::text[] IS NULL OR c."userId"::text = ANY($3::text[]))
+        GROUP BY c."userId", u.name
+        ORDER BY mes DESC, ano DESC, u.name`,
+      [`${mes}%`, `${ano}%`, escopo]
+    );
+    // Gráfico: total de check-ins de cada mês do ano (mesmo escopo).
+    const meses: { m: string; n: number }[] = await this.checkins.query(
+      `SELECT substr(data, 6, 2) AS m, count(*)::int AS n FROM plantao_checkins
+        WHERE data LIKE $1 AND ($2::text[] IS NULL OR "userId"::text = ANY($2::text[]))
+        GROUP BY 1`,
+      [`${ano}%`, escopo]
+    );
+    const porMes = Array.from({ length: 12 }, (_, i) => meses.find((x) => Number(x.m) === i + 1)?.n ?? 0);
+    // Quantos corretores DIFERENTES fizeram check-in hoje, no mês e no ano.
+    const [corretores] = await this.checkins.query(
+      `SELECT count(DISTINCT "userId") FILTER (WHERE data = $1)::int AS hoje,
+              count(DISTINCT "userId") FILTER (WHERE data LIKE $2)::int AS mes,
+              count(DISTINCT "userId")::int AS ano
+         FROM plantao_checkins WHERE data LIKE $3 AND ($4::text[] IS NULL OR "userId"::text = ANY($4::text[]))`,
+      [hoje, `${mes}%`, `${ano}%`, escopo]
+    );
+    return { mes, ano, linhas, porMes, corretores: corretores ?? { hoje: 0, mes: 0, ano: 0 } };
+  }
+
   /** Corretor que pode estar no plantão (só CORRETOR ativo, aprovado, sem empresa parceira). */
   private elegivel(u: User): boolean {
     return u.role === UserRole.CORRETOR && u.active !== false && u.approved !== false && !u.empresaId;
