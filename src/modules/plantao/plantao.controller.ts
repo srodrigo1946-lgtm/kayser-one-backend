@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Request, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Request, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsNumber, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
@@ -109,6 +109,14 @@ export class PlantaoController {
   @ApiOperation({ summary: "Ranking de check-in no mês e no ano + corretores com check-in hoje/mês/ano (só Diretor)" })
   ranking(@Request() req: any) {
     return this.plantao.rankingCheckin(req.user);
+  }
+
+  @Get("ranking/:userId/dias")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Dias de check-in de um corretor no ano: turno, stand e hora (só Diretor)" })
+  diasDoCorretor(@Param("userId", ParseUUIDPipe) userId: string, @Query("ano") ano?: string) {
+    return this.plantao.diasDoCorretor(userId, ano ?? "");
   }
 
   @Get("equipe")

@@ -270,6 +270,22 @@ export class PlantaoService implements OnModuleInit {
     };
   }
 
+  /** Dias de check-in de um corretor no ano (Diretor): data, turno, stand e hora (Brasília). */
+  async diasDoCorretor(userId: string, ano: string) {
+    const a = /^\d{4}$/.test(ano) ? ano : hojeSP().slice(0, 4);
+    return this.checkins.query(
+      `SELECT c.data,
+              CASE WHEN t."horaInicio" < '12:00' THEN 'manha' WHEN t."horaInicio" < '18:00' THEN 'tarde' ELSE 'noite' END AS per,
+              t."horaInicio" AS turno, c."standNome" AS stand,
+              to_char(c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI') AS hora,
+              (c."saiuEm" IS NOT NULL) AS saiu
+         FROM plantao_checkins c LEFT JOIN escala_turnos t ON t.id::text = c."turnoId"::text
+        WHERE c."userId"::text = $1 AND c.data LIKE $2
+        ORDER BY c.data, t."horaInicio"`,
+      [userId, `${a}%`]
+    );
+  }
+
   /** Corretor que pode estar no plantão (só CORRETOR ativo, aprovado, sem empresa parceira). */
   private elegivel(u: User): boolean {
     return u.role === UserRole.CORRETOR && u.active !== false && u.approved !== false && !u.empresaId;

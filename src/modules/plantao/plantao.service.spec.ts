@@ -229,6 +229,17 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     expect(r.turnosHoje).toEqual({ manha: 3, tarde: 2, noite: 1 });
   });
 
+  it("dias do corretor: busca só o ano pedido (ano inválido vira o atual)", async () => {
+    const params: any[] = [];
+    const checkins = { query: async (_q: string, p: any[]) => (params.push(p), [{ data: "2026-10-10", per: "manha", stand: "Vibe", hora: "08:19" }]) };
+    const s = new Svc(checkins as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const d = await s.diasDoCorretor("u1", "2026");
+    expect(d[0].data).toBe("2026-10-10");
+    expect(params[0]).toEqual(["u1", "2026%"]);
+    await s.diasDoCorretor("u1", "x'; drop");
+    expect(params[1][1]).toMatch(/^\d{4}%$/);
+  });
+
   const montar = (horaInicio: string, ck: any) => {
     const updates: any[] = [];
     const checkins = { findOne: async () => (ck ? { ...ck, saiuEm: ck.saiuEm ?? null } : null), update: async (id: string, d: any) => { updates.push({ id, ...d }); if (ck) Object.assign(ck, d); } };
