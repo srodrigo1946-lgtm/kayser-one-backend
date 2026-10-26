@@ -211,8 +211,10 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     const checkins = {
       query: async (q: string, p: any[]) => {
         chamadas.push(p);
-        if (q.includes("DISTINCT")) return [{ hoje: 4, mes: 12, ano: 30 }];
-        return q.includes("substr") ? [{ m: "10", n: 7 }, { m: "09", n: 3 }] : [{ userId: "c1", nome: "Ana", mes: 5, ano: 9 }];
+        if (q.includes("/* corretores */")) return [{ hoje: 4, mes: 12, ano: 30 }];
+        if (q.includes("/* turnosHoje */")) return [{ manha: 3, tarde: 2, noite: 1 }];
+        if (q.includes("/* meses */")) return [{ m: "10", n: 7 }, { m: "09", n: 3 }];
+        return [{ userId: "c1", nome: "Ana", mes: 5, ano: 9 }];
       },
     };
     const usersService = { getScopeIds: async () => ["g1", "c1"] };
@@ -222,8 +224,9 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     expect(r.porMes).toHaveLength(12);
     expect(r.porMes[9]).toBe(7);
     expect(r.porMes[8]).toBe(3);
-    expect(chamadas[0][2]).toEqual(["g1", "c1"]); // escopo vai pra consulta
+    expect(chamadas[0][1]).toEqual(["g1", "c1"]); // escopo vai pra consulta
     expect(r.corretores).toEqual({ hoje: 4, mes: 12, ano: 30 });
+    expect(r.turnosHoje).toEqual({ manha: 3, tarde: 2, noite: 1 });
   });
 
   const montar = (horaInicio: string, ck: any) => {

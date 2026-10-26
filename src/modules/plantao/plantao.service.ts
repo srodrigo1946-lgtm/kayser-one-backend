@@ -213,33 +213,60 @@ export class PlantaoService implements OnModuleInit {
     const escopo = await this.usersService.getScopeIds(user);
     const hoje = hojeSP();
     const mes = hoje.slice(0, 7), ano = hoje.slice(0, 4);
-    const linhas: { userId: string; nome: string; mes: number; ano: number }[] = await this.checkins.query(
-      `SELECT c."userId"::text AS "userId", u.name AS nome,
-              count(*) FILTER (WHERE c.data LIKE $1)::int AS mes,
-              count(*)::int AS ano
-         FROM plantao_checkins c JOIN users u ON u.id::text = c."userId"::text
-        WHERE c.data LIKE $2 AND ($3::text[] IS NULL OR c."userId"::text = ANY($3::text[]))
-        GROUP BY c."userId", u.name
-        ORDER BY mes DESC, ano DESC, u.name`,
-      [`${mes}%`, `${ano}%`, escopo]
-    );
-    // Gráfico: total de check-ins de cada mês do ano (mesmo escopo).
+    // Cada check-in com o turno do dia: manhã (começa antes das 12h), tarde (12h–18h), noite (18h+).
+    const ck = `WITH ck AS (
+        SELECT c."userId"::text AS uid, c.data,
+               CASE WHEN t."horaInicio" < '12:00' THEN 'manha' WHEN t."horaInicio" < '18:00' THEN 'tarde' ELSE 'noite' END AS per
+          FROM plantao_checkins c LEFT JOIN escala_turnos t ON t.id::text = c."turnoId"::text
+         WHERE c.data LIKE $1 AND ($2::text[] IS NULL OR c."userId"::text = ANY($2::text[])))`;
+    // Ranking conta 1 por DIA (Rodrigo 25/10); manhã/tarde/noite do mês ficam separados ao lado.
+    const linhas: { userId: string; nome: string; mes: number; ano: number; manha: number; tarde: number; noite: number }[] =
+      await this.checkins.query(
+        `${ck} /* ranking */
+         SELECT ck.uid AS "userId", u.name AS nome,
+                count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3)::int AS mes,
+                count(DISTINCT ck.data)::int AS ano,
+                count(*) FILTER (WHERE ck.data LIKE $3 AND per = 'manha')::int AS manha,
+                count(*) FILTER (WHERE ck.data LIKE $3 AND per = 'tarde')::int AS tarde,
+                count(*) FILTER (WHERE ck.data LIKE $3 AND per = 'noite')::int AS noite
+           FROM ck JOIN users u ON u.id::text = ck.uid
+          GROUP BY ck.uid, u.name
+          ORDER BY mes DESC, ano DESC, u.name`,
+        [`${ano}%`, escopo, `${mes}%`]
+      );
+    // Gráfico: corretor-dia de cada mês do ano (1 por corretor por dia).
     const meses: { m: string; n: number }[] = await this.checkins.query(
-      `SELECT substr(data, 6, 2) AS m, count(*)::int AS n FROM plantao_checkins
+      `/* meses */ SELECT substr(data, 6, 2) AS m, count(DISTINCT ("userId"::text || data))::int AS n FROM plantao_checkins
         WHERE data LIKE $1 AND ($2::text[] IS NULL OR "userId"::text = ANY($2::text[]))
         GROUP BY 1`,
       [`${ano}%`, escopo]
     );
+    // Hoje, por turno: quantos fizeram check-in de manhã, de tarde e à noite.
+    const [turnosHoje] = await this.checkins.query(
+      `${ck} /* turnosHoje */
+       SELECT count(*) FILTER (WHERE per = 'manha')::int AS manha,
+              count(*) FILTER (WHERE per = 'tarde')::int AS tarde,
+              count(*) FILTER (WHERE per = 'noite')::int AS noite
+         FROM ck WHERE ck.data = $3`,
+      [`${ano}%`, escopo, hoje]
+    );
     const porMes = Array.from({ length: 12 }, (_, i) => meses.find((x) => Number(x.m) === i + 1)?.n ?? 0);
     // Quantos corretores DIFERENTES fizeram check-in hoje, no mês e no ano.
     const [corretores] = await this.checkins.query(
-      `SELECT count(DISTINCT "userId") FILTER (WHERE data = $1)::int AS hoje,
+      `/* corretores */ SELECT count(DISTINCT "userId") FILTER (WHERE data = $1)::int AS hoje,
               count(DISTINCT "userId") FILTER (WHERE data LIKE $2)::int AS mes,
               count(DISTINCT "userId")::int AS ano
          FROM plantao_checkins WHERE data LIKE $3 AND ($4::text[] IS NULL OR "userId"::text = ANY($4::text[]))`,
       [hoje, `${mes}%`, `${ano}%`, escopo]
     );
-    return { mes, ano, linhas, porMes, corretores: corretores ?? { hoje: 0, mes: 0, ano: 0 } };
+    return {
+      mes,
+      ano,
+      linhas,
+      porMes,
+      corretores: corretores ?? { hoje: 0, mes: 0, ano: 0 },
+      turnosHoje: turnosHoje ?? { manha: 0, tarde: 0, noite: 0 },
+    };
   }
 
   /** Corretor que pode estar no plantão (só CORRETOR ativo, aprovado, sem empresa parceira). */
