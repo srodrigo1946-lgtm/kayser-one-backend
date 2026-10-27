@@ -401,42 +401,55 @@ export class ReengajamentoService {
     const params = [dia(de) ?? "2000-01-01", dia(ate) ?? "2999-12-31"];
     const dataSP = `(e."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')`;
     const periodo = `${dataSP}::date BETWEEN $1::date AND $2::date`;
+    const nomeFila = `COALESCE('Fila de ' || trim(u.name), 'Fila do Diretor')`;
     const resumo: any[] = await this.leads.query(
-      `SELECT COALESCE(u.name, 'Fila do Diretor') AS fila,
+      `SELECT ${nomeFila} AS fila,
               count(*) FILTER (WHERE e.tipo = 'enviado')::int AS chamados,
               count(*) FILTER (WHERE e.tipo = 'sim')::int AS sim,
               count(*) FILTER (WHERE e.tipo = 'nao')::int AS nao
          FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
-        WHERE ${periodo} GROUP BY 1 ORDER BY 1`,
+        WHERE ${periodo} GROUP BY 1 ORDER BY (1 <> 'Fila do Diretor'), 1`,
       params
     );
-    const respostas: any[] = await this.leads.query(
-      `SELECT to_char(${dataSP}, 'DD/MM/YYYY HH24:MI') AS data, COALESCE(u.name, 'Fila do Diretor') AS fila,
-              e.nome, e.phone, e.tipo, e.texto
+    const eventos: any[] = await this.leads.query(
+      `SELECT to_char(${dataSP}, 'DD/MM/YYYY HH24:MI') AS data, ${nomeFila} AS fila, e.nome, e.phone, e.tipo, e.texto
          FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
-        WHERE e.tipo <> 'enviado' AND ${periodo} ORDER BY e."createdAt" DESC`,
+        WHERE ${periodo} ORDER BY e."createdAt" DESC`,
       params
     );
+    // Total de leads de cada fila (hoje, sem filtro de data): planilha do gestor / "sem interesse" do Diretor.
+    const totais: any[] = await this.leads.query(
+      `SELECT COALESCE('Fila de ' || trim(u.name), 'Fila do Diretor') AS fila, count(*)::int AS total,
+              count(*) FILTER (WHERE l."reengajadoEm" IS NULL AND l."naoPerturbe" = false)::int AS faltam
+         FROM leads l LEFT JOIN users u ON u.id::text = l."filaEquipeId"
+        WHERE l."filaEquipeId" IS NOT NULL OR l.status = $1
+        GROUP BY 1`,
+      [LeadStatus.VENDA_PERDIDA]
+    );
+    for (const t of totais) if (!resumo.some((r) => r.fila === t.fila)) resumo.push({ fila: t.fila, chamados: 0, sim: 0, nao: 0 });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
-      XLSX.utils.json_to_sheet(resumo.map((r) => ({ Fila: String(r.fila).trim(), Chamados: r.chamados, Sim: r.sim, "Não": r.nao }))),
-      "Resumo por fila"
-    );
-    XLSX.utils.book_append_sheet(
-      wb,
       XLSX.utils.json_to_sheet(
-        respostas.map((r) => ({
-          Data: r.data,
-          Fila: String(r.fila).trim(),
-          Cliente: r.nome ?? "",
-          Telefone: r.phone ?? "",
-          Resposta: r.tipo === "sim" ? "Sim" : "Não",
-          Mensagem: r.texto ?? "",
-        }))
+        resumo.map((r) => {
+          const t = totais.find((x) => x.fila === r.fila);
+          return { Fila: r.fila, "Total de leads": t?.total ?? 0, "Faltam chamar": t?.faltam ?? 0, Chamados: r.chamados, Sim: r.sim, "Não": r.nao };
+        })
       ),
-      "Respostas"
+      "Resumo"
     );
+    // Uma aba por fila (Diretor e cada gestor), com cada cliente chamado e o que respondeu.
+    const TIPO: Record<string, string> = { enviado: "Chamado", sim: "Sim", nao: "Não" };
+    const usados = new Set<string>(["Resumo"]);
+    for (const r of resumo) {
+      let aba = String(r.fila).replace(/[\\/?*[\]:]/g, "").slice(0, 31);
+      while (usados.has(aba)) aba = aba.slice(0, 29) + usados.size;
+      usados.add(aba);
+      const linhas = eventos
+        .filter((e) => e.fila === r.fila)
+        .map((e) => ({ Data: e.data, Cliente: e.nome ?? "", Telefone: e.phone ?? "", Status: TIPO[e.tipo] ?? e.tipo, "Mensagem do cliente": e.texto ?? "" }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), aba);
+    }
     return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
