@@ -411,7 +411,10 @@ export class ReengajamentoService {
       [LeadStatus.VENDA_PERDIDA]
     );
     const ultimas = await this.leads.query(
-      `SELECT nome, phone, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE tipo <> 'enviado' AND "filaEquipeId" IS NULL ORDER BY "createdAt" DESC LIMIT 30`
+      // Respostas de todas as filas, cada uma com o nome do gestor (null = fila do Diretor).
+      `SELECT e.nome, e.phone, e.tipo, e.texto, e."createdAt", u.name AS gestor
+         FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
+        WHERE e.tipo <> 'enviado' ORDER BY e."createdAt" DESC LIMIT 30`
     );
     const s: any = await this.settings.get().catch(() => null);
     return { ativo: s?.reengajarAtivo !== false, porHora: REENGAJAR_POR_HORA, ...contagem, ...fila, ultimas };
