@@ -11,6 +11,7 @@ import { LeadQueueService } from "../lead-queue/lead-queue.service";
 import { AiService } from "../ai/ai.service";
 import { PropertiesService } from "../properties/properties.service";
 import { acharPorNome } from "./ia-one.util";
+import * as XLSX from "xlsx";
 
 /** 25 por hora, das 9h às 22h (último lote às 21h) — Rodrigo 06/10, horário até 22h em 25/10/2026. */
 export const REENGAJAR_POR_HORA = 25;
@@ -389,6 +390,54 @@ export class ReengajamentoService {
         filaEquipeId ?? null,
       ])
       .catch((e) => this.logger.warn(`Reengajamento: não registrei evento (${e.message}).`));
+  }
+
+  /**
+   * Relatório (Excel) do período: resumo por fila (Diretor e cada gestor) e todas as
+   * respostas. Datas em AAAA-MM-DD no horário de Brasília (vazio = desde sempre / até hoje).
+   */
+  async relatorio(de?: string, ate?: string): Promise<Buffer> {
+    const dia = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
+    const params = [dia(de) ?? "2000-01-01", dia(ate) ?? "2999-12-31"];
+    const dataSP = `(e."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')`;
+    const periodo = `${dataSP}::date BETWEEN $1::date AND $2::date`;
+    const resumo: any[] = await this.leads.query(
+      `SELECT COALESCE(u.name, 'Fila do Diretor') AS fila,
+              count(*) FILTER (WHERE e.tipo = 'enviado')::int AS chamados,
+              count(*) FILTER (WHERE e.tipo = 'sim')::int AS sim,
+              count(*) FILTER (WHERE e.tipo = 'nao')::int AS nao
+         FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
+        WHERE ${periodo} GROUP BY 1 ORDER BY 1`,
+      params
+    );
+    const respostas: any[] = await this.leads.query(
+      `SELECT to_char(${dataSP}, 'DD/MM/YYYY HH24:MI') AS data, COALESCE(u.name, 'Fila do Diretor') AS fila,
+              e.nome, e.phone, e.tipo, e.texto
+         FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
+        WHERE e.tipo <> 'enviado' AND ${periodo} ORDER BY e."createdAt" DESC`,
+      params
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(resumo.map((r) => ({ Fila: String(r.fila).trim(), Chamados: r.chamados, Sim: r.sim, "Não": r.nao }))),
+      "Resumo por fila"
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        respostas.map((r) => ({
+          Data: r.data,
+          Fila: String(r.fila).trim(),
+          Cliente: r.nome ?? "",
+          Telefone: r.phone ?? "",
+          Resposta: r.tipo === "sim" ? "Sim" : "Não",
+          Mensagem: r.texto ?? "",
+        }))
+      ),
+      "Respostas"
+    );
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
   /** Painel do Diretor: números de hoje e do total, quem falta e as últimas respostas. */

@@ -1,4 +1,5 @@
-import { Body, Controller, ForbiddenException, Get, Param, Put, Query, Request, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Param, Put, Query, Request, Res, UseGuards } from "@nestjs/common";
+import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray, IsBoolean, IsString } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -20,6 +21,15 @@ export class ReengajamentoController {
   @ApiOperation({ summary: "Enviados, sim (fila), não (removidos), aguardando e últimas respostas" })
   painel() {
     return this.reengajamento.painel();
+  }
+
+  @Get("relatorio")
+  @ApiOperation({ summary: "Relatório Excel do período (?de=AAAA-MM-DD&ate=AAAA-MM-DD): resumo por fila + respostas" })
+  async relatorio(@Query("de") de: string, @Query("ate") ate: string, @Res() res: Response) {
+    const buf = await this.reengajamento.relatorio(de, ate);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="relatorio-ia-${de || "inicio"}-a-${ate || "hoje"}.xlsx"`);
+    res.send(buf);
   }
 }
 
