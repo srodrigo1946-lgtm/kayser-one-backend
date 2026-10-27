@@ -361,7 +361,7 @@ export class ReengajamentoService {
               (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'sim') AS sim
          FROM users u LEFT JOIN fila_equipe f ON f."gestorId" = u.id::text
         WHERE u.role IN ('superintendente', 'gerente_geral', 'gerente') AND u.active = true
-        ORDER BY u.name`
+        ORDER BY COALESCE(f.ativo, false) DESC, (SELECT count(*) FROM leads l WHERE l."filaEquipeId" = u.id::text) > 0 DESC, u.name` // ligadas e com planilha primeiro
     );
   }
 
