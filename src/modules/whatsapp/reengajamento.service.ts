@@ -50,6 +50,19 @@ export function mensagemReengajar(nome: string | null | undefined, empreendiment
 }
 
 /** Resposta do cliente ao reengajamento: quer (fila), não quer (remove) ou outra coisa. */
+/** Metade da hora pra cada fila; se uma tiver menos, a outra usa a sobra. Intercala as duas. */
+export function dividirHora<T>(equipe: T[], diretor: T[], total: number): T[] {
+  const metade = Math.ceil(total / 2);
+  const nEquipe = Math.min(equipe.length, Math.max(metade, total - diretor.length));
+  const nDiretor = Math.min(diretor.length, total - nEquipe);
+  const a = equipe.slice(0, nEquipe), b = diretor.slice(0, nDiretor), out: T[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) out.push(a[i]);
+    if (i < b.length) out.push(b[i]);
+  }
+  return out;
+}
+
 export function classificarResposta(texto: string): "sim" | "nao" | "outro" {
   const t = (texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   if (!t) return "outro";
@@ -120,7 +133,9 @@ export class ReengajamentoService {
               take: REENGAJAR_POR_HORA * 2, // sobra pra pular quem não tem telefone
             })
           ).filter(temTelefone);
-    const fila: any[] = [...daEquipe, ...semInteresse].slice(0, REENGAJAR_POR_HORA);
+    // Filas independentes: cada uma tem a sua metade da hora (a sobra de uma vai pra outra),
+    // pra fila dos gestores não parar o reengajamento do Diretor (e vice-versa).
+    const fila: any[] = dividirHora(daEquipe, semInteresse, REENGAJAR_POR_HORA);
     if (!fila.length) return;
     // Só cita empreendimento que EXISTE no cadastro (o campo às vezes guarda resposta de formulário, ex.: "Agende sua visita!").
     const nomesImoveis = ((await this.imoveis.findAll().catch(() => [])) as any[]).map((p) => p.name as string);
@@ -386,7 +401,7 @@ export class ReengajamentoService {
          count(*) FILTER (WHERE tipo = 'enviado')::int AS "enviadosTotal",
          count(*) FILTER (WHERE tipo = 'sim')::int AS "simTotal",
          count(*) FILTER (WHERE tipo = 'nao')::int AS "naoTotal"
-       FROM reengajamento_eventos`
+       FROM reengajamento_eventos WHERE "filaEquipeId" IS NULL` // só a fila do Diretor — as dos gestores têm painel próprio
     );
     const [fila] = await this.leads.query(
       `SELECT
@@ -396,7 +411,7 @@ export class ReengajamentoService {
       [LeadStatus.VENDA_PERDIDA]
     );
     const ultimas = await this.leads.query(
-      `SELECT nome, phone, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE tipo <> 'enviado' ORDER BY "createdAt" DESC LIMIT 30`
+      `SELECT nome, phone, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE tipo <> 'enviado' AND "filaEquipeId" IS NULL ORDER BY "createdAt" DESC LIMIT 30`
     );
     const s: any = await this.settings.get().catch(() => null);
     return { ativo: s?.reengajarAtivo !== false, porHora: REENGAJAR_POR_HORA, ...contagem, ...fila, ultimas };

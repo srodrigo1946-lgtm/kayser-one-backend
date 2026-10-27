@@ -98,6 +98,22 @@ describe("Fila da Equipe (25/10)", () => {
   });
 });
 
+describe("Filas independentes na mesma hora (27/10)", () => {
+  const { dividirHora } = require("./reengajamento.service");
+  const lista = (p: string, n: number) => Array.from({ length: n }, (_, i) => `${p}${i}`);
+  it("as duas cheias: metade pra cada", () => {
+    const r = dividirHora(lista("e", 100), lista("d", 100), 25);
+    expect(r).toHaveLength(25);
+    expect(r.filter((x: string) => x.startsWith("e"))).toHaveLength(13);
+    expect(r.filter((x: string) => x.startsWith("d"))).toHaveLength(12);
+  });
+  it("a sobra de uma vai pra outra", () => {
+    expect(dividirHora(lista("e", 100), lista("d", 3), 25).filter((x: string) => x.startsWith("e"))).toHaveLength(22);
+    expect(dividirHora([], lista("d", 100), 25)).toHaveLength(25);
+    expect(dividirHora(lista("e", 5), [], 25)).toHaveLength(5);
+  });
+});
+
 describe("Reengajamento — só cita empreendimento cadastrado", () => {
   const { acharPorNome } = require("./ia-one.util");
   const imoveis = ["Ilha stay home Resort", "Villa Santé", "Sky Mário Guimarães"];
