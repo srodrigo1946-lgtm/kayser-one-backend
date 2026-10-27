@@ -319,7 +319,7 @@ export class ReengajamentoService {
       [gestorId]
     );
     const ultimas = await this.leads.query(
-      `SELECT nome, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE "filaEquipeId" = $1 AND tipo <> 'enviado' ORDER BY "createdAt" DESC LIMIT 20`,
+      `SELECT nome, tipo, texto, "createdAt" FROM reengajamento_eventos WHERE "filaEquipeId" = $1 AND tipo <> 'enviado' ORDER BY "createdAt" DESC LIMIT 40`,
       [gestorId]
     );
     return {
@@ -358,7 +358,8 @@ export class ReengajamentoService {
       `SELECT u.id::text AS "gestorId", u.name, u.role, COALESCE(f.ativo, false) AS ativo,
               (SELECT count(*)::int FROM leads l WHERE l."filaEquipeId" = u.id::text AND l."reengajadoEm" IS NULL AND l."naoPerturbe" = false) AS faltam,
               (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'enviado') AS enviados,
-              (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'sim') AS sim
+              (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'sim') AS sim,
+              (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'nao') AS nao
          FROM users u LEFT JOIN fila_equipe f ON f."gestorId" = u.id::text
         WHERE u.role IN ('superintendente', 'gerente_geral', 'gerente') AND u.active = true
         ORDER BY COALESCE(f.ativo, false) DESC, (SELECT count(*) FROM leads l WHERE l."filaEquipeId" = u.id::text) > 0 DESC, u.name` // ligadas e com planilha primeiro
@@ -411,10 +412,9 @@ export class ReengajamentoService {
       [LeadStatus.VENDA_PERDIDA]
     );
     const ultimas = await this.leads.query(
-      // Respostas de todas as filas, cada uma com o nome do gestor (null = fila do Diretor).
-      `SELECT e.nome, e.phone, e.tipo, e.texto, e."createdAt", u.name AS gestor
-         FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
-        WHERE e.tipo <> 'enviado' ORDER BY e."createdAt" DESC LIMIT 30`
+      // Só a fila do Diretor — as respostas de cada gestor aparecem no quadro "IA por gestor".
+      `SELECT nome, phone, tipo, texto, "createdAt" FROM reengajamento_eventos
+        WHERE tipo <> 'enviado' AND "filaEquipeId" IS NULL ORDER BY "createdAt" DESC LIMIT 40`
     );
     const s: any = await this.settings.get().catch(() => null);
     return { ativo: s?.reengajarAtivo !== false, porHora: REENGAJAR_POR_HORA, ...contagem, ...fila, ultimas };
