@@ -53,7 +53,8 @@ export function mensagemReengajar(nome: string | null | undefined, empreendiment
 export function classificarResposta(texto: string): "sim" | "nao" | "outro" {
   const t = (texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   if (!t) return "outro";
-  if (pedeParar(texto) || /^(nao|n|nao obrigad\w*|obrigad\w*,? nao|sem interesse|nao tenho interesse|nao quero|ja comprei|ja comprei outro|nao preciso)\b[.!]*/.test(t) || /\b(sem interesse|nao tenho (mais )?interesse|nao quero|ja comprei)\b/.test(t)) {
+  if (pedeParar(texto) || /^(nao|n|nao obrigad\w*|obrigad\w*,? nao|sem interesse|nao tenho interesse|nao quero|ja comprei|ja comprei outro|nao preciso)\b[.!]*/.test(t) || /\b(sem interesse|nao tenho (mais )?interesse|nao quero|ja comprei)\b/.test(t) || /\bnao[.!\s]*$/.test(t)) {
+    // "Quero não" / "agora não" (fim com "não") também é não.
     return "nao";
   }
   // Qualquer sinal positivo (pedido do Rodrigo 06/10): interesse, mais informação, gostei, valor/condições, visita.

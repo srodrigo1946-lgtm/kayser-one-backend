@@ -2,7 +2,7 @@ import { classificarResposta, mensagemReengajar } from "./reengajamento.service"
 
 describe("Reengajamento dos clientes 'sem interesse'", () => {
   it("entende NÃO (sai do Kayser)", () => {
-    for (const t of ["Não", "nao obrigado", "Não tenho interesse", "já comprei", "pare", "não quero mais receber mensagem"]) {
+    for (const t of ["Não", "nao obrigado", "Não tenho interesse", "já comprei", "pare", "não quero mais receber mensagem", "Quero não", "agora não!"]) {
       expect(classificarResposta(t)).toBe("nao");
     }
   });

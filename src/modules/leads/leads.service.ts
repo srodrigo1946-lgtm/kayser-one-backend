@@ -671,6 +671,32 @@ export class LeadsService {
   }
 
   /**
+   * Manda uma planilha JÁ subida pra Fila da Equipe de quem subiu (esqueceu de marcar
+   * "Mandar para a fila da minha equipe"). Só os leads que ainda estão com o gestor e
+   * nunca foram chamados. Diretor ou o próprio gestor que subiu.
+   */
+  async mandarImportacaoParaFila(importId: string, user: User) {
+    const imp: any[] = await this.leadsRepo.manager.query(
+      `SELECT i."userId", u.role, u."empresaId" FROM lead_imports i JOIN users u ON u.id::text = i."userId"::text WHERE i.id = $1`,
+      [importId]
+    );
+    if (!imp.length) throw new NotFoundException("Importação não encontrada.");
+    const dono = String(imp[0].userId);
+    if (user.role !== UserRole.DIRETOR && dono !== user.id) throw new ForbiddenException("Só o Diretor ou quem subiu a planilha.");
+    if (imp[0].role === UserRole.DIRETOR || imp[0].role === UserRole.CORRETOR || imp[0].empresaId) {
+      throw new BadRequestException("Fila da Equipe é só para planilha subida por gestor.");
+    }
+    const r: any[] = await this.leadsRepo.manager.query(
+      `UPDATE leads SET "filaEquipeId" = $2
+        WHERE "importLote" = $1 AND "responsavelId"::text = $2 AND "reengajadoEm" IS NULL AND "filaEquipeId" IS NULL
+        RETURNING id`,
+      [importId, dono]
+    );
+    this.logger.log(`Planilha ${importId} mandada pra Fila da Equipe de ${dono} por ${user.name}: ${r.length} lead(s).`);
+    return { naFila: r.length };
+  }
+
+  /**
    * Apaga TODOS os leads de uma planilha (subiu errado). Não bloqueia os telefones
    * (dá pra subir de novo). Conversas ficam, só desvinculadas do lead.
    */

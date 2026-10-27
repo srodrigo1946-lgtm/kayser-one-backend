@@ -139,6 +139,12 @@ export class LeadsController {
     return this.leadsService.listarImportacoes(req.user);
   }
 
+  @Post("import/:importId/fila-equipe")
+  @ApiOperation({ summary: "Mandar uma planilha já subida para a Fila da Equipe de quem subiu" })
+  mandarImportacaoParaFila(@Param("importId", ParseUUIDPipe) importId: string, @Request() req: any) {
+    return this.leadsService.mandarImportacaoParaFila(importId, req.user);
+  }
+
   @Delete("import/:importId")
   @ApiOperation({ summary: "Apagar todos os leads de uma planilha importada" })
   apagarImportacao(@Param("importId", ParseUUIDPipe) importId: string, @Request() req: any) {
