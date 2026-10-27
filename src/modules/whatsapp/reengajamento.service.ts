@@ -427,29 +427,54 @@ export class ReengajamentoService {
       [LeadStatus.VENDA_PERDIDA]
     );
     for (const t of totais) if (!resumo.some((r) => r.fila === t.fila)) resumo.push({ fila: t.fila, chamados: 0, sim: 0, nao: 0 });
+    // Relatório no formato profissional: título, período, tabela, linha de TOTAL e taxa de "sim".
+    const br = (s: string) => s.split("-").reverse().join("/");
+    const titulo = [
+      ["K1 — Relatório da IA (chamadas pelo WhatsApp)"],
+      [`Período: ${br(params[0]) === "01/01/2000" ? "desde o início" : br(params[0])} a ${params[1].startsWith("2999") ? "hoje" : br(params[1])}`],
+      [`Gerado em: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`],
+      [],
+    ];
+    const taxa = (sim: number, chamados: number) => (chamados ? `${((sim / chamados) * 100).toFixed(1).replace(".", ",")}%` : "—");
+    const linhas = resumo.map((r) => {
+      const t = totais.find((x) => x.fila === r.fila);
+      return [r.fila, t?.total ?? 0, t?.faltam ?? 0, r.chamados, r.sim, r.nao, taxa(r.sim, r.chamados)];
+    });
+    const soma = (i: number) => linhas.reduce((a, l) => a + (Number(l[i]) || 0), 0);
+    const tot = ["TOTAL", soma(1), soma(2), soma(3), soma(4), soma(5), taxa(soma(4), soma(3))];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(
-        resumo.map((r) => {
-          const t = totais.find((x) => x.fila === r.fila);
-          return { Fila: r.fila, "Total de leads": t?.total ?? 0, "Faltam chamar": t?.faltam ?? 0, Chamados: r.chamados, Sim: r.sim, "Não": r.nao };
-        })
-      ),
-      "Resumo"
-    );
-    // Uma aba por fila (Diretor e cada gestor), com cada cliente chamado e o que respondeu.
+    const wsResumo = XLSX.utils.aoa_to_sheet([
+      ...titulo,
+      ["Fila", "Total de leads", "Faltam chamar", "Total de chamadas", "Total Sim", "Total Não", "% Sim"],
+      ...linhas,
+      [],
+      tot,
+    ]);
+    wsResumo["!cols"] = [{ wch: 38 }, { wch: 15 }, { wch: 15 }, { wch: 18 }, { wch: 11 }, { wch: 11 }, { wch: 9 }];
+    wsResumo["!merges"] = [0, 1, 2].map((r) => ({ s: { r, c: 0 }, e: { r, c: 6 } }));
+    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
+    // Uma aba por fila (Diretor e cada gestor): resumo dela no topo + cada cliente chamado e o que respondeu.
     const TIPO: Record<string, string> = { enviado: "Chamado", sim: "Sim", nao: "Não" };
     const usados = new Set<string>(["Resumo"]);
-    for (const r of resumo) {
-      let aba = String(r.fila).replace(/[\\/?*[\]:]/g, "").slice(0, 31);
+    linhas.forEach((l) => {
+      const fila = String(l[0]);
+      let aba = fila.replace(/[\\/?*[\]:]/g, "").slice(0, 31);
       while (usados.has(aba)) aba = aba.slice(0, 29) + usados.size;
       usados.add(aba);
-      const linhas = eventos
-        .filter((e) => e.fila === r.fila)
-        .map((e) => ({ Data: e.data, Cliente: e.nome ?? "", Telefone: e.phone ?? "", Status: TIPO[e.tipo] ?? e.tipo, "Mensagem do cliente": e.texto ?? "" }));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), aba);
-    }
+      const ev = eventos.filter((e) => e.fila === fila);
+      const ws = XLSX.utils.aoa_to_sheet([
+        [fila],
+        titulo[1],
+        [],
+        ["Total de leads", "Faltam chamar", "Total de chamadas", "Total Sim", "Total Não", "% Sim"],
+        l.slice(1),
+        [],
+        ["Data", "Cliente", "Telefone", "Status", "Mensagem do cliente"],
+        ...ev.map((e) => [e.data, e.nome ?? "", e.phone ?? "", TIPO[e.tipo] ?? e.tipo, e.texto ?? ""]),
+      ]);
+      ws["!cols"] = [{ wch: 17 }, { wch: 32 }, { wch: 16 }, { wch: 18 }, { wch: 60 }, { wch: 9 }];
+      XLSX.utils.book_append_sheet(wb, ws, aba);
+    });
     return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
