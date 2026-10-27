@@ -59,7 +59,7 @@ export class LeadQueueService {
    * cliente (nome/telefone ficam só no sistema). Usa nome/e-mail do próprio corretor.
    * Best-effort via Resend: sem RESEND_API_KEY, é no-op. Nunca quebra a atribuição.
    */
-  private async notificarLeadPorEmail(userId: string) {
+  async notificarLeadPorEmail(userId: string) {
     try {
       const apiKey = this.config.get<string>("RESEND_API_KEY");
       if (!apiKey || !userId) return;

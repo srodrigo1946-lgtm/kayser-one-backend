@@ -44,8 +44,10 @@ describe("Fila da Equipe (25/10)", () => {
     };
     const whatsapp: any = { sendText: async (_i: string, _d: string, t: string) => enviados.push(t) };
     const ai: any = { classificarInteresse: async () => "outro" };
-    const s = new ReengajamentoService(leads, {} as any, {} as any, whatsapp, {} as any, ai, {} as any);
-    return { s, updates, sql, enviados };
+    const emails: string[] = [];
+    const fila: any = { notificarLeadPorEmail: async (id: string) => emails.push(id) };
+    const s = new ReengajamentoService(leads, {} as any, {} as any, whatsapp, fila, ai, {} as any);
+    return { s, updates, sql, enviados, emails };
   }
   const base = { id: "L1", name: "joão", filaEquipeId: "g1", responsavelId: "g1", reengajadoEm: new Date() };
 
@@ -74,8 +76,9 @@ describe("Fila da Equipe (25/10)", () => {
   });
 
   it("planilha já repartida: SIM fica com o mesmo corretor, que recebe o aviso", async () => {
-    const { s, updates, enviados } = montar({ ...base, responsavelId: "c1" }, ["c2", "c3"], 0);
+    const { s, updates, enviados, emails } = montar({ ...base, responsavelId: "c1" }, ["c2", "c3"], 0);
     expect(await s.tratarResposta("L1", "quero saber", "inst", "55219")).toBe(true);
+    expect(emails).toEqual(["c1"]);
     expect(updates[0]).toEqual(expect.objectContaining({ transferidoPorId: "g1" }));
     expect(updates[0].responsavelId).toBeUndefined();
     expect(enviados[0]).toContain("especialista da Kayser");

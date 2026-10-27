@@ -218,6 +218,8 @@ export class ReengajamentoService {
       await this.whatsapp
         .sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com ${dono[0]?.name ? `*${primeiroNome(dono[0].name)}*, ` : "um "}especialista da Kayser.`)
         .catch(() => null);
+      // Aviso pro corretor: fogos na tela (transferidoEm) + e-mail, mesmo com o K1 fechado.
+      await this.fila.notificarLeadPorEmail(lead.responsavelId).catch(() => null);
       this.logger.log(`Fila da Equipe: lead ${lead.id} disse SIM → segue com o corretor ${lead.responsavelId}.`);
       return true;
     }
@@ -233,6 +235,7 @@ export class ReengajamentoService {
     await this.whatsapp
       .sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com *${primeiroNome(corretor.name)}*, especialista da Kayser.`)
       .catch(() => null);
+    await this.fila.notificarLeadPorEmail(corretor.id).catch(() => null);
     this.logger.log(`Fila da Equipe: lead ${lead.id} disse SIM → corretor ${corretor.id}.`);
     return true;
   }
