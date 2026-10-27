@@ -408,7 +408,7 @@ export class ReengajamentoService {
               count(*) FILTER (WHERE e.tipo = 'sim')::int AS sim,
               count(*) FILTER (WHERE e.tipo = 'nao')::int AS nao
          FROM reengajamento_eventos e LEFT JOIN users u ON u.id::text = e."filaEquipeId"
-        WHERE ${periodo} GROUP BY 1 ORDER BY (1 <> 'Fila do Diretor'), 1`,
+        WHERE ${periodo} GROUP BY 1`,
       params
     );
     const eventos: any[] = await this.leads.query(
@@ -427,6 +427,8 @@ export class ReengajamentoService {
       [LeadStatus.VENDA_PERDIDA]
     );
     for (const t of totais) if (!resumo.some((r) => r.fila === t.fila)) resumo.push({ fila: t.fila, chamados: 0, sim: 0, nao: 0 });
+    // Fila do Diretor primeiro, depois os gestores por nome.
+    resumo.sort((a, b) => (a.fila === "Fila do Diretor" ? -1 : b.fila === "Fila do Diretor" ? 1 : String(a.fila).localeCompare(String(b.fila))));
     // Relatório no formato profissional: título, período, tabela, linha de TOTAL e taxa de "sim".
     const br = (s: string) => s.split("-").reverse().join("/");
     const titulo = [
