@@ -101,9 +101,10 @@ export class ReengajamentoService {
     const daEquipe: any[] = (
       await this.leads
         .query(
-          `SELECT l.id, l.name, l.phone, l.whatsapp, l.empreendimento, l."filaEquipeId" FROM leads l
+          // Lead com o gestor OU já repartido pra um corretor dele na planilha — a IA chama do mesmo jeito.
+          `SELECT l.id, l.name, l.phone, l.whatsapp, l.empreendimento, l."filaEquipeId", l."responsavelId"::text AS "responsavelId" FROM leads l
              JOIN fila_equipe f ON f."gestorId" = l."filaEquipeId" AND f.ativo = true
-            WHERE l."reengajadoEm" IS NULL AND l."naoPerturbe" = false AND l."responsavelId"::text = l."filaEquipeId"
+            WHERE l."reengajadoEm" IS NULL AND l."naoPerturbe" = false
             ORDER BY l."createdAt" ASC LIMIT $1`,
           [REENGAJAR_POR_HORA * 2]
         )
@@ -136,8 +137,8 @@ export class ReengajamentoService {
           const conv = await this.conversations.findOrCreateByPhone(phone, central);
           if (!conv.leadId) await this.conversations.setLead(conv.id, l.id, l.name).catch(() => null);
           const equipe = l.filaEquipeId as string | undefined;
-          // Lead da equipe: a conversa aparece pro gestor em Conversas ao vivo até ir pro corretor.
-          if (equipe) await this.leads.query(`UPDATE conversations SET "assignedToId" = $1 WHERE id = $2`, [equipe, conv.id]).catch(() => null);
+          // Lead da equipe: a conversa aparece pra quem é o dono (gestor, ou o corretor que já recebeu na planilha).
+          if (equipe) await this.leads.query(`UPDATE conversations SET "assignedToId" = $1 WHERE id = $2`, [l.responsavelId || equipe, conv.id]).catch(() => null);
           const texto = (equipe ? mensagemPrimeiroContato : mensagemReengajar)(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
           await this.whatsapp.sendText(`user_${central}`, phone, texto);
           await this.conversations.addMessage(conv.id, texto, "out", true);
@@ -200,13 +201,26 @@ export class ReengajamentoService {
    * outra coisa → fica com o gestor em Conversas ao vivo.
    */
   private async respostaDaEquipe(lead: Lead, texto: string, instancia: string, destino: string): Promise<boolean> {
-    if (lead.responsavelId !== lead.filaEquipeId || !(lead as any).reengajadoEm) return true; // já é do corretor / ainda não chamado
+    const chamadoEm = (lead as any).reengajadoEm ? new Date((lead as any).reengajadoEm).getTime() : 0;
+    if (!chamadoEm) return true; // ainda não chamado
+    const jaTratado = lead.transferidoPorId === lead.filaEquipeId && !!lead.transferidoEm && new Date(lead.transferidoEm).getTime() >= chamadoEm;
+    if (jaTratado) return true; // já disse sim e foi pro corretor
     let r = classificarResposta(texto);
     if (r === "outro") r = await this.ai.classificarInteresse(texto);
     if (r === "outro") return true;
     await this.registrar(lead, r, texto, lead.filaEquipeId);
     if (r === "nao") return this.removerPorNao(lead, instancia, destino);
     const nome = primeiroNome(lead.name);
+    // Planilha já repartida: o lead é do corretor — fica com ele, que recebe o aviso.
+    if (lead.responsavelId && lead.responsavelId !== lead.filaEquipeId) {
+      const dono: any[] = await this.leads.query(`SELECT name FROM users WHERE id::text = $1`, [lead.responsavelId]).catch(() => []);
+      await this.leads.update(lead.id, { transferidoEm: new Date(), transferidoPorId: lead.filaEquipeId } as any);
+      await this.whatsapp
+        .sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com ${dono[0]?.name ? `*${primeiroNome(dono[0].name)}*, ` : "um "}especialista da Kayser.`)
+        .catch(() => null);
+      this.logger.log(`Fila da Equipe: lead ${lead.id} disse SIM → segue com o corretor ${lead.responsavelId}.`);
+      return true;
+    }
     const corretor = await this.proximoDaEquipe(lead.filaEquipeId as string);
     if (!corretor) {
       await this.whatsapp.sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com um especialista da Kayser.`).catch(() => null);
@@ -281,8 +295,8 @@ export class ReengajamentoService {
     );
     const [fila] = await this.leads.query(
       `SELECT
-         count(*) FILTER (WHERE "reengajadoEm" IS NOT NULL AND "responsavelId"::text = $1)::int AS aguardando,
-         count(*) FILTER (WHERE "reengajadoEm" IS NULL AND "naoPerturbe" = false AND "responsavelId"::text = $1)::int AS faltam
+         count(*) FILTER (WHERE "reengajadoEm" IS NOT NULL AND ("transferidoPorId" IS NULL OR "transferidoPorId"::text <> $1 OR "transferidoEm" < "reengajadoEm"))::int AS aguardando,
+         count(*) FILTER (WHERE "reengajadoEm" IS NULL AND "naoPerturbe" = false)::int AS faltam
        FROM leads WHERE "filaEquipeId" = $1`,
       [gestorId]
     );
@@ -324,7 +338,7 @@ export class ReengajamentoService {
   async listarFilas() {
     return this.leads.query(
       `SELECT u.id::text AS "gestorId", u.name, u.role, COALESCE(f.ativo, false) AS ativo,
-              (SELECT count(*)::int FROM leads l WHERE l."filaEquipeId" = u.id::text AND l."reengajadoEm" IS NULL AND l."responsavelId"::text = u.id::text) AS faltam,
+              (SELECT count(*)::int FROM leads l WHERE l."filaEquipeId" = u.id::text AND l."reengajadoEm" IS NULL AND l."naoPerturbe" = false) AS faltam,
               (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'enviado') AS enviados,
               (SELECT count(*)::int FROM reengajamento_eventos e WHERE e."filaEquipeId" = u.id::text AND e.tipo = 'sim') AS sim
          FROM users u LEFT JOIN fila_equipe f ON f."gestorId" = u.id::text

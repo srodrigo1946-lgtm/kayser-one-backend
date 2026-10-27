@@ -686,9 +686,14 @@ export class LeadsService {
     if (imp[0].role === UserRole.DIRETOR || imp[0].role === UserRole.CORRETOR || imp[0].empresaId) {
       throw new BadRequestException("Fila da Equipe é só para planilha subida por gestor.");
     }
+    // Com o gestor ou já repartidos pros corretores dele (a IA chama; "sim" fica com o corretor).
     const r: any[] = await this.leadsRepo.manager.query(
-      `UPDATE leads SET "filaEquipeId" = $2
-        WHERE "importLote" = $1 AND "responsavelId"::text = $2 AND "reengajadoEm" IS NULL AND "filaEquipeId" IS NULL
+      `WITH RECURSIVE t AS (
+         SELECT id::text AS id FROM users WHERE id::text = $2
+         UNION SELECT u.id::text FROM users u JOIN t ON u."managerId"::text = t.id
+       )
+       UPDATE leads SET "filaEquipeId" = $2
+        WHERE "importLote" = $1 AND "responsavelId"::text IN (SELECT id FROM t) AND "reengajadoEm" IS NULL AND "filaEquipeId" IS NULL
         RETURNING id`,
       [importId, dono]
     );

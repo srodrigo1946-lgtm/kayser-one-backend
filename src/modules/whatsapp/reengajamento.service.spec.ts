@@ -67,10 +67,18 @@ describe("Fila da Equipe (25/10)", () => {
     const { s, updates } = montar({ ...base });
     expect(await s.tratarResposta("L1", "quem é?", "inst", "55219")).toBe(true);
     expect(updates).toHaveLength(0);
-    // já com o corretor: também não mexe
-    const j = montar({ ...base, responsavelId: "c1" });
+    // já disse sim e foi pro corretor: também não mexe
+    const j = montar({ ...base, responsavelId: "c1", transferidoPorId: "g1", transferidoEm: new Date(Date.now() + 1000) });
     expect(await j.s.tratarResposta("L1", "sim", "inst", "55219")).toBe(true);
     expect(j.updates).toHaveLength(0);
+  });
+
+  it("planilha já repartida: SIM fica com o mesmo corretor, que recebe o aviso", async () => {
+    const { s, updates, enviados } = montar({ ...base, responsavelId: "c1" }, ["c2", "c3"], 0);
+    expect(await s.tratarResposta("L1", "quero saber", "inst", "55219")).toBe(true);
+    expect(updates[0]).toEqual(expect.objectContaining({ transferidoPorId: "g1" }));
+    expect(updates[0].responsavelId).toBeUndefined();
+    expect(enviados[0]).toContain("especialista da Kayser");
   });
 
   it("NÃO tira o lead do Kayser", async () => {
