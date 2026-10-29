@@ -43,6 +43,10 @@ export class Message {
   @Column({ type: "text", nullable: true })
   mediaKey: string;
 
+  // Anúncio "Clique para WhatsApp" que trouxe o cliente (JSON: titulo, texto, imagem, link).
+  @Column({ type: "text", nullable: true })
+  adPreview: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

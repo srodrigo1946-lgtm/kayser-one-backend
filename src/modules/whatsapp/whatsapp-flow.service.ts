@@ -94,6 +94,27 @@ Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora
 - Não prometa preço/condição que não esteja na base de conhecimento.`;
 }
 
+/**
+ * Cartão do anúncio (29/10): o que o WhatsApp mostra em cima da 1ª mensagem do cliente —
+ * título, texto, imagem e link. A imagem vem como URL (thumbnailUrl/mediaUrl) ou em base64
+ * (thumbnail). Sem título nem imagem, não há o que mostrar → undefined.
+ */
+export function cartaoDoAnuncio(ext: any, platform: string): string | undefined {
+  if (!ext || typeof ext !== "object") return undefined;
+  const thumb = typeof ext.thumbnail === "string" && ext.thumbnail.length > 100 ? `data:image/jpeg;base64,${ext.thumbnail}` : undefined;
+  const imagem = ext.thumbnailUrl || ext.originalImageUrl || thumb || (ext.mediaType === 1 || ext.mediaType === "IMAGE" ? ext.mediaUrl : undefined);
+  const titulo = ext.title || undefined;
+  if (!titulo && !imagem) return undefined;
+  return JSON.stringify({
+    titulo,
+    texto: ext.body || ext.description || undefined,
+    imagem: imagem || undefined,
+    link: ext.sourceUrl || ext.mediaUrl || undefined,
+    video: ext.mediaType === 2 || ext.mediaType === "VIDEO" || undefined,
+    plataforma: platform,
+  });
+}
+
 @Injectable()
 export class WhatsappFlowService {
   private readonly logger = new Logger(WhatsappFlowService.name);
@@ -247,7 +268,8 @@ export class WhatsappFlowService {
         const dl = await this.whatsapp.getMediaBase64(instanceName, rawMsg);
         if (dl) media = { mediaType, mediaMime: dl.mimetype, base64: dl.base64 };
       }
-      const salva = await this.conversations.addMessage(conv.id, text, "in", false, media);
+      // Mensagem que veio de anúncio: guarda o cartão do anúncio junto (a tela mostra igual ao WhatsApp).
+      const salva = await this.conversations.addMessage(conv.id, text, "in", false, ad?.preview ? { ...(media ?? {}), adPreview: ad.preview } : media);
 
       // ÁUDIO do cliente: transcreve e grava o texto na conversa — assim a IA
       // (Kayser) responde a mensagem de voz e o corretor lê sem precisar ouvir.
@@ -555,16 +577,21 @@ export class WhatsappFlowService {
     if (requester) await this.conversations.assertPodeEnviar(conv, requester);
     const instanceOwner = conv.instanceOwnerId || senderUserId;
     const ehImagem = file.mimetype.startsWith("image/");
-    const rotulo = file.caption?.trim() || (ehImagem ? "📷 Imagem" : `📎 ${file.fileName}`);
+    // Áudio gravado pelo corretor na tela: vai como MENSAGEM DE VOZ (igual ao WhatsApp).
+    const ehAudio = file.mimetype.startsWith("audio/");
+    const rotulo = ehAudio ? "🎤 Áudio" : file.caption?.trim() || (ehImagem ? "📷 Imagem" : `📎 ${file.fileName}`);
+    // A tela manda data URI ("data:...;base64,XXX"): guarda só o base64 puro.
+    const puro = file.base64.includes(",") ? file.base64.split(",")[1] : file.base64;
 
     await this.conversations.addMessage(conv.id, rotulo, "out", false, {
-      mediaType: ehImagem ? "image" : "document",
-      mediaMime: file.mimetype,
-      base64: file.base64,
+      mediaType: ehAudio ? "audio" : ehImagem ? "image" : "document",
+      mediaMime: file.mimetype.split(";")[0],
+      base64: puro,
     });
     if (conv.fromAd) {
       await this.leadQueue.markAttended(conv.id, senderUserId).catch(() => {});
     }
+    if (ehAudio) return this.whatsapp.sendAudio(`user_${instanceOwner}`, remoteJid, puro);
     return this.whatsapp.sendMedia(`user_${instanceOwner}`, remoteJid, file);
   }
 
@@ -617,7 +644,7 @@ export class WhatsappFlowService {
     fromMe: boolean;
     pushName: string;
     instanceName?: string;
-    ad?: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string; texto?: string };
+    ad?: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string; texto?: string; preview?: string };
   } | null {
     const data = payload?.data ?? payload;
     const instanceName = payload?.instance || payload?.instanceName;
@@ -638,9 +665,11 @@ export class WhatsappFlowService {
     // referral em QUALQUER profundidade — as chaves são exclusivas de anúncio,
     // então não há falso-positivo.
     const ref = this.findAdReferral(msg);
-    let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string; texto?: string } | undefined;
+    let ad: { platform: "facebook" | "instagram" | "tiktok"; campaign?: string; texto?: string; preview?: string } | undefined;
     if (ref) {
       const ext = ref.externalAdReply || {};
+      // Diagnóstico do cartão do anúncio: só as CHAVES (nunca o conteúdo).
+      this.logger.log(`Anúncio: externalAdReply=[${Object.keys(ext).join(",")}]`);
       const hay = `${ref.entryPointConversionApp || ""} ${ext.sourceApp || ""} ${
         ext.sourceType || ""
       } ${ext.sourceUrl || ""}`.toLowerCase();
@@ -650,6 +679,7 @@ export class WhatsappFlowService {
         campaign: ext.title || ext.sourceId || ref.ctwaPayload || undefined,
         // Texto do anúncio (legenda/descrição): ajuda a saber de qual empreendimento é.
         texto: ext.body || ext.description || undefined,
+        preview: cartaoDoAnuncio(ext, platform),
       };
     } else {
       // Diagnóstico: mensagem NÃO reconhecida como anúncio. Loga só as CHAVES

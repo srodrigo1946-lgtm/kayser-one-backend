@@ -530,7 +530,7 @@ export class ConversationsService {
     content: string,
     direction: MessageDirection,
     isAI = false,
-    media?: { mediaType?: string; mediaMime?: string; base64?: string }
+    media?: { mediaType?: string; mediaMime?: string; base64?: string; adPreview?: string }
   ): Promise<Message> {
     // Guarda a mídia (imagem/áudio/etc.): R2 quando configurado, senão data URI no banco.
     let mediaKey: string | undefined;
@@ -553,6 +553,7 @@ export class ConversationsService {
       mediaType: media?.mediaType,
       mediaMime: media?.mediaMime,
       mediaKey,
+      adPreview: media?.adPreview ?? null,
     });
     const saved = await this.msgRepo.save(msg);
 

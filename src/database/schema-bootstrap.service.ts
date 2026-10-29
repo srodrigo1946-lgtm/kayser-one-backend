@@ -296,6 +296,8 @@ export class SchemaBootstrapService implements OnModuleInit {
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "dataAgendamento" timestamp`);
     // Fila da Equipe (25/10/2026): lead da planilha do gestor + corretores do rodízio dele.
     await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "filaEquipeId" varchar`);
+    // Cartão do anúncio (29/10/2026): título, texto, imagem e link do anúncio que trouxe o cliente.
+    await this.dataSource.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "adPreview" text`);
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS fila_equipe (
         "gestorId" varchar PRIMARY KEY,

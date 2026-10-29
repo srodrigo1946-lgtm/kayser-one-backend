@@ -130,6 +130,38 @@ describe("WhatsappFlowService.parseEvolutionMessage", () => {
     expect(r.ad?.campaign).toBe("Pontal !");
   });
 
+  it("guarda o cartão do anúncio (título, texto, imagem, link) pra mostrar na conversa", () => {
+    const r = parse({
+      instance: "user_diretor",
+      data: {
+        key: { remoteJid: "5521993924807@s.whatsapp.net", fromMe: false },
+        message: {
+          extendedTextMessage: {
+            text: "Quais são as condições de pagamento?",
+            contextInfo: {
+              externalAdReply: {
+                title: "Agende sua visita! DUET",
+                body: "EMPREENDIMENTO PRONTO NA BARRA",
+                thumbnailUrl: "https://scontent.fb/x.jpg",
+                sourceUrl: "https://fb.me/abc",
+                mediaType: 2,
+                sourceApp: "facebook",
+              },
+            },
+          },
+        },
+      },
+    });
+    const c = JSON.parse(r.ad!.preview!);
+    expect(c).toEqual(expect.objectContaining({ titulo: "Agende sua visita! DUET", texto: "EMPREENDIMENTO PRONTO NA BARRA", imagem: "https://scontent.fb/x.jpg", link: "https://fb.me/abc", video: true }));
+    // anúncio sem título nem imagem (formato vazio): sem cartão
+    const vazio = parse({
+      instance: "user_diretor",
+      data: { key: { remoteJid: "5521999@s.whatsapp.net" }, message: { extendedTextMessage: { text: "oi", contextInfo: { externalAdReply: {}, entryPointConversionSource: "ctwa_ad" } } } },
+    });
+    expect(vazio.ad?.preview).toBeUndefined();
+  });
+
   it("NÃO marca como anúncio uma mensagem comum com contextInfo (resposta citada)", () => {
     const r = parse({
       instance: "user_diretor",
