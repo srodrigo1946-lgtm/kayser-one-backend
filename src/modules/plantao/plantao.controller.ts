@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Request, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Request, Res, UseGuards } from "@nestjs/common";
+import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsNumber, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
@@ -107,8 +108,19 @@ export class PlantaoController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)
   @ApiOperation({ summary: "Ranking de check-in no mês e no ano + corretores com check-in hoje/mês/ano (só Diretor)" })
-  ranking(@Request() req: any) {
-    return this.plantao.rankingCheckin(req.user);
+  ranking(@Request() req: any, @Query("mes") mes?: string) {
+    return this.plantao.rankingCheckin(req.user, mes);
+  }
+
+  @Get("ranking/relatorio")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Relatório Excel de check-in: ?periodo=AAAA-MM (mensal) ou AAAA (anual) (só Diretor)" })
+  async relatorio(@Request() req: any, @Query("periodo") periodo: string, @Res() res: Response) {
+    const { arquivo, buffer } = await this.plantao.relatorioCheckin(req.user, periodo);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${arquivo}"`);
+    res.send(buffer);
   }
 
   @Get("ranking/:userId/dias")

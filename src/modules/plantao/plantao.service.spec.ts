@@ -206,6 +206,40 @@ describe("Plantão — saiu do stand depois do check-in", () => {
     expect(turnoLivreDoStand("15:00")).toBe(false);
   });
 
+  it("relatório de check-in: mensal e anual contam 1 por dia, com TOTAL e abas certas", async () => {
+    const XLSX = require("xlsx");
+    const base = { gerente: "Lu", turno: "09:00", stand: "Duet", hora: "08:55", saiu: false };
+    const reg = [
+      { ...base, data: "2026-10-05", uid: "c1", nome: "Ana", per: "manha" },
+      { ...base, data: "2026-10-05", uid: "c1", nome: "Ana", per: "tarde" }, // mesmo dia: conta 1 dia, 2 turnos
+      { ...base, data: "2026-11-01", uid: "c1", nome: "Ana", per: "noite" },
+      { ...base, data: "2026-10-06", uid: "c2", nome: "Bia", per: "manha" },
+    ];
+    const pedidos: any[] = [];
+    const checkins = { query: async (_q: string, p: any[]) => { pedidos.push(p); return reg; } };
+    const usersService = { getScopeIds: async () => null };
+    const s = new Svc(checkins as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, usersService as any);
+
+    const anual = await s.relatorioCheckin({ id: "d", role: "diretor" } as any, "2026");
+    expect(anual.arquivo).toBe("relatorio-checkin-2026.xlsx");
+    expect(pedidos[0][0]).toBe("2026%");
+    const wb = XLSX.read(anual.buffer);
+    expect(wb.SheetNames).toEqual(["Resumo por corretor", "Consolidado por mês", "Todos os check-ins"]);
+    const linhas: any[][] = XLSX.utils.sheet_to_json(wb.Sheets["Resumo por corretor"], { header: 1 });
+    const ana = linhas.find((l) => l[1] === "Ana")!;
+    const cab = linhas.find((l) => l[1] === "Corretor")!;
+    expect(ana[cab.indexOf("Dias de plantão")]).toBe(2);
+    expect(ana[cab.indexOf("Out")]).toBe(1);
+    expect(ana[cab.indexOf("Nov")]).toBe(1);
+    const total = linhas.find((l) => l[1] === "TOTAL")!;
+    expect(total[cab.indexOf("Dias de plantão")]).toBe(3);
+    expect(total[cab.indexOf("Manhã")]).toBe(2);
+
+    const mensal = await s.relatorioCheckin({ id: "d", role: "diretor" } as any, "2026-10");
+    expect(XLSX.read(mensal.buffer).SheetNames).toEqual(["Resumo por corretor", "Todos os check-ins"]);
+    await expect(s.relatorioCheckin({ id: "d", role: "diretor" } as any, "abc")).rejects.toThrow("Período inválido");
+  });
+
   it("ranking de check-in: mês, ano, gráfico dos 12 meses e escopo da equipe", async () => {
     const chamadas: any[] = [];
     const checkins = {

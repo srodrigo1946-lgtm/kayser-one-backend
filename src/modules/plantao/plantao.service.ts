@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, Not, Repository, MoreThan } from "typeorm";
 import { Cron } from "@nestjs/schedule";
 import { createHash } from "crypto";
+import * as XLSX from "xlsx";
 import { PlantaoCheckin } from "./plantao-checkin.entity";
 import { PlantaoBloqueio } from "./plantao-bloqueio.entity";
 import { PlantaoTentativa } from "./plantao-tentativa.entity";
@@ -209,10 +210,12 @@ export class PlantaoService implements OnModuleInit {
    * Ranking de check-in (25/10): quantos plantões cada um fez no mês e no ano (Brasília).
    * Escopo da equipe: Diretor todos, gestor o time, corretor ele mesmo.
    */
-  async rankingCheckin(user: User) {
+  async rankingCheckin(user: User, periodo?: string) {
     const escopo = await this.usersService.getScopeIds(user);
     const hoje = hojeSP();
-    const mes = hoje.slice(0, 7), ano = hoje.slice(0, 4);
+    // Mês escolhido na tela (AAAA-MM); sem escolher, o mês atual. "Hoje" é sempre hoje.
+    const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(periodo ?? "") ? (periodo as string) : hoje.slice(0, 7);
+    const ano = mes.slice(0, 4);
     // Cada check-in com o turno do dia: manhã (começa antes das 12h), tarde (12h–18h), noite (18h+).
     const ck = `WITH ck AS (
         SELECT c."userId"::text AS uid, c.data,
@@ -220,7 +223,7 @@ export class PlantaoService implements OnModuleInit {
           FROM plantao_checkins c LEFT JOIN escala_turnos t ON t.id::text = c."turnoId"::text
          WHERE c.data LIKE $1 AND ($2::text[] IS NULL OR c."userId"::text = ANY($2::text[])))`;
     // Ranking conta 1 por DIA (Rodrigo 25/10); manhã/tarde/noite do mês ficam separados ao lado.
-    const linhas: { userId: string; nome: string; mes: number; ano: number; manha: number; tarde: number; noite: number }[] =
+    const linhas: { userId: string; nome: string; mes: number; ano: number; manha: number; tarde: number; noite: number; manhaAno: number; tardeAno: number; noiteAno: number }[] =
       await this.checkins.query(
         `${ck} /* ranking */
          SELECT ck.uid AS "userId", u.name AS nome,
@@ -229,7 +232,10 @@ export class PlantaoService implements OnModuleInit {
                 -- Turno também 1 por dia: sábado/domingo têm 2 tardes (12h e 15h) e contavam 2x.
                 count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'manha')::int AS manha,
                 count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'tarde')::int AS tarde,
-                count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'noite')::int AS noite
+                count(DISTINCT ck.data) FILTER (WHERE ck.data LIKE $3 AND per = 'noite')::int AS noite,
+                count(DISTINCT ck.data) FILTER (WHERE per = 'manha')::int AS "manhaAno",
+                count(DISTINCT ck.data) FILTER (WHERE per = 'tarde')::int AS "tardeAno",
+                count(DISTINCT ck.data) FILTER (WHERE per = 'noite')::int AS "noiteAno"
            FROM ck JOIN users u ON u.id::text = ck.uid
           GROUP BY ck.uid, u.name
           ORDER BY mes DESC, ano DESC, u.name`,
@@ -249,7 +255,7 @@ export class PlantaoService implements OnModuleInit {
               count(DISTINCT uid) FILTER (WHERE per = 'tarde')::int AS tarde,
               count(DISTINCT uid) FILTER (WHERE per = 'noite')::int AS noite
          FROM ck WHERE ck.data = $3`,
-      [`${ano}%`, escopo, hoje]
+      [`${hoje.slice(0, 4)}%`, escopo, hoje]
     );
     const porMes = Array.from({ length: 12 }, (_, i) => meses.find((x) => Number(x.m) === i + 1)?.n ?? 0);
     // Quantos corretores DIFERENTES fizeram check-in hoje, no mês e no ano.
@@ -268,6 +274,91 @@ export class PlantaoService implements OnModuleInit {
       corretores: corretores ?? { hoje: 0, mes: 0, ano: 0 },
       turnosHoje: turnosHoje ?? { manha: 0, tarde: 0, noite: 0 },
     };
+  }
+
+  /**
+   * Relatório de check-in em Excel (Diretor). periodo = AAAA-MM (mensal) ou AAAA (anual).
+   * Conta como o ranking: 1 dia por corretor por dia; cada turno também 1 por dia.
+   */
+  async relatorioCheckin(user: User, periodo: string): Promise<{ arquivo: string; buffer: Buffer }> {
+    const anual = /^\d{4}$/.test(periodo);
+    if (!anual && !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) throw new BadRequestException("Período inválido (AAAA-MM ou AAAA).");
+    const escopo = await this.usersService.getScopeIds(user);
+    const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const nomePeriodo = anual ? periodo : `${MESES[Number(periodo.slice(5, 7)) - 1]} de ${periodo.slice(0, 4)}`;
+    const reg: { data: string; uid: string; nome: string; gerente: string | null; per: "manha" | "tarde" | "noite"; turno: string | null; stand: string | null; hora: string; saiu: boolean }[] =
+      await this.checkins.query(
+        `SELECT c.data, c."userId"::text AS uid, trim(u.name) AS nome, trim(g.name) AS gerente,
+                CASE WHEN t."horaInicio" < '12:00' THEN 'manha' WHEN t."horaInicio" < '18:00' THEN 'tarde' ELSE 'noite' END AS per,
+                t."horaInicio" AS turno, c."standNome" AS stand,
+                to_char(c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI') AS hora,
+                (c."saiuEm" IS NOT NULL) AS saiu
+           FROM plantao_checkins c
+           JOIN users u ON u.id::text = c."userId"::text
+           LEFT JOIN users g ON g.id::text = u."managerId"::text
+           LEFT JOIN escala_turnos t ON t.id::text = c."turnoId"::text
+          WHERE c.data LIKE $1 AND ($2::text[] IS NULL OR c."userId"::text = ANY($2::text[]))
+          ORDER BY c.data, u.name, t."horaInicio"`,
+        [`${periodo}%`, escopo]
+      );
+    // Dias distintos de um grupo de check-ins (1 por dia).
+    const dias = (r: typeof reg) => new Set(r.map((x) => x.data)).size;
+    const turnos = (r: typeof reg) => (["manha", "tarde", "noite"] as const).map((p) => dias(r.filter((x) => x.per === p)));
+    const porCorretor = [...new Set(reg.map((x) => x.uid))]
+      .map((uid) => ({ doCorretor: reg.filter((x) => x.uid === uid) }))
+      .sort((a, b) => dias(b.doCorretor) - dias(a.doCorretor) || a.doCorretor[0].nome.localeCompare(b.doCorretor[0].nome));
+    const corretorDia = new Set(reg.map((x) => x.uid + x.data)).size;
+    const totalTurnos = (["manha", "tarde", "noite"] as const).map((p) => new Set(reg.filter((x) => x.per === p).map((x) => x.uid + x.data)).size);
+    const titulo = [
+      [`K1 — Relatório de check-in no plantão (${anual ? "anual" : "mensal"})`],
+      [`Período: ${nomePeriodo}`],
+      [`Gerado em: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`],
+      ["Cada dia com check-in conta 1 dia de plantão, mesmo com mais de um turno no dia."],
+      [],
+      ["Corretores com check-in", porCorretor.length],
+      ["Total de dias de plantão (somando os corretores)", corretorDia],
+      [],
+    ];
+    const wb = XLSX.utils.book_new();
+    const mesDe = (d: string) => Number(d.slice(5, 7)) - 1;
+    const linhas = porCorretor.map(({ doCorretor }, i) => [
+      i + 1,
+      doCorretor[0].nome,
+      doCorretor[0].gerente ?? "",
+      ...(anual ? MESES.map((_, m) => dias(doCorretor.filter((x) => mesDe(x.data) === m))) : []),
+      dias(doCorretor),
+      ...turnos(doCorretor),
+    ]);
+    const cabecalho = ["#", "Corretor", "Gerente", ...(anual ? MESES.map((m) => m.slice(0, 3)) : []), "Dias de plantão", "Manhã", "Tarde", "Noite"];
+    const totalMeses = anual ? MESES.map((_, m) => new Set(reg.filter((x) => mesDe(x.data) === m).map((x) => x.uid + x.data)).size) : [];
+    const resumo = XLSX.utils.aoa_to_sheet([...titulo, cabecalho, ...linhas, [], ["", "TOTAL", "", ...totalMeses, corretorDia, ...totalTurnos]]);
+    resumo["!cols"] = [{ wch: 5 }, { wch: 38 }, { wch: 30 }, ...(anual ? MESES.map(() => ({ wch: 6 })) : []), { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, resumo, "Resumo por corretor");
+    if (anual) {
+      const porMes = MESES.map((m, i) => {
+        const r = reg.filter((x) => mesDe(x.data) === i);
+        const t = (["manha", "tarde", "noite"] as const).map((p) => new Set(r.filter((x) => x.per === p).map((x) => x.uid + x.data)).size);
+        return [m, new Set(r.map((x) => x.uid)).size, new Set(r.map((x) => x.uid + x.data)).size, ...t];
+      });
+      const ws = XLSX.utils.aoa_to_sheet([
+        [`Consolidado por mês — ${periodo}`],
+        [],
+        ["Mês", "Corretores com check-in", "Dias de plantão", "Manhã", "Tarde", "Noite"],
+        ...porMes,
+        [],
+        ["TOTAL", porCorretor.length, corretorDia, ...totalTurnos],
+      ]);
+      ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Consolidado por mês");
+    }
+    const NOME_TURNO = { manha: "Manhã", tarde: "Tarde", noite: "Noite" };
+    const detalhe = XLSX.utils.aoa_to_sheet([
+      ["Data", "Corretor", "Gerente", "Turno", "Início do turno", "Check-in às", "Stand", "Saiu do stand"],
+      ...reg.map((x) => [x.data.split("-").reverse().join("/"), x.nome, x.gerente ?? "", NOME_TURNO[x.per], x.turno ?? "", x.hora, x.stand ?? "", x.saiu ? "Sim" : "Não"]),
+    ]);
+    detalhe["!cols"] = [{ wch: 12 }, { wch: 38 }, { wch: 30 }, { wch: 8 }, { wch: 14 }, { wch: 11 }, { wch: 28 }, { wch: 13 }];
+    XLSX.utils.book_append_sheet(wb, detalhe, "Todos os check-ins");
+    return { arquivo: `relatorio-checkin-${periodo}.xlsx`, buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer };
   }
 
   /** Dias de check-in de um corretor no ano (Diretor): data, turno, stand e hora (Brasília). */
