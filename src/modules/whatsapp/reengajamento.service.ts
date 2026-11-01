@@ -518,6 +518,34 @@ export class ReengajamentoService {
     return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
+  /** TEMPORÁRIO (só leitura): marcados como chamados x evento registrado x mensagem na conversa. */
+  async diagnostico() {
+    const base = `SELECT l.id, l.status, l."reengajadoEm",
+        EXISTS (SELECT 1 FROM reengajamento_eventos e WHERE e."leadId" = l.id::text AND e.tipo = 'enviado') AS evento,
+        EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m."conversationId"
+                 WHERE c."leadId" = l.id AND m.direction = 'out'
+                   AND m."createdAt" BETWEEN l."reengajadoEm" - interval '10 minutes' AND l."reengajadoEm" + interval '10 minutes') AS mensagem,
+        EXISTS (SELECT 1 FROM conversations c WHERE c."leadId" = l.id) AS conversa
+      FROM leads l WHERE l."reengajadoEm" IS NOT NULL AND l."filaEquipeId" IS NULL`;
+    const resumo = await this.leads.query(
+      `SELECT evento, mensagem, conversa, count(*)::int AS n FROM (${base}) x GROUP BY 1, 2, 3 ORDER BY n DESC`
+    );
+    const semEventoPorDia = await this.leads.query(
+      `SELECT to_char("reengajadoEm", 'YYYY-MM-DD') AS dia, count(*)::int AS n, count(*) FILTER (WHERE mensagem)::int AS "comMensagem"
+         FROM (${base}) x WHERE NOT evento GROUP BY 1 ORDER BY 1`
+    );
+    const semEventoPorStatus = await this.leads.query(
+      `SELECT status, count(*)::int AS n, count(*) FILTER (WHERE mensagem)::int AS "comMensagem" FROM (${base}) x WHERE NOT evento GROUP BY 1 ORDER BY n DESC`
+    );
+    const [eventos] = await this.leads.query(
+      `SELECT count(*) FILTER (WHERE tipo = 'enviado' AND "filaEquipeId" IS NULL)::int AS enviados,
+              count(DISTINCT "leadId") FILTER (WHERE tipo = 'enviado' AND "filaEquipeId" IS NULL)::int AS "leadsDistintos",
+              min("createdAt") AS primeiro
+         FROM reengajamento_eventos`
+    );
+    return { resumo, semEventoPorDia, semEventoPorStatus, eventos };
+  }
+
   /** Painel do Diretor: números de hoje e do total, quem falta e as últimas respostas. */
   async painel() {
     const hojeSP = `("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = (now() AT TIME ZONE 'America/Sao_Paulo')::date`;

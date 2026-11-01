@@ -23,6 +23,12 @@ export class ReengajamentoController {
     return this.reengajamento.painel();
   }
 
+  @Get("diagnostico")
+  @ApiOperation({ summary: "TEMPORÁRIO (só leitura): confere clientes marcados como chamados" })
+  diagnostico() {
+    return this.reengajamento.diagnostico();
+  }
+
   @Get("relatorio")
   @ApiOperation({ summary: "Relatório Excel do período (?de=AAAA-MM-DD&ate=AAAA-MM-DD): resumo por fila + respostas" })
   async relatorio(@Query("de") de: string, @Query("ate") ate: string, @Res() res: Response) {
