@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, ServiceUnavailableException } 
 import { SettingsService } from "../settings/settings.service";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
+import { comCodigoBrasil } from "../../common/telefone";
 
 const EVOLUTION_FORA =
   "WhatsApp (Evolution API) indisponível no momento. Verifique/reinicie o serviço da Evolution no Railway e tente de novo.";
@@ -234,7 +235,7 @@ export class WhatsappService {
     to: string,
     file: { base64: string; mimetype: string; fileName: string; caption?: string }
   ) {
-    const number = to.includes("@") ? to : to.replace(/\D/g, "");
+    const number = to.includes("@") ? to : comCodigoBrasil(to);
     const mediatype = file.mimetype.startsWith("image/")
       ? "image"
       : file.mimetype.startsWith("video/")
@@ -269,7 +270,7 @@ export class WhatsappService {
   async sendAudio(instanceName: string, to: string, base64: string) {
     await this.bloqueiaSePausado();
     await this.espacar(instanceName);
-    const number = to.includes("@") ? to : to.replace(/\D/g, "");
+    const number = to.includes("@") ? to : comCodigoBrasil(to);
     try {
       const { data } = await axios.post(
         `${this.apiUrl}/message/sendWhatsAppAudio/${instanceName}`,
@@ -288,7 +289,7 @@ export class WhatsappService {
     // Evolution API v2 espera { number, text }. Se já vier um JID completo
     // (grupo @g.us ou contato @s.whatsapp.net) usamos como está; senão
     // mandamos só os dígitos e a Evolution resolve o destino.
-    const number = to.includes("@") ? to : to.replace(/\D/g, "");
+    const number = to.includes("@") ? to : comCodigoBrasil(to);
     await this.bloqueiaSePausado();
     await this.espacar(instanceName);
     try {

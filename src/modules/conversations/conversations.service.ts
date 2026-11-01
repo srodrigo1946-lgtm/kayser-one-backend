@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { telefoneBloqueado } from "../leads/bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, MoreThan, Repository } from "typeorm";
+import { In, IsNull, MoreThan, Repository } from "typeorm";
+import { comCodigoBrasil, variantesDoTelefone } from "../../common/telefone";
 import { Conversation } from "./conversation.entity";
 import { Message, MessageDirection } from "./message.entity";
 import { Lead, LeadStatus, LeadSource } from "../leads/lead.entity";
@@ -303,8 +304,10 @@ export class ConversationsService {
     receivingUserId?: string,
     isGroup = false
   ): Promise<Conversation> {
-    const phone = remoteJid.replace(/\D/g, "");
-    let conv = await this.convRepo.findOne({ where: { remoteJid: phone }, relations: ["lead"] });
+    // Com ou sem o 55 é o mesmo cliente: acha a conversa em qualquer formato (senão a resposta
+    // dele abriria outra conversa e outro lead). Conversa nova já nasce com o 55.
+    const phone = isGroup ? remoteJid.replace(/\D/g, "") : comCodigoBrasil(remoteJid);
+    let conv = await this.convRepo.findOne({ where: { remoteJid: In(isGroup ? [phone] : variantesDoTelefone(phone)) }, relations: ["lead"] });
     if (conv) {
       let changed = false;
       if (isGroup && !conv.isGroup) {
