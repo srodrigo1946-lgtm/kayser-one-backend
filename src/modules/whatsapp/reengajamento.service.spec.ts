@@ -98,6 +98,28 @@ describe("Fila da Equipe (25/10)", () => {
   });
 });
 
+describe("2ª chamada (01/11)", () => {
+  const { mensagemSegundaChamada, mensagemReengajar: primeira } = require("./reengajamento.service");
+  it("texto diferente da 1ª, com o nome e a saída", () => {
+    const a = mensagemSegundaChamada("maria silva", "Ilhamar", 0);
+    expect(a).toContain("Maria");
+    expect(a).toContain("Ilhamar");
+    expect(a).toContain("responder NÃO");
+    expect(a).not.toBe(primeira("maria silva", "Ilhamar", 0));
+    expect(a).not.toBe(mensagemSegundaChamada("maria silva", "Ilhamar", 1));
+  });
+  it("resposta à 2ª chamada vale mesmo com a 1ª antiga (prazo conta da última)", async () => {
+    const { ReengajamentoService } = require("./reengajamento.service");
+    const enviados: string[] = [];
+    const lead = { id: "L1", name: "ana", status: "venda_perdida", reengajadoEm: new Date(Date.now() - 40 * 86400000), reengajado2Em: new Date() };
+    const leads: any = { findOne: async () => lead, update: async () => null, query: async () => [], manager: {} };
+    const fila: any = { distribuirLeadManual: async () => ({ status: "ok" }) };
+    const s = new ReengajamentoService(leads, {} as any, {} as any, { sendText: async (_i: string, _d: string, t: string) => enviados.push(t) } as any, fila, { classificarInteresse: async () => "outro" } as any, {} as any);
+    expect(await s.tratarResposta("L1", "sim", "inst", "55")).toBe(true);
+    expect(enviados[0]).toContain("especialista");
+  });
+});
+
 describe("Filas independentes na mesma hora (27/10)", () => {
   const { dividirHora } = require("./reengajamento.service");
   const lista = (p: string, n: number) => Array.from({ length: n }, (_, i) => `${p}${i}`);

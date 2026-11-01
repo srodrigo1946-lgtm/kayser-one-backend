@@ -16,6 +16,12 @@ import * as XLSX from "xlsx";
 /** 25 por hora, das 9h às 22h (último lote às 21h) — Rodrigo 06/10, horário até 22h em 25/10/2026. */
 export const REENGAJAR_POR_HORA = 25;
 
+/** Quem pode receber a 2ª chamada ($1 = status "sem interesse"): calado desde a 1ª, há 15+ dias. */
+const SEGUNDA_CHAMADA = `l.status = $1 AND l."filaEquipeId" IS NULL AND l."naoPerturbe" = false AND l."reengajado2Em" IS NULL
+  AND l."reengajadoEm" < now() - interval '15 days'
+  AND NOT EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m."conversationId"
+                   WHERE c."leadId" = l.id AND m.direction = 'in' AND m."createdAt" > l."reengajadoEm")`;
+
 /** 1º contato com lead da planilha de um gestor (Fila da Equipe) — variado, como o reengajamento. */
 export function mensagemPrimeiroContato(nome: string | null | undefined, empreendimento: string | null | undefined, i: number): string {
   const n = primeiroNome(nome);
@@ -46,6 +52,21 @@ export function mensagemReengajar(nome: string | null | undefined, empreendiment
     `${oi} Tudo certo? Seu momento pode ter mudado desde a última conversa sobre ${sobre}. Este mês está com condição diferenciada — tem interesse em saber?`,
     `${oi} Ainda está procurando imóvel? Separei novidades sobre ${sobre} que podem te interessar. Posso te mandar?`,
     `${oi} Aqui é da Kayser 😊 Voltou a pensar em sair do aluguel? Temos condições novas pra ${sobre}. Me conta se quer saber mais!`,
+  ];
+  return `${modelos[i % modelos.length]}\n\n(Se não quiser mais receber, é só responder NÃO.)`;
+}
+
+/** 2ª chamada (quem ficou calado): textos diferentes da 1ª e mais diretos, sempre com a saída. */
+export function mensagemSegundaChamada(nome: string | null | undefined, empreendimento: string | null | undefined, i: number): string {
+  const n = primeiroNome(nome);
+  const oi = n ? `Oi, ${n}!` : "Oi!";
+  const emp = (empreendimento || "").trim();
+  const sobre = emp ? `o ${emp}` : "os nossos empreendimentos";
+  const modelos = [
+    `${oi} Aqui é da Kayser de novo 😊 Te chamei há alguns dias sobre ${sobre} e não quero que você perca as condições deste mês. Posso te mandar os valores?`,
+    `${oi} Última tentativa por aqui, combinado? 😊 As condições para ${sobre} estão boas agora. Quer que eu te explique em 1 minuto?`,
+    `${oi} Sei que a rotina é corrida! Se ainda pensa em sair do aluguel, consigo simular ${sobre} pra você sem compromisso. Pode ser?`,
+    `${oi} Tudo bem? Ficou alguma dúvida sobre ${sobre}? Responda SIM que um especialista da Kayser te ajuda agora 🏡`,
   ];
   return `${modelos[i % modelos.length]}\n\n(Se não quiser mais receber, é só responder NÃO.)`;
 }
@@ -134,9 +155,24 @@ export class ReengajamentoService {
               take: REENGAJAR_POR_HORA * 2, // sobra pra pular quem não tem telefone
             })
           ).filter(temTelefone);
+    // 2ª chamada (só fila do Diretor): 15+ dias da 1ª, sem NENHUMA resposta do cliente depois dela.
+    // Só entra quando a 1ª chamada não preenche a parte da hora. Máximo: 2 chamadas por cliente.
+    const segundas: any[] =
+      s.reengajarAtivo === false || semInteresse.length >= REENGAJAR_POR_HORA
+        ? []
+        : (
+            await this.leads
+              .query(
+                `SELECT l.id, l.name, l.phone, l.whatsapp, l.empreendimento, true AS segunda FROM leads l
+                  WHERE ${SEGUNDA_CHAMADA}
+                  ORDER BY l."reengajadoEm" ASC LIMIT $2`,
+                [LeadStatus.VENDA_PERDIDA, REENGAJAR_POR_HORA * 2]
+              )
+              .catch(() => [])
+          ).filter(temTelefone);
     // Filas independentes: cada uma tem a sua metade da hora (a sobra de uma vai pra outra),
     // pra fila dos gestores não parar o reengajamento do Diretor (e vice-versa).
-    const fila: any[] = dividirHora(daEquipe, semInteresse, REENGAJAR_POR_HORA);
+    const fila: any[] = dividirHora(daEquipe, [...semInteresse, ...segundas], REENGAJAR_POR_HORA);
     if (!fila.length) return;
     // Só cita empreendimento que EXISTE no cadastro (o campo às vezes guarda resposta de formulário, ex.: "Agende sua visita!").
     const nomesImoveis = ((await this.imoveis.findAll().catch(() => [])) as any[]).map((p) => p.name as string);
@@ -147,7 +183,7 @@ export class ReengajamentoService {
       for (let i = 0; i < fila.length; i++) {
         const l = fila[i];
         // Marca ANTES de mandar: se o servidor reiniciar no meio, ninguém recebe 2x.
-        await this.leads.update(l.id, { reengajadoEm: new Date() } as any);
+        await this.leads.update(l.id, (l.segunda ? { reengajado2Em: new Date() } : { reengajadoEm: new Date() }) as any);
         const phone = (l.phone || l.whatsapp || "").replace(/\D/g, "");
         try {
           const conv = await this.conversations.findOrCreateByPhone(phone, central);
@@ -155,7 +191,7 @@ export class ReengajamentoService {
           const equipe = l.filaEquipeId as string | undefined;
           // Lead da equipe: a conversa aparece pra quem é o dono (gestor, ou o corretor que já recebeu na planilha).
           if (equipe) await this.leads.query(`UPDATE conversations SET "assignedToId" = $1 WHERE id = $2`, [l.responsavelId || equipe, conv.id]).catch(() => null);
-          const texto = (equipe ? mensagemPrimeiroContato : mensagemReengajar)(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
+          const texto = (equipe ? mensagemPrimeiroContato : l.segunda ? mensagemSegundaChamada : mensagemReengajar)(l.name, empreendimentoReal(l.empreendimento), i + new Date().getHours());
           await this.whatsapp.sendText(`user_${central}`, phone, texto);
           await this.conversations.addMessage(conv.id, texto, "out", true);
           await this.registrar(l, "enviado", undefined, equipe);
@@ -180,7 +216,9 @@ export class ReengajamentoService {
   async tratarResposta(leadId: string, texto: string, instancia: string, destino: string): Promise<boolean> {
     const lead = await this.leads.findOne({ where: { id: leadId } });
     if (lead?.filaEquipeId) return this.respostaDaEquipe(lead, texto, instancia, destino);
-    const quando = (lead as any)?.reengajadoEm ? new Date((lead as any).reengajadoEm).getTime() : 0;
+    // Prazo de resposta conta da última chamada (1ª ou 2ª).
+    const ultima = (lead as any)?.reengajado2Em || (lead as any)?.reengajadoEm;
+    const quando = ultima ? new Date(ultima).getTime() : 0;
     if (!lead || lead.status !== LeadStatus.VENDA_PERDIDA || !quando || Date.now() - quando > 15 * 86_400_000) return false;
     // Palavras conhecidas primeiro; o que não der pra saber, a IA decide.
     let r = classificarResposta(texto);
@@ -495,17 +533,18 @@ export class ReengajamentoService {
     );
     const [fila] = await this.leads.query(
       `SELECT
-         count(*) FILTER (WHERE "reengajadoEm" IS NOT NULL AND "reengajadoEm" > now() - interval '15 days')::int AS aguardando,
+         count(*) FILTER (WHERE COALESCE("reengajado2Em", "reengajadoEm") > now() - interval '15 days')::int AS aguardando,
          count(*) FILTER (WHERE "reengajadoEm" IS NULL AND "naoPerturbe" = false)::int AS faltam
        FROM leads WHERE status = $1`,
       [LeadStatus.VENDA_PERDIDA]
     );
+    const [seg] = await this.leads.query(`SELECT count(*)::int AS n FROM leads l WHERE ${SEGUNDA_CHAMADA}`, [LeadStatus.VENDA_PERDIDA]);
     const ultimas = await this.leads.query(
       // Só a fila do Diretor — as respostas de cada gestor aparecem no quadro "IA por gestor".
       `SELECT nome, phone, tipo, texto, "createdAt" FROM reengajamento_eventos
         WHERE tipo <> 'enviado' AND "filaEquipeId" IS NULL ORDER BY "createdAt" DESC LIMIT 40`
     );
     const s: any = await this.settings.get().catch(() => null);
-    return { ativo: s?.reengajarAtivo !== false, porHora: REENGAJAR_POR_HORA, ...contagem, ...fila, ultimas };
+    return { ativo: s?.reengajarAtivo !== false, porHora: REENGAJAR_POR_HORA, ...contagem, ...fila, faltamSegunda: seg?.n ?? 0, ultimas };
   }
 }

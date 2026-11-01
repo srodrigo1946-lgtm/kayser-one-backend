@@ -155,6 +155,10 @@ export class Lead {
   @Column({ type: "timestamp", nullable: true })
   reengajadoEm: Date | null;
 
+  // 2ª chamada do reengajamento (só fila do Diretor; quem ficou calado 15 dias depois da 1ª).
+  @Column({ type: "timestamp", nullable: true })
+  reengajado2Em: Date | null;
+
   @Column({ nullable: true })
   kanbanOrder: number;
 
