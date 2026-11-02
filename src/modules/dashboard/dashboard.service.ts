@@ -10,12 +10,22 @@ import { LeadHistory, LeadHistoryType } from "../lead-history/lead-history.entit
 import { UsersService } from "../users/users.service";
 import { semContatoWhere } from "../leads/followup-regras";
 import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { hojeSP } from "../plantao/plantao.service";
 
 // Leads que contam pra custo/funil: só os PAGOS (anúncio + formulário Meta).
 // Oferta do corretor (manual) e orgânico (whatsapp) NÃO entram.
 const LEADS_PAGOS = ["anuncio", "formulario_meta"];
 // Lead de TIME e de PLANILHA não entram no painel (não misturam com os de anúncio).
 const FORA_DO_PAINEL = ["time", "planilha"];
+
+/** Início do dia/semana (domingo)/mês no horário de Brasília — o servidor roda em UTC. */
+export function iniciosSP(agora = new Date()) {
+  const hoje = hojeSP(agora);
+  const dia = new Date(`${hoje}T00:00:00-03:00`);
+  const semana = new Date(dia.getTime() - new Date(`${hoje}T12:00:00Z`).getUTCDay() * 86400000);
+  const mes = new Date(`${hoje.slice(0, 7)}-01T00:00:00-03:00`);
+  return { dia, semana, mes };
+}
 
 @Injectable()
 export class DashboardService {
@@ -40,12 +50,13 @@ export class DashboardService {
     const escopo = await this.scopeWhere(user);
     const base = { ...escopo, source: Not(In(FORA_DO_PAINEL)) };
     const now = new Date();
+    const { dia, semana, mes } = iniciosSP(now);
 
     const [leadsHoje, leadsSemana, leadsMes, visitas, vendas, semAtendimento, semContato] =
       await Promise.all([
-        this.leadsRepo.count({ where: { ...base, createdAt: Between(startOfDay(now), now) } }),
-        this.leadsRepo.count({ where: { ...base, createdAt: Between(startOfWeek(now), now) } }),
-        this.leadsRepo.count({ where: { ...base, createdAt: Between(startOfMonth(now), now) } }),
+        this.leadsRepo.count({ where: { ...base, createdAt: Between(dia, now) } }),
+        this.leadsRepo.count({ where: { ...base, createdAt: Between(semana, now) } }),
+        this.leadsRepo.count({ where: { ...base, createdAt: Between(mes, now) } }),
         // Visita/venda conta de QUALQUER origem (time e planilha também) — só a contagem de leads separa.
         this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VISITA_REALIZADA } }),
         this.leadsRepo.count({ where: { ...escopo, status: LeadStatus.VENDA_GANHA } }),
