@@ -10,6 +10,41 @@ function svc() {
   return new MetaFormsService(conversations, leadQueue, leadsRepo, config, settings, {} as any);
 }
 
+describe("1ª mensagem do formulário (02/11)", () => {
+  function montar(lead: any, atrib: any) {
+    const enviados: string[] = [];
+    const repos: Record<string, any> = {
+      User: { findOne: async () => ({ id: "dir", role: "diretor" }) },
+      Conversation: { findOne: async () => ({ id: "cv1", instanceOwnerId: "dir" }) },
+      Message: { count: async () => 0 },
+      LeadQueueAssignment: { findOne: async () => atrib },
+    };
+    const leadsRepo: any = {
+      find: async () => [lead],
+      manager: { getRepository: (e: any) => repos[e.name] },
+    };
+    const whatsapp: any = { pausado: async () => false, conectado: async () => true, sendText: async (_i: string, _p: string, t: string) => enviados.push(t), pausaEntreDisparos: async () => null };
+    const settings: any = { get: async () => ({ aiAutoReply: true }) };
+    const conversations: any = { addMessage: async () => null };
+    const s = new MetaFormsService(conversations, {} as any, leadsRepo, { get: () => "" } as any, settings, whatsapp);
+    return { s, enviados };
+  }
+  const base = { id: "L1", name: "pedro toledo", phone: "5521976020000", empreendimento: "Ilha stay home Resort" };
+  it("lead colocado na mão com corretor: o Kayser NÃO manda a 1ª mensagem", async () => {
+    const { s, enviados } = montar({ ...base, responsavelId: "sandra" }, null);
+    await s.contatarPendentes();
+    expect(enviados).toHaveLength(0);
+  });
+  it("lead do formulário que passou pela fila (ou sem dono) continua recebendo", async () => {
+    const a = montar({ ...base, responsavelId: "sandra" }, { status: "pendente", assignedToId: "sandra" });
+    await a.s.contatarPendentes();
+    expect(a.enviados).toHaveLength(1);
+    const b = montar({ ...base, responsavelId: null }, null);
+    await b.s.contatarPendentes();
+    expect(b.enviados).toHaveLength(1);
+  });
+});
+
 describe("MetaFormsService", () => {
   it("verify devolve o challenge só com o token certo", async () => {
     expect(await svc().verify("subscribe", "segredo", "123")).toBe("123");

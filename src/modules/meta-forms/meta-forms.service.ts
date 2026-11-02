@@ -394,6 +394,9 @@ export class MetaFormsService {
       if (!conv) continue;
       if ((await msgRepo.count({ where: { conversationId: conv.id } })) > 0) continue;
       const atrib = await filaRepo.findOne({ where: { conversationId: conv.id }, order: { assignedAt: "DESC" } });
+      // Lead colocado na mão com um corretor (sem passar pela fila): o corretor é quem chama.
+      // O Kayser dizer "posso te mandar fotos" e ficar calado deixava o cliente esperando (Pedro, 01/11).
+      if (!atrib && lead.responsavelId && lead.responsavelId !== diretor.id) continue;
       if (enviados > 0) await this.whatsapp.pausaEntreDisparos();
       if (await this.primeiroContato(conv.id, lead, atrib)) {
         enviados++;

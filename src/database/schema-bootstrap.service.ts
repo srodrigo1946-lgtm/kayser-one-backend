@@ -51,6 +51,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["corujaoMarcaEntrada", () => this.corujaoMarcaEntrada()],
       ["ensureIaOne", () => this.ensureIaOne()],
       ["ensureClientesSaas", () => this.ensureClientesSaas()],
+      ["rechamarSem55", () => this.rechamarSem55()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -498,6 +499,26 @@ export class SchemaBootstrapService implements OnModuleInit {
   }
 
   /** Venda SaaS (12/10/2026): imobiliárias criadas pela aba "Clientes" (instalação própria no Railway). */
+  /**
+   * Bug do 55 (achado 01/11/2026): reengajamento marcou como chamados clientes cuja mensagem
+   * nunca saiu (telefone sem o 55 → "número não tem WhatsApp"). Rodrigo autorizou (02/11) chamar
+   * de novo SÓ os da fila dele ("Cliente sem interesse", fora de fila de gestor): sem envio
+   * registrado, sem resposta do cliente e marcados ANTES da correção. Quem for chamado de novo
+   * ganha data nova (depois do corte), então rodar outra vez não repete ninguém.
+   */
+  private async rechamarSem55() {
+    const r = await this.dataSource.query(`
+      UPDATE leads l SET "reengajadoEm" = NULL, "reengajado2Em" = NULL
+       WHERE l.status = 'venda_perdida' AND l."filaEquipeId" IS NULL AND l."naoPerturbe" = false
+         AND l."reengajadoEm" < '2026-11-01 16:30:00'
+         AND NOT EXISTS (SELECT 1 FROM reengajamento_eventos e WHERE e."leadId" = l.id::text AND e.tipo = 'enviado')
+         AND NOT EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m."conversationId"
+                          WHERE c."leadId" = l.id AND m.direction = 'in' AND m."createdAt" > l."reengajadoEm")
+      RETURNING l.id`);
+    const n = Array.isArray(r) ? (Array.isArray(r[0]) ? r[0].length : r.length) : 0;
+    if (n) this.logger.log(`Reengajamento: ${n} cliente(s) da fila do Diretor voltaram pra 1ª chamada (bug do 55).`);
+  }
+
   private async ensureClientesSaas() {
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS clientes_saas (
