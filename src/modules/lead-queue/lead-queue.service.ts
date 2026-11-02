@@ -676,17 +676,19 @@ export class LeadQueueService {
     const leadIds = espera.map((a) => a.leadId).filter((x): x is string => !!x);
     const leads = leadIds.length ? await this.leadsRepo.find({ where: { id: In(leadIds) } }) : [];
     const leadById = new Map(leads.map((l) => [l.id, l]));
+    // Fila de espera (leads aguardando o turno) é só do Diretor — os cargos não veem nada dela.
     const isDiretor = user?.role === UserRole.DIRETOR;
-    const aguardandoLeads = espera.map((a, i) => {
-      const l = a.leadId ? leadById.get(a.leadId) : undefined;
-      return {
-        // Nome e telefone do cliente só pro Diretor; os cargos veem só a posição.
-        nome: isDiretor ? (l?.name ?? "Contato") : `Lead ${i + 1}`,
-        phone: isDiretor ? ((l?.phone || l?.whatsapp || "") as string) : "",
-        ...(a.agendadoPara ? { agendadoPara: a.agendadoPara } : {}),
-      };
-    });
-    const aguardando = espera.length;
+    const aguardandoLeads = !isDiretor
+      ? []
+      : espera.map((a) => {
+          const l = a.leadId ? leadById.get(a.leadId) : undefined;
+          return {
+            nome: l?.name ?? "Contato",
+            phone: (l?.phone || l?.whatsapp || "") as string,
+            ...(a.agendadoPara ? { agendadoPara: a.agendadoPara } : {}),
+          };
+        });
+    const aguardando = isDiretor ? espera.length : 0;
 
     if (membros.length === 0) return { turnoAtivo: false, ordem: [], aguardando, aguardandoLeads };
 
