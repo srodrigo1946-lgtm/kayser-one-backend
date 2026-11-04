@@ -101,6 +101,9 @@ describe("Fila da Equipe (25/10)", () => {
     expect(textos[3]).toContain("Digite: QUERO SABER MAIS");
     expect(textos.some((t) => t.includes("sair do aluguel"))).toBe(false);
     expect(classificarResposta("QUERO SABER MAIS")).toBe("sim");
+    // Planilha sem coluna de nome: não chama o cliente de "Contato".
+    expect(mensagemPrimeiroContato("Contato da planilha", null, 0).startsWith("Oi! ")).toBe(true);
+    expect(mensagemPrimeiroContato("Contato da planilha", null, 3).startsWith("Olá!\n")).toBe(true);
   });
 });
 

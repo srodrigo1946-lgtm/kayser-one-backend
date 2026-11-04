@@ -45,7 +45,9 @@ export function mensagemPrimeiroContato(nome: string | null | undefined, empreen
   return `${modelos[i % modelos.length]}\n\n(Se não quiser receber, é só responder NÃO.)`;
 }
 
-const primeiroNome = (n?: string | null) => ((n || "").trim().split(/\s+/)[0] || "").replace(/^\w/, (c) => c.toUpperCase());
+// Nome genérico da importação/formulário ("Contato da planilha") não vira "Oi, Contato!".
+const primeiroNome = (n?: string | null) =>
+  /^contato d[ao] /i.test((n || "").trim()) ? "" : ((n || "").trim().split(/\s+/)[0] || "").replace(/^\w/, (c) => c.toUpperCase());
 
 /** Mensagens variadas (texto igual em massa é o que mais gera denúncia no WhatsApp). */
 export function mensagemReengajar(nome: string | null | undefined, empreendimento: string | null | undefined, i: number): string {
