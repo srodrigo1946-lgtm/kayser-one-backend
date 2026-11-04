@@ -148,7 +148,8 @@ export class ReengajamentoService {
           `SELECT l.id, l.name, l.phone, l.whatsapp, l.empreendimento, l."filaEquipeId", l."responsavelId"::text AS "responsavelId" FROM leads l
              JOIN fila_equipe f ON f."gestorId" = l."filaEquipeId" AND f.ativo = true
             WHERE l."reengajadoEm" IS NULL AND l."naoPerturbe" = false
-            ORDER BY l."createdAt" ASC LIMIT $1`,
+            -- Alterna entre os gestores (1 de cada, depois o 2º de cada...): a planilha grande não trava as outras.
+            ORDER BY ROW_NUMBER() OVER (PARTITION BY l."filaEquipeId" ORDER BY l."createdAt"), l."createdAt" ASC LIMIT $1`,
           [REENGAJAR_POR_HORA * 2]
         )
         .catch(() => [])
