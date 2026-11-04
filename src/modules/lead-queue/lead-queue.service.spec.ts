@@ -190,6 +190,22 @@ describe("LeadQueueService", () => {
     expect(assignments.filter((x) => x.status === "pendente").length).toBe(0);
   });
 
+  it("mensagem do corretor: Novo Lead vira Primeiro Contato e encerra os 15 min", async () => {
+    const { svc, leadsRepo } = make({ enabled: true, slaMinutes: 15, pointer: 0 });
+    const assignUpd = jest.fn(async () => ({}));
+    (svc as any).assignRepo.update = assignUpd;
+    leadsRepo.manager = { getRepository: () => ({ save: async () => ({}) }) };
+    leadsRepo.update = jest.fn(async () => ({ affected: 1 }));
+    expect(await svc.primeiroContatoDoCorretor("L1")).toBe(true);
+    expect(leadsRepo.update).toHaveBeenCalledWith({ id: "L1", status: "novo_lead" }, { status: "primeiro_contato" });
+    expect(assignUpd).toHaveBeenCalledWith({ leadId: "L1", status: "pendente" }, { status: "atendido" });
+    // Lead já em outra etapa: não mexe em nada.
+    leadsRepo.update = jest.fn(async () => ({ affected: 0 }));
+    assignUpd.mockClear();
+    expect(await svc.primeiroContatoDoCorretor("L2")).toBe(false);
+    expect(assignUpd).not.toHaveBeenCalled();
+  });
+
   it("distribuirLeadManual joga o lead no rodízio pro corretor de plantão", async () => {
     const { svc } = make(
       { enabled: true, slaMinutes: 5, pointer: 0 },

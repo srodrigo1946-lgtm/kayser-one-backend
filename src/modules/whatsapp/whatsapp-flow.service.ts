@@ -557,7 +557,8 @@ export class WhatsappFlowService {
     await this.conversations.addMessage(conv.id, text, "out", false);
     // O que o corretor conversou também conta pro score (ex.: agendou visita).
     if (conv.leadId) this.agendarScore(conv.id, conv.leadId);
-    // Responder NÃO encerra os 15 min da fila: só tirar o lead do "Novo Lead" (Rodrigo 04/11).
+    // Mensagem do corretor tira o lead do "Novo Lead" → Primeiro Contato (encerra os 15 min da fila).
+    if (conv.leadId) await this.leadQueue.primeiroContatoDoCorretor(conv.leadId).catch(() => false);
     return this.whatsapp.sendText(`user_${instanceOwner}`, remoteJid, text);
   }
 
@@ -586,6 +587,7 @@ export class WhatsappFlowService {
       mediaMime: file.mimetype.split(";")[0],
       base64: puro,
     });
+    if (conv.leadId) await this.leadQueue.primeiroContatoDoCorretor(conv.leadId).catch(() => false);
     if (ehAudio) return this.whatsapp.sendAudio(`user_${instanceOwner}`, remoteJid, puro);
     return this.whatsapp.sendMedia(`user_${instanceOwner}`, remoteJid, file);
   }

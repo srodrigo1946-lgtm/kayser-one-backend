@@ -521,6 +521,24 @@ export class LeadQueueService {
     return appt;
   }
 
+  /** Corretor mandou mensagem pro lead: sai do "Novo Lead" pro "Primeiro Contato" e encerra os 15 min (Rodrigo 04/11). */
+  async primeiroContatoDoCorretor(leadId: string): Promise<boolean> {
+    const r = await this.leadsRepo.update({ id: leadId, status: LeadStatus.NOVO_LEAD }, { status: LeadStatus.PRIMEIRO_CONTATO });
+    if (!r.affected) return false;
+    await this.assignRepo.update({ leadId, status: "pendente" }, { status: "atendido" });
+    await this.leadsRepo.manager
+      .getRepository(LeadHistory)
+      .save({
+        leadId,
+        type: LeadHistoryType.MUDANCA_STATUS,
+        description: "Corretor mandou mensagem: passou pra Primeiro Contato.",
+        fromStatus: LeadStatus.NOVO_LEAD,
+        toStatus: LeadStatus.PRIMEIRO_CONTATO,
+      } as any)
+      .catch(() => {});
+    return true;
+  }
+
   /** Reatribui ao próximo da fila as atribuições pendentes com prazo vencido. */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async reassignExpired(): Promise<number> {
