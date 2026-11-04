@@ -90,11 +90,13 @@ describe("Fila da Equipe (25/10)", () => {
     expect(enviados[0]).toContain("Não vamos mais te enviar");
   });
 
-  it("1º contato varia, usa o nome e oferece sair", () => {
+  it("1º contato: texto do Rodrigo, com o nome e a saída", () => {
     const a = mensagemPrimeiroContato("maria silva", "Ilhamar", 0);
-    expect(a).not.toBe(mensagemPrimeiroContato("maria silva", "Ilhamar", 1));
-    expect(a).toContain("Maria");
+    expect(a.startsWith("Olá, Maria!")).toBe(true);
+    expect(a).toContain("Digite: QUERO SABER MAIS");
     expect(a).toContain("responder NÃO");
+    expect(mensagemPrimeiroContato(null).startsWith("Olá!\n")).toBe(true);
+    expect(classificarResposta("QUERO SABER MAIS")).toBe("sim");
   });
 });
 

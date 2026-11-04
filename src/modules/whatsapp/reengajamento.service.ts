@@ -23,19 +23,18 @@ const SEGUNDA_CHAMADA = `l.status = $1 AND l."filaEquipeId" IS NULL AND l."naoPe
   AND NOT EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m."conversationId"
                    WHERE c."leadId" = l.id AND m.direction = 'in' AND m."createdAt" > l."reengajadoEm")`;
 
-/** 1º contato com lead da planilha de um gestor (Fila da Equipe) — variado, como o reengajamento. */
-export function mensagemPrimeiroContato(nome: string | null | undefined, empreendimento: string | null | undefined, i: number): string {
+/** 1º contato com lead da planilha de um gestor (Fila da Equipe) — texto do Rodrigo (04/11). */
+export function mensagemPrimeiroContato(nome: string | null | undefined, _empreendimento?: string | null, _i?: number): string {
   const n = primeiroNome(nome);
-  const oi = n ? `Oi, ${n}!` : "Oi!";
-  const emp = (empreendimento || "").trim();
-  const sobre = emp ? `o ${emp}` : "imóveis com condições especiais";
-  const modelos = [
-    `${oi} Tudo bem? Aqui é da Kayser 😊 Você demonstrou interesse em ${sobre}. Ainda está procurando o seu imóvel?`,
-    `${oi} Aqui é da Kayser. Temos novidades sobre ${sobre} e lembrei de você 🏡 Posso te contar?`,
-    `${oi} Tudo certo? Sou da Kayser e estou entrando em contato sobre ${sobre}. Ainda faz sentido pra você?`,
-    `${oi} Aqui é da Kayser 😊 Pensando em sair do aluguel? Separei condições sobre ${sobre}. Quer saber mais?`,
-  ];
-  return `${modelos[i % modelos.length]}\n\n(Se não quiser receber, é só responder NÃO.)`;
+  return [
+    n ? `Olá, ${n}!` : "Olá!",
+    "Vi que você deixou seu contato buscando informações sobre apartamentos aqui no RJ.",
+    "Estamos com algumas oportunidades exclusivas em vários bairros do Rio de Janeiro,",
+    "📍Barra Olímpica, Recreio, Pechincha, Santa Cruz, Campo Grande, São Cristóvão, Tijuca, Centro..",
+    "Tem interesse em alguma oportunidade nessa região?",
+    "Digite: QUERO SABER MAIS e fale com o corretor especialista.",
+    "(Se não quiser receber, é só responder NÃO.)",
+  ].join("\n\n");
 }
 
 const primeiroNome = (n?: string | null) => ((n || "").trim().split(/\s+/)[0] || "").replace(/^\w/, (c) => c.toUpperCase());
