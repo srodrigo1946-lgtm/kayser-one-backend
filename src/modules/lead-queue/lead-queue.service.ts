@@ -521,15 +521,6 @@ export class LeadQueueService {
     return appt;
   }
 
-  /** Marca a atribuição pendente como atendida quando o cargo atribuído responde. */
-  async markAttended(conversationId: string, userId: string): Promise<boolean> {
-    const a = await this.assignRepo.findOne({ where: { conversationId, status: "pendente" } });
-    if (!a || a.assignedToId !== userId) return false;
-    a.status = "atendido";
-    await this.assignRepo.save(a);
-    return true;
-  }
-
   /** Reatribui ao próximo da fila as atribuições pendentes com prazo vencido. */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async reassignExpired(): Promise<number> {

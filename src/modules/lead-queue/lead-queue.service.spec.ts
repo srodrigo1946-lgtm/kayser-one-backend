@@ -190,20 +190,6 @@ describe("LeadQueueService", () => {
     expect(assignments.filter((x) => x.status === "pendente").length).toBe(0);
   });
 
-  it("markAttended encerra o SLA quando o cargo atribuído responde", async () => {
-    const pending = { conversationId: "c1", assignedToId: "A", status: "pendente" };
-    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [pending], ["A", "B"]);
-    expect(await svc.markAttended("c1", "A")).toBe(true);
-    expect(pending.status).toBe("atendido");
-  });
-
-  it("markAttended não marca se o usuário não é o atribuído", async () => {
-    const pending = { conversationId: "c2", assignedToId: "A", status: "pendente" };
-    const { svc } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [pending], ["A", "B"]);
-    expect(await svc.markAttended("c2", "B")).toBe(false);
-    expect(pending.status).toBe("pendente");
-  });
-
   it("distribuirLeadManual joga o lead no rodízio pro corretor de plantão", async () => {
     const { svc } = make(
       { enabled: true, slaMinutes: 5, pointer: 0 },
