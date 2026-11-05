@@ -99,6 +99,29 @@ describe("UsersService", () => {
     expect(repo.query).toHaveBeenCalled(); // soltou refs (leads/conversas/pastas/gestor)
     expect(repo.delete).toHaveBeenCalledWith({ id: "c9" });
   });
+
+  it("corretor excluído/desativado: leads voltam pro gerente dele (05/11); sem chefe ativo, pro Diretor", async () => {
+    const lista: any[] = [
+      { id: "D", role: UserRole.DIRETOR, active: true, name: "Diretor" },
+      { id: "G", role: UserRole.GERENTE, active: true, name: "Rafael" },
+      { id: "c1", role: UserRole.CORRETOR, managerId: "G", active: true },
+      { id: "c2", role: UserRole.CORRETOR, managerId: "X", active: true },
+    ];
+    const sqls: any[] = [];
+    const r: any = {
+      findOne: async ({ where }: any) => lista.find((u) => (where.id ? u.id === where.id : u.role === where.role)) ?? null,
+      save: async (u: any) => u,
+      query: async (q: string, p: any[]) => sqls.push([q, p]),
+      delete: async () => ({}),
+    };
+    const s = new UsersService(r, {} as any);
+    const res = await s.deactivate("c1", { id: "D", role: UserRole.DIRETOR } as any);
+    expect(sqls[0][1]).toEqual(["G", "c1"]);
+    expect(res.message).toContain("Rafael");
+    sqls.length = 0;
+    await s.hardRemove("c2", { id: "D", role: UserRole.DIRETOR } as any);
+    expect(sqls[0][1]).toEqual(["D", "c2"]);
+  });
 });
 
 describe("UsersService.tornarCorretor", () => {

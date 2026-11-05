@@ -210,15 +210,18 @@ export class UsersService {
   }
 
   /**
-   * Move os leads/conversas/pastas de um usuário para o DIRETOR (o mais antigo).
-   * Usado ao desativar/excluir um corretor — os leads dele não podem ficar órfãos.
+   * Move os leads/conversas/pastas de quem saiu para o CHEFE dele (gerente de origem);
+   * sem chefe ativo, vão pro DIRETOR (o mais antigo). Rodrigo 05/11: corretor excluído
+   * pelo gerente devolve os leads pro gerente, não pro Diretor.
    */
-  private async moverLeadsParaDiretor(userId: string) {
-    const diretor = await this.usersRepo.findOne({
-      where: { role: UserRole.DIRETOR },
-      order: { createdAt: "ASC" },
-    });
-    if (!diretor || diretor.id === userId) return;
+  private async moverLeadsDoUsuario(user: User): Promise<User | null> {
+    const userId = user.id;
+    const chefe = user.managerId ? await this.usersRepo.findOne({ where: { id: user.managerId } }) : null;
+    const diretor =
+      chefe && chefe.active !== false && chefe.id !== userId
+        ? chefe
+        : await this.usersRepo.findOne({ where: { role: UserRole.DIRETOR }, order: { createdAt: "ASC" } });
+    if (!diretor || diretor.id === userId) return null;
     const moves: [string, string][] = [
       ["leads", "responsavelId"],
       ["conversations", "assignedToId"],
@@ -234,6 +237,7 @@ export class UsersService {
         /* best-effort: tabela/coluna pode não existir */
       }
     }
+    return diretor;
   }
 
   /**
@@ -277,9 +281,9 @@ export class UsersService {
     await this.assertCanManage(user, requester);
     user.active = false;
     await this.usersRepo.save(user);
-    // Leads do corretor desativado passam pro Diretor (não ficam parados com ele).
-    await this.moverLeadsParaDiretor(id);
-    return { message: "Usuário desativado. Os leads dele foram para o Diretor." };
+    // Leads do corretor desativado voltam pro chefe dele (sem chefe: Diretor).
+    const destino = await this.moverLeadsDoUsuario(user);
+    return { message: `Usuário desativado. Os leads dele foram para ${destino?.name?.trim() || "o Diretor"}.` };
   }
 
   /**
@@ -338,8 +342,8 @@ export class UsersService {
     if (user.id === requester.id) throw new BadRequestException("Você não pode excluir a si mesmo.");
     if (user.role === UserRole.DIRETOR) throw new BadRequestException("Não é possível excluir um Diretor.");
 
-    // Leads/conversas/pastas vão pro Diretor antes de excluir.
-    await this.moverLeadsParaDiretor(id);
+    // Leads/conversas/pastas voltam pro chefe dele (sem chefe: Diretor) antes de excluir.
+    await this.moverLeadsDoUsuario(user);
 
     const clears: [string, string][] = [
       ["conversations", "instanceOwnerId"],
