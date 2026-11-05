@@ -561,6 +561,7 @@ export class LeadsService {
       imoveis = [];
     }
     const importId = randomUUID();
+    const agora = new Date();
 
     const leads: Lead[] = [];
     let duplicates = 0;
@@ -624,6 +625,8 @@ export class LeadsService {
         // Fila da Equipe: o que fica com o gestor (não mandado em lote pra outra pessoa) entra na fila dele.
         ...(paraFilaEquipe && !lote?.responsavelId && !lote?.dono && !donoColuna ? { filaEquipeId: user.id } : {}),
       } as Partial<Lead>);
+      // Lote mandado pra outra pessoa: aviso de fogos na tela dela (mesma hora pra todos = 1 aviso só).
+      if (entity.responsavelId && entity.responsavelId !== user.id) Object.assign(entity, { transferidoEm: agora, transferidoPorId: user.id });
       leads.push(entity);
     }
 

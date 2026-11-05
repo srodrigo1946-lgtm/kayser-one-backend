@@ -69,6 +69,10 @@ describe("Importar planilha de leads", () => {
     expect(salvos[0]).toMatchObject({ responsavelId: "isaac", origem: "Time Isaac", source: "time", status: "novo_lead" });
     expect(salvos[2]).toMatchObject({ status: "primeiro_contato" });
     expect(salvos[6]).toMatchObject({ status: "novo_lead" });
+    // Lote pro Isaac: aviso na tela dele, todos com a MESMA hora (1 aviso só); o resto não avisa.
+    expect(salvos[0].transferidoPorId).toBe("d");
+    expect(salvos[1].transferidoEm).toBe(salvos[0].transferidoEm);
+    expect(salvos[6].transferidoEm).toBeUndefined();
   });
 
   it("sem coluna de telefone avisa quais colunas achou", async () => {
