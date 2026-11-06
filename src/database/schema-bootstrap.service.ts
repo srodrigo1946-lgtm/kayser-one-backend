@@ -52,6 +52,7 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureIaOne", () => this.ensureIaOne()],
       ["ensureClientesSaas", () => this.ensureClientesSaas()],
       ["rechamarSem55", () => this.rechamarSem55()],
+      ["rechamarQuedaWhatsapp0611", () => this.rechamarQuedaWhatsapp0611()],
     ];
     for (const [name, run] of steps) {
       try {
@@ -517,6 +518,23 @@ export class SchemaBootstrapService implements OnModuleInit {
       RETURNING l.id`);
     const n = Array.isArray(r) ? (Array.isArray(r[0]) ? r[0].length : r.length) : 0;
     if (n) this.logger.log(`Reengajamento: ${n} cliente(s) da fila do Diretor voltaram pra 1ª chamada (bug do 55).`);
+  }
+
+  /**
+   * WhatsApp central suspenso por 6 h em 06/11/2026: quem foi marcado hoje (até 13h30) e a
+   * mensagem não saiu volta pra fila (Diretor e equipes). Janela fechada no passado: rodar de novo não repete.
+   */
+  private async rechamarQuedaWhatsapp0611() {
+    const r = await this.dataSource.query(`
+      UPDATE leads l SET "reengajadoEm" = NULL
+       WHERE l."naoPerturbe" = false
+         AND l."reengajadoEm" BETWEEN '2026-11-06 03:00:00' AND '2026-11-06 16:30:00'
+         AND NOT EXISTS (SELECT 1 FROM reengajamento_eventos e WHERE e."leadId" = l.id::text AND e.tipo = 'enviado')
+         AND NOT EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m."conversationId"
+                          WHERE c."leadId" = l.id AND m.direction = 'in' AND m."createdAt" > l."reengajadoEm")
+      RETURNING l.id`);
+    const n = Array.isArray(r) ? (Array.isArray(r[0]) ? r[0].length : r.length) : 0;
+    if (n) this.logger.log(`Reengajamento: ${n} cliente(s) voltaram pra fila (WhatsApp suspenso 06/11).`);
   }
 
   private async ensureClientesSaas() {

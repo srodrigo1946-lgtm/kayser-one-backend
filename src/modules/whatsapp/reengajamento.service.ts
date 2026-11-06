@@ -209,7 +209,13 @@ export class ReengajamentoService {
           enviados++;
         } catch (e) {
           this.logger.warn(`Reengajamento: falhou pro lead ${l.id} (${(e as Error).message}).`);
-          if (/pausad/i.test((e as Error).message)) break; // WhatsApp em pausa (proteção): para o lote
+          // Número caiu/suspenso no meio do lote (06/11): desmarca o lead (chama depois) e para o lote.
+          // Número sem WhatsApp continua marcado (não fica tentando de novo toda hora).
+          const pausado = /pausad/i.test((e as Error).message);
+          if (pausado || !(await this.whatsapp.conectado(`user_${central}`))) {
+            await this.leads.update(l.id, (l.segunda ? { reengajado2Em: null } : { reengajadoEm: null }) as any).catch(() => null);
+            break;
+          }
         }
         // Cadência: ~2 a 2,5 min entre mensagens (25 em ~55 min), com variação aleatória.
         if (i < fila.length - 1) await new Promise((r) => setTimeout(r, 120_000 + Math.floor(Math.random() * 30_000)));
