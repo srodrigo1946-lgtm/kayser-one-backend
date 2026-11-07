@@ -29,6 +29,13 @@ import { ConfigService } from "@nestjs/config";
 // Origem paga (anúncio / formulário Meta): o aviso na tela usa frase própria.
 const ANUNCIO = ["anuncio", "formulario_meta"];
 
+/** Nome do corretor pro cliente: 1º nome + sobrenome, pulando "de/da/dos..." ("Anita de Alvarenga Silva" → "Anita Alvarenga"). */
+export function nomeCurto(nome: string): string {
+  const p = nome.trim().split(/\s+/);
+  const sobrenome = p.slice(1).find((x) => !/^(de|da|do|das|dos|e)$/i.test(x));
+  return [p[0], sobrenome].filter(Boolean).join(" ");
+}
+
 @Injectable()
 export class LeadQueueService {
   private readonly logger = new Logger(LeadQueueService.name);
@@ -100,7 +107,7 @@ export class LeadQueueService {
       const conv = await this.convRepo.findOne({ where: { id: conversationId } });
       if (!conv?.remoteJid || !conv.instanceOwnerId) return;
       const u = await this.usersRepo.findOne({ where: { id: userId } });
-      const nome = u?.name ? u.name.split(" ").slice(0, 2).join(" ") : "um especialista";
+      const nome = u?.name ? nomeCurto(u.name) : "um especialista";
       // A IA já marcou visita fora do plantão? Manda o CARTÃO da visita: corretor,
       // data e o stand de vendas onde ele vai receber o cliente.
       const visita = conv.leadId ? await this.visitaIAdoLead(conv.leadId) : null;
@@ -595,9 +602,8 @@ export class LeadQueueService {
       // O lead repassado CONTA como a vez dele: o "Próximo" anda pro seguinte
       // (senão o mesmo corretor recebia o repassado E o próximo lead novo).
       await this.avancarDepoisDe(nextUser, membros);
-      // Passou pro próximo: avisa o cliente com o NOME do novo corretor — sem dizer
-      // que o anterior estava ocupado (não fica estranho).
-      await this.avisarEspecialistaNoTurno(a.conversationId, nextUser);
+      // Passou pro próximo: o cliente NÃO recebe aviso de troca (Rodrigo 07/11 — via "Anita"
+      // e logo depois "agora é o Diego"); o novo corretor se apresenta na conversa.
       count++;
     }
     if (count) this.logger.log(`Fila: ${count} lead(s) reatribuído(s) por SLA (plantão).`);

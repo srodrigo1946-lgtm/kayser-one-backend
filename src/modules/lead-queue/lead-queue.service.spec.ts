@@ -65,6 +65,21 @@ function make(
   };
 }
 
+describe("Nome do corretor pro cliente (07/11)", () => {
+  it("pula 'de/da/dos' e não corta no meio", () => {
+    const { nomeCurto } = require("./lead-queue.service");
+    expect(nomeCurto("Anita de Alvarenga Silva")).toBe("Anita Alvarenga");
+    expect(nomeCurto("Diego Pontes Sampaio ")).toBe("Diego Pontes");
+    expect(nomeCurto("Carlos")).toBe("Carlos");
+  });
+  it("lead passou pro próximo da fila: o cliente NÃO recebe mensagem de troca", async () => {
+    const m = make({ enabled: true, slaMinutes: 15, pointer: 0 }, [{ conversationId: "c1", leadId: "L1", status: "pendente", assignedToId: "A", dueAt: new Date(0), attempts: 1 }], ["A", "B"], undefined, {}, { id: "L1", status: "novo_lead" });
+    await m.svc.reassignExpired();
+    expect(m.assignments[1]).toMatchObject({ assignedToId: "B", status: "pendente" });
+    expect((m.svc as any).whatsapp.sendText).not.toHaveBeenCalled();
+  });
+});
+
 describe("WhatsApp caiu e voltou (07/11)", () => {
   function montar(conectado: boolean, caiuEm: Date | null) {
     const m = make({ id: "s", enabled: true, slaMinutes: 15, pointer: 0, whatsappCaiuEm: caiuEm }, [{ conversationId: "conv-L1", leadId: "L1", status: "pendente", assignedToId: "A" }], ["A", "B"]);

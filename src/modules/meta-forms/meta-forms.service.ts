@@ -8,7 +8,7 @@ import axios from "axios";
 import { timingSafeEqual } from "crypto";
 import { Lead } from "../leads/lead.entity";
 import { ConversationsService } from "../conversations/conversations.service";
-import { LeadQueueService } from "../lead-queue/lead-queue.service";
+import { LeadQueueService, nomeCurto } from "../lead-queue/lead-queue.service";
 import { SettingsService } from "../settings/settings.service";
 import { Property } from "../properties/property.entity";
 import { detectarEmpreendimento } from "../knowledge/knowledge.service";
@@ -436,7 +436,7 @@ export class MetaFormsService {
       let corretor: string | null = null;
       if (atribuicao?.status === "pendente" && atribuicao.assignedToId) {
         const u = await users.findOne({ where: { id: atribuicao.assignedToId } });
-        corretor = u?.name ? u.name.split(" ").slice(0, 2).join(" ") : null;
+        corretor = u?.name ? nomeCurto(u.name) : null;
       }
       const s = await this.settings.get();
       if (s.whatsappPausado) {

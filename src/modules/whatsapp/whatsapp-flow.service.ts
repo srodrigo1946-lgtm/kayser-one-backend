@@ -3,7 +3,7 @@ import { ConversationsService } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
 import { WhatsappService, pedeParar } from "./whatsapp.service";
-import { LeadQueueService } from "../lead-queue/lead-queue.service";
+import { LeadQueueService, nomeCurto } from "../lead-queue/lead-queue.service";
 import { UsersService } from "../users/users.service";
 import { User, UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
@@ -518,7 +518,7 @@ export class WhatsappFlowService {
     let nome = "um especialista";
     if (assignedToId) {
       const esp = await this.users.findOne(assignedToId).catch(() => null);
-      if (esp?.name) nome = esp.name.split(" ").slice(0, 2).join(" ");
+      if (esp?.name) nome = nomeCurto(esp.name);
     }
     const msg = assignedToId
       ? `Olá! 👋 Recebemos seu contato e você será atendido pelo nosso especialista *${nome}*, que já vai falar com você. 🏡`
