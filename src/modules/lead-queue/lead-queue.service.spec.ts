@@ -71,8 +71,10 @@ describe("WhatsApp caiu e voltou (07/11)", () => {
     const svc: any = m.svc;
     svc.conversations.diretorCentralId = async () => "D";
     svc.whatsapp.conectado = async () => conectado;
-    svc.leadsRepo.find = jest.fn(async () => [{ id: "L1" }]);
-    svc.convRepo.findOne = jest.fn(async () => ({ id: "conv-L1" }));
+    svc.leadsRepo.find = jest.fn(async () => [{ id: "L1", status: "em_atendimento" }, { id: "L2", status: "novo_lead" }]);
+    svc.convRepo.findOne = jest.fn(async ({ where }: any) => ({ id: `conv-${where.leadId}` }));
+    // L2: o cliente respondeu → já foi atendido, não volta.
+    svc.convRepo.query = jest.fn(async (_q: string, [c]: any) => (c === "conv-L2" ? [1] : []));
     svc.assignRepo.update = jest.fn(async () => {
       m.assignments[0].status = "expirado";
     });
@@ -89,6 +91,7 @@ describe("WhatsApp caiu e voltou (07/11)", () => {
     expect(m.settings.whatsappCaiuEm).toBeNull();
     expect(m.assignments[0].status).toBe("expirado");
     expect(m.assignments[1]).toMatchObject({ leadId: "L1", status: "pendente" });
+    expect(m.leadsRepo.update).toHaveBeenCalledWith("L1", { status: "novo_lead" }); // estava Em atendimento sem resposta
   });
   it("piscada de poucos minutos: não mexe", async () => {
     const m = montar(true, new Date(Date.now() - 3 * 60_000));
