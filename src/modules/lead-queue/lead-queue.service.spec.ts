@@ -65,6 +65,38 @@ function make(
   };
 }
 
+describe("WhatsApp caiu e voltou (07/11)", () => {
+  function montar(conectado: boolean, caiuEm: Date | null) {
+    const m = make({ id: "s", enabled: true, slaMinutes: 15, pointer: 0, whatsappCaiuEm: caiuEm }, [{ conversationId: "conv-L1", leadId: "L1", status: "pendente", assignedToId: "A" }], ["A", "B"]);
+    const svc: any = m.svc;
+    svc.conversations.diretorCentralId = async () => "D";
+    svc.whatsapp.conectado = async () => conectado;
+    svc.leadsRepo.find = jest.fn(async () => [{ id: "L1" }]);
+    svc.convRepo.findOne = jest.fn(async () => ({ id: "conv-L1" }));
+    svc.assignRepo.update = jest.fn(async () => {
+      m.assignments[0].status = "expirado";
+    });
+    return m;
+  }
+  it("caiu: anota a hora e não mexe nos leads", async () => {
+    const m = montar(false, null);
+    expect(await m.svc.vigiarWhatsapp()).toBe(0);
+    expect(m.settings.whatsappCaiuEm).toBeInstanceOf(Date);
+  });
+  it("voltou depois de horas fora: lead em Novo Lead volta pra fila com corretor novo", async () => {
+    const m = montar(true, new Date(Date.now() - 7 * 3600_000));
+    expect(await m.svc.vigiarWhatsapp()).toBe(1);
+    expect(m.settings.whatsappCaiuEm).toBeNull();
+    expect(m.assignments[0].status).toBe("expirado");
+    expect(m.assignments[1]).toMatchObject({ leadId: "L1", status: "pendente" });
+  });
+  it("piscada de poucos minutos: não mexe", async () => {
+    const m = montar(true, new Date(Date.now() - 3 * 60_000));
+    expect(await m.svc.vigiarWhatsapp()).toBe(0);
+    expect(m.assignments).toHaveLength(1);
+  });
+});
+
 describe("LeadQueueService", () => {
   it("distribui entre os atendentes do turno e avança o ponteiro", async () => {
     const { svc, settings, convRepo } = make({ enabled: true, slaMinutes: 5, pointer: 0 }, [], ["A", "B", "C"]);

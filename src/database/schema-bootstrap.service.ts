@@ -53,6 +53,12 @@ export class SchemaBootstrapService implements OnModuleInit {
       ["ensureClientesSaas", () => this.ensureClientesSaas()],
       ["rechamarSem55", () => this.rechamarSem55()],
       ["rechamarQuedaWhatsapp0611", () => this.rechamarQuedaWhatsapp0611()],
+      // Coluna nasce com 06/11 07h (SP) = início da suspensão de 7 h: na 1ª subida, os leads dela voltam
+      // pra fila uma vez só (o default só vale na criação da coluna e é tirado logo depois).
+      ["whatsappCaiuEm", async () => {
+        await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "whatsappCaiuEm" timestamp DEFAULT '2026-11-06 10:00:00'`);
+        await this.dataSource.query(`ALTER TABLE lead_queue_settings ALTER COLUMN "whatsappCaiuEm" DROP DEFAULT`);
+      }],
     ];
     for (const [name, run] of steps) {
       try {

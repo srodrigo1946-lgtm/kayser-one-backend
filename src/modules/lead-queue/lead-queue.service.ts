@@ -634,6 +634,45 @@ export class LeadQueueService {
     return [...daFila, ...deTransferencia];
   }
 
+  /**
+   * Vigia o WhatsApp central (Rodrigo 07/11, suspensão de 7 h): caiu → anota a hora; voltou
+   * depois de 10+ min fora → os leads de anúncio/formulário/WhatsApp que entraram nesse tempo
+   * e continuam em "Novo Lead" voltam pra fila (corretor novo do plantão, 15 min novos).
+   */
+  @Cron("*/2 * * * *")
+  async vigiarWhatsapp(): Promise<number> {
+    const central = await this.conversations.diretorCentralId();
+    if (!central) return 0;
+    const s = await this.getSettings();
+    if (!(await this.whatsapp.conectado(`user_${central}`))) {
+      if (!s.whatsappCaiuEm) await this.settingsRepo.update(s.id, { whatsappCaiuEm: new Date() } as any);
+      return 0;
+    }
+    if (!s.whatsappCaiuEm) return 0;
+    const desde = new Date(s.whatsappCaiuEm);
+    await this.settingsRepo.update(s.id, { whatsappCaiuEm: null } as any);
+    if (Date.now() - desde.getTime() < 10 * 60_000) return 0; // piscada: não mexe
+    const n = await this.recolocarNaFila(desde);
+    this.logger.log(`WhatsApp voltou (fora desde ${desde.toISOString()}): ${n} lead(s) recolocado(s) na fila.`);
+    return n;
+  }
+
+  /** Leads de anúncio/formulário/WhatsApp criados desde `desde`, ainda em "Novo Lead" → fila de novo. */
+  async recolocarNaFila(desde: Date): Promise<number> {
+    const leads = await this.leadsRepo.find({
+      where: { source: In(["anuncio", "whatsapp", "formulario_meta"]), status: LeadStatus.NOVO_LEAD, createdAt: MoreThan(desde) } as any,
+    });
+    let n = 0;
+    for (const l of leads) {
+      const conv = await this.convRepo.findOne({ where: { leadId: l.id } });
+      if (!conv) continue;
+      // Fecha a atribuição antiga (corretor que não conseguiu falar) e entra de novo no rodízio.
+      await this.assignRepo.update({ conversationId: conv.id, status: In(["pendente", "aguardando"]) } as any, { status: "expirado" } as any);
+      if (await this.enqueueLead({ conversationId: conv.id, leadId: l.id })) n++;
+    }
+    return n;
+  }
+
   async getPendentes(): Promise<{ leadId: string; dueAt: Date }[]> {
     const rows = await this.assignRepo.find({ where: { status: "pendente" } });
     return rows

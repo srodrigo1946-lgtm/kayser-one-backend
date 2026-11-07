@@ -18,6 +18,11 @@ export class LeadQueueSettings {
   @Column({ type: "int", default: 0 })
   pointer: number;
 
+  // Desde quando o WhatsApp central está fora (caiu/suspenso). Ao voltar, os leads de
+  // anúncio/formulário/WhatsApp que entraram nesse tempo e ninguém atendeu voltam pra fila (Rodrigo 07/11).
+  @Column({ type: "timestamp", nullable: true })
+  whatsappCaiuEm: Date | null;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }
