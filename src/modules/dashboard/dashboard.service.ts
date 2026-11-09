@@ -68,7 +68,87 @@ export class DashboardService {
     const total = leadsMes || 1;
     const conversao = ((vendas / total) * 100);
 
-    return { leadsHoje, leadsSemana, leadsMes, visitas, vendas, conversao, semAtendimento, semContato };
+    // Tendência real: hoje até agora x ontem até a mesma hora (antes era um "+12%" fixo).
+    const umDia = 86_400_000;
+    const leadsOntem = await this.leadsRepo.count({
+      where: { ...base, createdAt: Between(new Date(dia.getTime() - umDia), new Date(now.getTime() - umDia)) },
+    });
+    const tendenciaHoje = leadsOntem > 0 ? Math.round(((leadsHoje - leadsOntem) / leadsOntem) * 100) : null;
+
+    const tempoPrimeiroContato = await this.tempoPrimeiroContato(escopo, mes).catch(() => ({ minutos: null, leads: 0 }));
+
+    return {
+      leadsHoje, leadsSemana, leadsMes, visitas, vendas, conversao, semAtendimento, semContato,
+      leadsOntem, tendenciaHoje,
+      tempoMedioMin: tempoPrimeiroContato.minutos, tempoMedioLeads: tempoPrimeiroContato.leads,
+    };
+  }
+
+  /**
+   * Tempo médio (min) do lead entrar até a 1ª mensagem de alguém da EQUIPE (isAI=false)
+   * — leads do mês, só os que já tiveram essa resposta. Antes o card mostrava "0h" fixo.
+   */
+  private async tempoPrimeiroContato(escopo: Record<string, any>, desde: Date) {
+    const ids: string[] | null = escopo.responsavelId ? (escopo.responsavelId as any).value : null;
+    const params: any[] = [desde, FORA_DO_PAINEL];
+    if (ids) params.push(ids);
+    const [row] = await this.leadsRepo.query(
+      `SELECT AVG(EXTRACT(EPOCH FROM (fm.primeira - l."createdAt")) / 60) AS minutos, COUNT(*)::int AS leads
+         FROM leads l
+         JOIN LATERAL (
+           SELECT MIN(m."createdAt") AS primeira
+             FROM conversations c JOIN messages m ON m."conversationId" = c.id
+            WHERE c."leadId" = l.id AND m.direction = 'out' AND m."isAI" = false AND m."createdAt" >= l."createdAt"
+         ) fm ON fm.primeira IS NOT NULL
+        WHERE l."createdAt" >= $1 AND l.source <> ALL($2)${ids ? ` AND l."responsavelId" = ANY($3)` : ""}`,
+      params
+    );
+    const leads = Number(row?.leads) || 0;
+    return { minutos: leads ? Math.round(Number(row.minutos)) : null, leads };
+  }
+
+  /**
+   * Lista por trás de cada card do painel (mesmo filtro da contagem, pra bater o número).
+   * Mês 0/ausente = ano todo. Devolve até 200 leads + o total.
+   */
+  async getLista(user: User, tipo: string, year?: number, month?: number) {
+    const escopo = await this.scopeWhere(user);
+    const base = { ...escopo, source: Not(In(FORA_DO_PAINEL)) };
+    const now = new Date();
+    const y = year || now.getFullYear();
+    const start = month ? new Date(y, month - 1, 1) : new Date(y, 0, 1);
+    const end = month ? new Date(y, month, 0, 23, 59, 59, 999) : new Date(y, 11, 31, 23, 59, 59, 999);
+    const { dia } = iniciosSP(now);
+
+    const filtros: Record<string, { where: any; order: Record<string, "ASC" | "DESC"> }> = {
+      hoje: { where: { ...base, createdAt: Between(dia, now) }, order: { createdAt: "DESC" } },
+      periodo: { where: { ...base, createdAt: Between(start, end) }, order: { createdAt: "DESC" } },
+      visitas: { where: { ...escopo, status: LeadStatus.VISITA_REALIZADA, updatedAt: Between(start, end) }, order: { updatedAt: "DESC" } },
+      vendas: { where: { ...escopo, status: LeadStatus.VENDA_GANHA, dataVenda: Between(start, end) as any }, order: { dataVenda: "DESC" } as any },
+      semAtendimento: { where: { ...base, status: LeadStatus.NOVO_LEAD, lastContactAt: IsNull() }, order: { createdAt: "ASC" } },
+      semContato: { where: semContatoWhere(base, 3, now), order: { lastContactAt: "ASC" } },
+    };
+    const f = filtros[tipo];
+    if (!f) return { total: 0, items: [] };
+
+    const [leads, total] = await this.leadsRepo.findAndCount({
+      where: f.where,
+      relations: ["responsavel"],
+      order: f.order,
+      take: 200,
+    });
+    return {
+      total,
+      items: leads.map((l) => ({
+        id: l.id,
+        nome: l.name,
+        phone: l.phone || l.whatsapp || "",
+        status: l.status,
+        responsavel: l.responsavel?.name ?? null,
+        createdAt: l.createdAt,
+        lastContactAt: l.lastContactAt,
+      })),
+    };
   }
 
   async getRanking(user: User) {

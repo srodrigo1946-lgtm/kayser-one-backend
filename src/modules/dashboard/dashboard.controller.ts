@@ -16,6 +16,12 @@ export class DashboardController {
     return this.dashboardService.getMetrics(req.user);
   }
 
+  @Get("lista")
+  @ApiOperation({ summary: "Leads por trás de um card do painel (tipo=hoje|periodo|visitas|vendas|semAtendimento|semContato)" })
+  lista(@Request() req: any, @Query("tipo") tipo: string, @Query("year") year?: string, @Query("month") month?: string) {
+    return this.dashboardService.getLista(req.user, tipo, year ? Number(year) : undefined, month ? Number(month) : undefined);
+  }
+
   @Get("ranking")
   @ApiOperation({ summary: "Ranking de corretores" })
   ranking(@Request() req: any) {
