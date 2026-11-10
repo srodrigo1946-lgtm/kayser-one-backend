@@ -11,6 +11,7 @@ import { UsersService } from "../users/users.service";
 import { semContatoWhere } from "../leads/followup-regras";
 import { subDays, startOfDay, startOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import { hojeSP } from "../plantao/plantao.service";
+import { ehAvisoDaFila } from "../conversations/conversations.service";
 
 // Leads que contam pra custo/funil: só os PAGOS (anúncio + formulário Meta).
 // Oferta do corretor (manual) e orgânico (whatsapp) NÃO entram.
@@ -240,6 +241,61 @@ export class DashboardService {
       .groupBy("lead.status")
       .getRawMany();
     return rows.map((r) => ({ status: r.status, count: Number(r.count) || 0 }));
+  }
+
+  /**
+   * Clientes de pessoa(s) do time pra tela 1-on-1 (10/11), com a última mensagem da conversa.
+   * - status: os leads da etapa (mesmo filtro do funil: período + leads pagos);
+   * - esperando: cliente mandou mensagem há +30 min (até 7 dias) e ninguém respondeu.
+   * `ids` intersectado com o escopo (igual ao funil).
+   */
+  async getClientesTime(user: User, ids: string[], opts: { year?: number; month?: number; status?: string; esperando?: boolean }) {
+    const scope = await this.users.getScopeIds(user);
+    const efetivos = scope === null ? ids : ids.filter((id) => scope.includes(id));
+    if (efetivos.length === 0) return { total: 0, items: [] };
+
+    const params: any[] = [efetivos];
+    let filtro = "";
+    let ordem = `l."createdAt" DESC`;
+    if (opts.esperando) {
+      filtro = `AND um.direction = 'in' AND um."createdAt" < NOW() - INTERVAL '30 minutes' AND um."createdAt" > NOW() - INTERVAL '7 days'`;
+      ordem = `um."createdAt" ASC`;
+    } else {
+      const y = opts.year || new Date().getFullYear();
+      const m = opts.month;
+      params.push(m ? new Date(y, m - 1, 1) : new Date(y, 0, 1));
+      params.push(m ? new Date(y, m, 0, 23, 59, 59, 999) : new Date(y, 11, 31, 23, 59, 59, 999));
+      params.push(LEADS_PAGOS);
+      filtro = `AND l."createdAt" BETWEEN $2 AND $3 AND l.source::text = ANY($4)`;
+      if (opts.status) {
+        params.push(opts.status);
+        filtro += ` AND l.status::text = $5`;
+      }
+    }
+    const rows: any[] = await this.leadsRepo.query(
+      `SELECT l.id, l.name AS nome, COALESCE(l.phone, l.whatsapp, '') AS phone, l.status, u.name AS responsavel,
+              l."createdAt", l."lastContactAt", um.content AS "ultimaMsg", um.direction AS "ultimaDirecao", um."createdAt" AS "ultimaEm",
+              COUNT(*) OVER() AS total
+         FROM leads l
+         LEFT JOIN users u ON u.id = l."responsavelId"
+         LEFT JOIN LATERAL (
+           SELECT m.content, m.direction, m."createdAt" FROM conversations c
+             JOIN messages m ON m."conversationId" = c.id
+            WHERE c."leadId" = l.id ORDER BY m."createdAt" DESC LIMIT 1
+         ) um ON true
+        WHERE l."responsavelId" = ANY($1) ${filtro}
+        ORDER BY ${ordem}
+        LIMIT 200`,
+      params,
+    );
+    return {
+      total: Number(rows[0]?.total ?? 0),
+      items: rows.map(({ total, ...r }) => ({
+        ...r,
+        // Aviso interno da fila não é conversa com o cliente — não mostra.
+        ultimaMsg: ehAvisoDaFila(r.ultimaMsg) ? null : (r.ultimaMsg || "").slice(0, 160) || null,
+      })),
+    };
   }
 
   /**

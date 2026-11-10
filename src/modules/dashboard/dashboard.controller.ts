@@ -56,6 +56,25 @@ export class DashboardController {
     );
   }
 
+  @Get("clientes")
+  @ApiOperation({ summary: "Clientes do time (1-on-1): por etapa (status) ou esperando resposta (esperando=1)" })
+  clientes(
+    @Request() req: any,
+    @Query("ids") ids?: string,
+    @Query("year") year?: string,
+    @Query("month") month?: string,
+    @Query("status") status?: string,
+    @Query("esperando") esperando?: string
+  ) {
+    const lista = (ids ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return this.dashboardService.getClientesTime(req.user, lista, {
+      year: year ? Number(year) : undefined,
+      month: month ? Number(month) : undefined,
+      status: status || undefined,
+      esperando: esperando === "1",
+    });
+  }
+
   @Get("daily")
   @ApiOperation({ summary: "Leads pagos por dia do mês (gráfico diário)" })
   daily(@Request() req: any, @Query("year") year?: string, @Query("month") month?: string) {
