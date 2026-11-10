@@ -26,6 +26,12 @@ export class ConversationsController {
     return this.conversationsService.contarConversas(req.user);
   }
 
+  @Get("respostas")
+  @ApiOperation({ summary: "Conversas minhas com resposta do cliente não lida (aviso pro corretor)" })
+  respostas(@Request() req: any) {
+    return this.conversationsService.respostasPendentes(req.user);
+  }
+
   @Get("links-anuncio")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)

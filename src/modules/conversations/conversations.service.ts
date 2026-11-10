@@ -125,6 +125,32 @@ export class ConversationsService {
     return { total: await qb.getCount() };
   }
 
+  /**
+   * Conversas DO PRÓPRIO usuário (atendente ou responsável do lead) com mensagem do
+   * cliente ainda não lida — o front avisa o corretor quando o cliente responde (10/11).
+   * unreadCount só sobe com mensagem do cliente, então resposta da IA não reavisa.
+   */
+  async respostasPendentes(user: User) {
+    const convs = await this.convRepo
+      .createQueryBuilder("c")
+      .leftJoin("c.lead", "lead")
+      .select(["c.id", "c.leadId", "c.contactName", "c.lastMessage", "c.lastMessageAt", "c.unreadCount", "lead.id", "lead.name"])
+      .where("c.leadId IS NOT NULL")
+      .andWhere("c.unreadCount > 0")
+      .andWhere("c.lastMessageAt > NOW() - INTERVAL '1 day'")
+      .andWhere("(c.assignedToId = :me OR lead.responsavelId = :me)", { me: user.id })
+      .orderBy("c.lastMessageAt", "DESC")
+      .take(30)
+      .getMany();
+    return convs.map((c) => ({
+      id: c.id,
+      leadId: c.leadId,
+      nome: c.lead?.name || c.contactName || "Cliente",
+      texto: ehAvisoDaFila(c.lastMessage) ? "" : (c.lastMessage || "").slice(0, 140),
+      naoLidas: c.unreadCount,
+    }));
+  }
+
   async list(user: User) {
     const qb = this.convRepo
       .createQueryBuilder("c")
