@@ -142,11 +142,20 @@ export class ConversationsService {
       .orderBy("c.lastMessageAt", "DESC")
       .take(30)
       .getMany();
+    // Prévia = última mensagem DO CLIENTE (a lastMessage pode ser a resposta da IA/equipe).
+    const ultimas: { conversationId: string; content: string }[] = convs.length
+      ? await this.msgRepo.query(
+          `SELECT DISTINCT ON ("conversationId") "conversationId", content FROM messages
+           WHERE "conversationId" = ANY($1) AND direction = 'in' ORDER BY "conversationId", "createdAt" DESC`,
+          [convs.map((c) => c.id)],
+        )
+      : [];
+    const doCliente = new Map(ultimas.map((m) => [m.conversationId, m.content]));
     return convs.map((c) => ({
       id: c.id,
       leadId: c.leadId,
       nome: c.lead?.name || c.contactName || "Cliente",
-      texto: ehAvisoDaFila(c.lastMessage) ? "" : (c.lastMessage || "").slice(0, 140),
+      texto: (doCliente.get(c.id) || "").slice(0, 140),
       naoLidas: c.unreadCount,
     }));
   }
