@@ -258,7 +258,8 @@ export class DashboardService {
     let filtro = "";
     let ordem = `l."createdAt" DESC`;
     if (opts.esperando) {
-      filtro = `AND um.direction = 'in' AND um."createdAt" < NOW() - INTERVAL '30 minutes' AND um."createdAt" > NOW() - INTERVAL '7 days'`;
+      // "Sem interesse" não é cobrança do gestor (o reengajamento cuida dele).
+      filtro = `AND l.status::text <> 'venda_perdida' AND um.direction = 'in' AND um."createdAt" < NOW() - INTERVAL '30 minutes' AND um."createdAt" > NOW() - INTERVAL '7 days'`;
       ordem = `um."createdAt" ASC`;
     } else {
       const y = opts.year || new Date().getFullYear();
