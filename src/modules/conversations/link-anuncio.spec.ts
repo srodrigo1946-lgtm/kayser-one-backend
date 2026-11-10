@@ -71,6 +71,15 @@ describe("Link de anúncio do Facebook/Instagram (09/11)", () => {
     }
   });
 
+  it("conversa antiga sem lead (família, equipe) não é mexida; contato novo sem lead sai", async () => {
+    const a = montar(null);
+    const antiga = { id: "c7", leadId: null, isGroup: false, createdAt: new Date(Date.now() - 5 * 86_400_000) } as any;
+    expect(await a.svc.removerSeLinkAnuncio(antiga, "PQP kkkk")).toBe(false);
+    const b = montar(null);
+    const nova = { id: "c8", leadId: null, isGroup: false, createdAt: new Date() } as any;
+    expect(await b.svc.removerSeLinkAnuncio(nova, "https://fb.me/x")).toBe(true);
+  });
+
   it("palavrão do cliente tira do CRM (lead no começo do funil)", async () => {
     const { svc, convRepo } = montar(LeadStatus.NOVO_LEAD);
     expect(await svc.removerSeLinkAnuncio({ id: "c9", leadId: "L1", isGroup: false } as any, "vai se fuder")).toBe(true);

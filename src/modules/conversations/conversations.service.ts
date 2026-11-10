@@ -230,6 +230,9 @@ export class ConversationsService {
     if (conv.leadId) {
       const lead = await this.leadsRepo.findOne({ where: { id: conv.leadId }, select: ["id", "status"] });
       if (lead && NEGOCIANDO.includes(lead.status as LeadStatus)) return false;
+    } else if (conv.createdAt && Date.now() - new Date(conv.createdAt).getTime() > 86_400_000) {
+      // Conversa antiga SEM lead = contato pessoal/equipe (família, grupo de gerentes): não mexe.
+      return false;
     }
     await this.tirarDoCrm(conv);
     return true;
@@ -248,7 +251,7 @@ export class ConversationsService {
            JOIN messages m ON m."conversationId" = c.id AND m.direction = 'in' AND m."adPreview" IS NULL
            LEFT JOIN leads l ON l.id = c."leadId"
            LEFT JOIN users u ON u.id = l."responsavelId"
-          WHERE c."naoLead" = false AND c."isGroup" = false
+          WHERE c."naoLead" = false AND c."isGroup" = false AND c."leadId" IS NOT NULL
             AND (m.content ~* $1 OR m.content ~* $3)
             AND (l.status IS NULL OR l.status <> ALL($2))`,
         [LINK_ANUNCIO_SQL, NEGOCIANDO, OFENSA_PREFILTRO_SQL]
