@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Body, Param, UseGuards, Request, Res } from "@nestjs/common";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
@@ -24,6 +24,22 @@ export class ConversationsController {
   @ApiOperation({ summary: "Total de conversas do escopo (sinal leve p/ o alerta sonoro)" })
   contagem(@Request() req: any) {
     return this.conversationsService.contarConversas(req.user);
+  }
+
+  @Get("links-anuncio")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Conversas cujo cliente mandou link de Facebook/Instagram (prévia da limpeza)" })
+  linksAnuncio() {
+    return this.conversationsService.limparLinksAnuncio(false);
+  }
+
+  @Post("links-anuncio/limpar")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Tira do CRM quem mandou link de Facebook/Instagram (exceto quem está negociando)" })
+  limparLinksAnuncio() {
+    return this.conversationsService.limparLinksAnuncio(true);
   }
 
   @Get(":id/messages")

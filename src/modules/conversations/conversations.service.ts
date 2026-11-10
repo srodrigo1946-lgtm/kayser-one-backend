@@ -24,6 +24,45 @@ const ETIQUETA_STATUS: Record<string, LeadStatus> = {
 };
 
 /**
+ * Cliente que MANDA link do Facebook/Instagram (post, reels, anúncio) sai do Kayser One
+ * (Rodrigo 09/11). Não confundir com o lead que CHEGA por anúncio "Clique pro WhatsApp"
+ * (esse vem com adPreview e continua normal).
+ */
+export const LINK_ANUNCIO = /(?:facebook\.com|fb\.com|fb\.me|fb\.watch|instagram\.com|instagr\.am)\//i;
+const LINK_ANUNCIO_SQL = "(facebook\\.com|fb\\.com|fb\\.me|fb\\.watch|instagram\\.com|instagr\\.am)/";
+
+/**
+ * Palavrão / mensagem agressiva do cliente: também sai do Kayser One (Rodrigo 09/11).
+ * Compara sem acento e em minúsculo. "Não" sozinho NÃO conta (isso é o fluxo de sem interesse).
+ */
+const OFENSA = new RegExp(
+  "\\b(" +
+    [
+      "porra", "caralho", "krl", "puta", "puto", "putaria", "merda", "bosta", "foda", "fodase", "foda-se", "foder", "fudeu",
+      "fdp", "vsf", "vtnc", "tnc", "pqp", "arrombad[oa]s?", "desgracad[oa]s?", "cuzao", "corno", "babaca", "otari[oa]s?",
+      "idiota", "imbecil", "lixo", "vagabund[oa]s?", "safad[oa]s?", "golpe", "golpista", "golpistas",
+      "filh[oa] da puta", "vai se (ferrar|fuder|foder|lascar)", "vai tomar no", "enfia",
+      "(para|pare|parem) de (me )?(mandar|encher|perturbar|ligar)", "nao me (mande|manda|mandem) mais",
+      "vou (te )?denunciar", "spam",
+    ].join("|") +
+    ")\\b",
+  "i"
+);
+// Raízes sem acento pro pré-filtro no banco (a regra de verdade é temOfensa).
+const OFENSA_PREFILTRO_SQL =
+  "(porra|caralho|krl|puta|puto|merda|bosta|fod|fud|fdp|vsf|vtnc|tnc|pqp|arrombad|desgra|cuz|corno|babaca|ot.ri|idiota|imbecil|lixo|vagabund|safad|golp|enfia|denunciar|spam|par[ae]m? de|me mand)";
+export function temOfensa(texto: string): boolean {
+  const t = (texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return OFENSA.test(t);
+}
+
+// Quem já está negociando não sai sozinho por causa de um link.
+export const NEGOCIANDO: LeadStatus[] = [
+  LeadStatus.AGENDAMENTO, LeadStatus.VISITA_AGENDADA, LeadStatus.VISITA_REALIZADA, LeadStatus.DOCUMENTACAO,
+  LeadStatus.SIMULACAO, LeadStatus.SUBIDA_PASTA, LeadStatus.APROVACAO, LeadStatus.REPROVACAO, LeadStatus.VENDA_GANHA,
+];
+
+/**
  * E-mail FALADO no áudio vira e-mail escrito: "rodrigo ponto silva arroba gmail ponto com"
  * → "rodrigo.silva@gmail.com". Só mexe no trecho em volta de "arroba".
  */
@@ -169,15 +208,62 @@ export class ConversationsService {
     const conv = await this.convRepo.findOne({ where: { id: conversationId } });
     if (!conv) throw new NotFoundException("Conversa não encontrada.");
     await this.assertConvScope(conv, requester);
+    await this.tirarDoCrm(conv);
+    return { ok: true };
+  }
+
+  /** Núcleo do "não é lead": desvincula, marca e apaga o lead do CRM. */
+  private async tirarDoCrm(conv: Conversation) {
     const leadId = conv.leadId;
-    conv.naoLead = true;
-    conv.leadId = null as any;
-    conv.assignedToId = null as any;
-    await this.convRepo.save(conv);
+    await this.convRepo.update(conv.id, { naoLead: true, leadId: null as any, assignedToId: null as any });
     // Tira o lead do CRM (Leads/Kanban). Best-effort: se travar FK, a conversa já
     // ficou desvinculada e fora das listas.
     if (leadId) await this.leadsRepo.delete({ id: leadId }).catch(() => {});
-    return { ok: true };
+  }
+
+  /**
+   * Mensagem do cliente com link de Facebook/Instagram: tira do Kayser One (igual "não é lead"),
+   * a não ser que o lead já esteja negociando (agendamento em diante). Devolve true se tirou.
+   */
+  async removerSeLinkAnuncio(conv: Conversation, texto: string): Promise<boolean> {
+    if (!(LINK_ANUNCIO.test(texto || "") || temOfensa(texto)) || conv.isGroup || conv.naoLead) return false;
+    if (conv.leadId) {
+      const lead = await this.leadsRepo.findOne({ where: { id: conv.leadId }, select: ["id", "status"] });
+      if (lead && NEGOCIANDO.includes(lead.status as LeadStatus)) return false;
+    }
+    await this.tirarDoCrm(conv);
+    return true;
+  }
+
+  /**
+   * Limpeza dos que JÁ mandaram link de Facebook/Instagram (mesma regra). confirmar=false
+   * só lista (pra conferir antes); confirmar=true tira do CRM.
+   */
+  async limparLinksAnuncio(confirmar: boolean) {
+    // Pré-filtro no banco (link OU raiz de palavrão); a regra completa confere em seguida.
+    const candidatos: { id: string; leadId: string | null; nome: string | null; status: string | null; responsavel: string | null; content: string }[] =
+      await this.convRepo.query(
+        `SELECT c.id, c."leadId", COALESCE(l.name, c."contactName") AS nome, l.status, u.name AS responsavel, m.content
+           FROM conversations c
+           JOIN messages m ON m."conversationId" = c.id AND m.direction = 'in' AND m."adPreview" IS NULL
+           LEFT JOIN leads l ON l.id = c."leadId"
+           LEFT JOIN users u ON u.id = l."responsavelId"
+          WHERE c."naoLead" = false AND c."isGroup" = false
+            AND (m.content ~* $1 OR m.content ~* $3)
+            AND (l.status IS NULL OR l.status <> ALL($2))`,
+        [LINK_ANUNCIO_SQL, NEGOCIANDO, OFENSA_PREFILTRO_SQL]
+      );
+    const vistos = new Map<string, (typeof candidatos)[number] & { motivo: string }>();
+    for (const c of candidatos) {
+      if (vistos.has(c.id)) continue;
+      const motivo = LINK_ANUNCIO.test(c.content) ? "link" : temOfensa(c.content) ? "ofensa" : null;
+      if (motivo) vistos.set(c.id, { ...c, motivo, content: c.content.slice(0, 120) });
+    }
+    const rows = [...vistos.values()];
+    if (confirmar) {
+      for (const r of rows) await this.tirarDoCrm({ id: r.id, leadId: r.leadId } as Conversation);
+    }
+    return { total: rows.length, removidos: confirmar ? rows.length : 0, itens: rows.slice(0, 300) };
   }
 
   /**

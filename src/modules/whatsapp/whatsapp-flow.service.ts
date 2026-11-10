@@ -261,6 +261,12 @@ export class WhatsappFlowService {
         return { persisted: false, naoLead: true };
       }
 
+      // Cliente mandou link de Facebook/Instagram (post, reels, anúncio): sai do Kayser One
+      // (Rodrigo 09/11). Lead que chegou por anúncio "Clique pro WhatsApp" (ad) não entra aqui.
+      if (!isGroup && !ad?.preview && (await this.conversations.removerSeLinkAnuncio(conv, text))) {
+        return { persisted: false, linkAnuncio: true };
+      }
+
       // Baixa a mídia (imagem/áudio/vídeo/documento) para exibir no chat.
       let media: { mediaType: string; mediaMime: string; base64: string } | undefined;
       if (mediaType && mediaType !== "location" && mediaType !== "contact" && instanceName) {
