@@ -80,6 +80,24 @@ export function mensagemFormulario(p: {
   return `${oi} 👋 Recebemos seu cadastro ${sobre}. Em breve um dos nossos especialistas vai falar com você por aqui. 🏡`;
 }
 
+/** Marca das respostas do formulário guardadas em lead.observacoes (a IA lê). */
+export const MARCA_FORMULARIO = "📋 Respostas do formulário:";
+
+/**
+ * Perguntas personalizadas do formulário (renda, morar/investir...) — tudo que não é
+ * nome/telefone/e-mail. Ex.: "Renda Bruta: acima R$10.000". Rodrigo 11/11.
+ */
+export function respostasFormulario(fieldData: Array<{ name: string; values: string[] }>): string[] {
+  const contato = /full_name|^name$|nome|phone|telefone|celular|email|e-mail/i;
+  const limpa = (s: string) => String(s ?? "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  return (fieldData ?? [])
+    .filter((f) => f?.name && !contato.test(f.name) && f.values?.[0])
+    .map((f) => {
+      const p = limpa(f.name).replace(/\?$/, "");
+      return `${p.charAt(0).toUpperCase()}${p.slice(1)}: ${limpa(f.values.join(", "))}`;
+    });
+}
+
 const GRAPH = "https://graph.facebook.com/v26.0";
 
 interface DadosLead {
@@ -90,6 +108,8 @@ interface DadosLead {
   formulario?: string;
   /** ID do formulário (vem da Graph API — confere de novo com a lista permitida). */
   formId?: string;
+  /** Respostas das perguntas personalizadas ("Renda Bruta: acima R$10.000"). */
+  respostas?: string[];
 }
 
 @Injectable()
@@ -245,6 +265,7 @@ export class MetaFormsService {
       name: pega(["full_name", "name", "nome"]) || "Contato do formulário",
       phone: pega(["phone", "telefone", "celular"]).replace(/\D/g, ""),
       email: pega(["email", "e-mail"]) || undefined,
+      respostas: respostasFormulario(fieldData),
     };
   }
 
@@ -283,6 +304,7 @@ export class MetaFormsService {
         origem: "formulario_meta",
         source: "formulario_meta",
         campanha: dados.formulario,
+        ...(dados.respostas?.length ? { observacoes: `${MARCA_FORMULARIO}\n${dados.respostas.join("\n")}` } : {}),
         ...(imovel ? { propertyId: imovel.id, empreendimento: imovel.name } : {}),
       } as Partial<Lead>) as Lead
     );

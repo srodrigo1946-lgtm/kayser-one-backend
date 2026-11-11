@@ -363,6 +363,20 @@ export class KnowledgeService {
     if (!leadId) return "";
     const lead = await this.repo.manager.getRepository(Lead).findOne({ where: { id: leadId } });
     if (!lead) return "";
+    const interesse = await this.interesseDoLead(lead);
+    // Respostas do formulário Meta (renda, morar/investir...): a IA usa e NÃO pergunta de novo (Rodrigo 11/11).
+    const obs = lead.observacoes || "";
+    const i = obs.indexOf("Respostas do formulário:");
+    const form =
+      i >= 0
+        ? `=== O QUE ESTE CLIENTE JÁ RESPONDEU NO FORMULÁRIO ===
+${obs.slice(i).split("\n").slice(1).filter(Boolean).join("\n")}${lead.email ? `\nE-mail: ${lead.email}` : ""}
+Use essas respostas na conversa (ex.: indique opções pela renda e pelo objetivo — morar ou investir). NÃO pergunte de novo o que ele já respondeu; só confirme se precisar.`
+        : "";
+    return [interesse, form].filter(Boolean).join("\n\n");
+  }
+
+  private async interesseDoLead(lead: Lead): Promise<string> {
     const veioDeAnuncio = lead.source === "anuncio";
     const anuncio = lead.campanha ? ` (anúncio: "${lead.campanha}")` : "";
     if (lead.propertyId) {

@@ -59,7 +59,7 @@ describe("MetaFormsService", () => {
       { name: "email", values: ["a@b.com"] },
     ];
     const r = (svc() as any).mapFieldData(fd);
-    expect(r).toEqual({ name: "Lorena Altino", phone: "5521969509865", email: "a@b.com" });
+    expect(r).toEqual({ name: "Lorena Altino", phone: "5521969509865", email: "a@b.com", respostas: [] });
   });
 
   it("mapFieldData usa fallback quando falta nome", () => {
