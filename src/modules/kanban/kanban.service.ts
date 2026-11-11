@@ -60,12 +60,14 @@ export class KanbanService {
     return this.columnsRepo.find({ order: { position: "ASC" } });
   }
 
-  async getBoard(user: User) {
+  async getBoard(user: User, fila?: "normal" | "swat") {
     // Corretor não vê as colunas marcadas "só gerente pra cima".
     const columns = (await this.listColumns()).filter((c) => !c.somenteGestores || ehGestor(user));
     // Escopo por equipe: Diretor (null) vê todos; demais veem só a sua equipe.
     const scopeIds = await this.users.getScopeIds(user);
-    const where = scopeIds === null ? {} : { responsavelId: In(scopeIds) };
+    const where: any = scopeIds === null ? {} : { responsavelId: In(scopeIds) };
+    // Kanban SWAT (11/11): leads SWAT num quadro separado. Sem `fila` = todos (painéis/relatórios).
+    if (fila) where.swat = fila === "swat";
     const leads = await this.leadsRepo.find({
       where,
       relations: ["responsavel"],

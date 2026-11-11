@@ -133,6 +133,10 @@ export class Lead {
   @Column({ type: "int", nullable: true })
   score: number;
 
+  // Lead da fila SWAT → aparece no Kanban SWAT (Rodrigo 11/11).
+  @Column({ default: false })
+  swat: boolean;
+
   @Column({ nullable: true })
   responsavelId: string;
 

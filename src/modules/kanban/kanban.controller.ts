@@ -9,6 +9,7 @@ import {
   Param,
   UseGuards,
   Request,
+  Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { KanbanService } from "./kanban.service";
@@ -26,8 +27,8 @@ export class KanbanController {
 
   @Get("board")
   @ApiOperation({ summary: "Retorna o board completo com leads por coluna" })
-  getBoard(@Request() req: any) {
-    return this.kanbanService.getBoard(req.user);
+  getBoard(@Request() req: any, @Query("fila") fila?: string) {
+    return this.kanbanService.getBoard(req.user, fila === "swat" ? "swat" : fila === "normal" ? "normal" : undefined);
   }
 
   @Get("columns")

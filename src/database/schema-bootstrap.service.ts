@@ -64,6 +64,7 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "swatMemberIds" text`);
         await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "swatPointer" integer NOT NULL DEFAULT 0`);
         await this.dataSource.query(`ALTER TABLE lead_queue_assignments ADD COLUMN IF NOT EXISTS "swat" boolean NOT NULL DEFAULT false`);
+        await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "swat" boolean NOT NULL DEFAULT false`);
       }],
     ];
     for (const [name, run] of steps) {

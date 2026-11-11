@@ -322,6 +322,8 @@ export class LeadQueueService {
     if (aberta) return aberta;
 
     if (input.swat) {
+      // Marca o lead: vai pro Kanban SWAT.
+      if (input.leadId) await this.leadsRepo.update(input.leadId, { swat: true } as any);
       const swat = await this.swatDoTurno(s);
       if (swat.length === 0) {
         this.logger.log(`Lead SWAT ${input.conversationId} sem SWAT de plantão → aguardando.`);
