@@ -35,4 +35,8 @@ export class LeadQueueAssignment {
 
   @Column({ type: "int", default: 1 })
   attempts: number;
+
+  // Lead da fila SWAT (gira só entre os SWAT de plantão, prazo de 15 min).
+  @Column({ default: false })
+  swat: boolean;
 }

@@ -179,7 +179,9 @@ export class WhatsappFlowService {
         const hist = await this.conversations.getHistoryForAi(convId, 30);
         if (hist.length < 2) return;
         const texto = hist.map((m) => `${m.role === "user" ? "cliente" : "atendimento"}: ${m.content}`).join("\n");
-        await this.ai.qualifyLead(leadId, texto);
+        const q: any = await this.ai.qualifyLead(leadId, texto);
+        // Cliente informou renda pra simular = lead qualificado → fila SWAT (Rodrigo 11/11).
+        if (q?.renda_detectada) await this.leadQueue.promoverSwat(leadId);
       } catch (err) {
         this.logger.warn(`Não foi possível dar o score do lead: ${(err as Error).message}`);
       }

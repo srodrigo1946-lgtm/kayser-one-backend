@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, UseGuards, Request } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsInt, IsISO8601, IsOptional, IsString, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsISO8601, IsOptional, IsString, Min } from "class-validator";
 import { LeadQueueService } from "./lead-queue.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { DiretorGuard } from "../auth/guards/diretor.guard";
@@ -9,6 +9,7 @@ class UpdateQueueDto {
   @IsOptional() @IsBoolean() enabled?: boolean;
   @IsOptional() @IsInt() @Min(1) slaMinutes?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) memberIds?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(16) @IsString({ each: true }) swatMemberIds?: string[];
 }
 
 class AgendarDto {

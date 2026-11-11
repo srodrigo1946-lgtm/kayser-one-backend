@@ -23,6 +23,14 @@ export class LeadQueueSettings {
   @Column({ type: "timestamp", nullable: true })
   whatsappCaiuEm: Date | null;
 
+  // Fila SWAT (Rodrigo 11/11): até 16 corretores que recebem os leads mais qualificados
+  // (formulário Meta "SWAT" + qualificados pela IA). Mesmo check-in/turno da fila normal.
+  @Column({ type: "simple-array", nullable: true })
+  swatMemberIds: string[];
+
+  @Column({ type: "int", default: 0 })
+  swatPointer: number;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }

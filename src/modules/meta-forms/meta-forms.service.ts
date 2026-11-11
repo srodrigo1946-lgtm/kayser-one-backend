@@ -287,7 +287,9 @@ export class MetaFormsService {
       } as Partial<Lead>) as Lead
     );
     await this.conversations.setLead(conv.id, lead.id, dados.name);
-    const atribuicao = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: lead.id });
+    // Formulário "SWAT" → só a fila SWAT (Rodrigo 11/11).
+    const swat = /swat/i.test(dados.formulario || "");
+    const atribuicao = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: lead.id, swat });
     this.logger.log(`Formulário Meta → lead ${lead.id} (${dados.name}) criado e enfileirado.`);
     // Pedido do Rodrigo: entrou lead do formulário → o Kayser já chama no WhatsApp.
     // Em lote (puxar do Facebook) NÃO dispara aqui: o contatarPendentes manda aos poucos.

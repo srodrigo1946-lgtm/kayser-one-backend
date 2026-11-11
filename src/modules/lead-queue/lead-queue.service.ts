@@ -26,6 +26,10 @@ import { ConversationsService } from "../conversations/conversations.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
 import { ConfigService } from "@nestjs/config";
 
+/** Fila SWAT: prazo do corretor pro 1º contato (Rodrigo 11/11). */
+export const SWAT_SLA_MIN = 15;
+export const SWAT_MAX = 16;
+
 // Origem paga (anúncio / formulário Meta): o aviso na tela usa frase própria.
 const ANUNCIO = ["anuncio", "formulario_meta"];
 
@@ -196,6 +200,47 @@ export class LeadQueueService {
     return this.filtrarAtivos(ids);
   }
 
+  /** SWAT de plantão AGORA: atendentes do turno que estão na lista SWAT (até 16). */
+  private async swatDoTurno(s: LeadQueueSettings, now = new Date()): Promise<string[]> {
+    const lista = (s.swatMemberIds ?? []).filter(Boolean);
+    if (!lista.length) return [];
+    const doTurno = new Set(await this.atendentesDoTurno(now));
+    return lista.filter((id) => doTurno.has(id));
+  }
+
+  /** Próximo do rodízio SWAT (ponteiro próprio, gravado na hora). */
+  private async proximoSwat(s: LeadQueueSettings, membros: string[]): Promise<string> {
+    const idx = (((s.swatPointer ?? 0) % membros.length) + membros.length) % membros.length;
+    s.swatPointer = (idx + 1) % membros.length;
+    await this.settingsRepo.update(s.id, { swatPointer: s.swatPointer } as any);
+    return membros[idx];
+  }
+
+  private prazoSwat(): Date {
+    return new Date(Date.now() + SWAT_SLA_MIN * 60_000);
+  }
+
+  /**
+   * Lead qualificado pela IA (pediu visita / informou renda) que ainda está esperando
+   * corretor da fila normal → vai pra SWAT. Corretor que já atendeu não perde o lead.
+   */
+  async promoverSwat(leadId: string): Promise<boolean> {
+    const s = await this.getSettings();
+    if (!s.enabled || !(s.swatMemberIds ?? []).length) return false;
+    const aberta = await this.assignRepo.findOne({
+      where: [
+        { leadId, status: "pendente" },
+        { leadId, status: "aguardando" },
+      ],
+    });
+    if (!aberta || aberta.swat) return false;
+    aberta.status = "expirado";
+    await this.assignRepo.save(aberta);
+    const nova = await this.enqueueLead({ conversationId: aberta.conversationId, leadId, swat: true });
+    this.logger.log(`Lead ${leadId} qualificado pela IA → fila SWAT (${nova?.status}).`);
+    return !!nova;
+  }
+
   /** Próximo do rodízio (avança o ponteiro em `s`; caller salva `s`). */
   private proximo(s: LeadQueueSettings, membros: string[]): string {
     const idx = ((s.pointer % membros.length) + membros.length) % membros.length;
@@ -235,13 +280,19 @@ export class LeadQueueService {
     return s;
   }
 
-  async updateSettings(dto: { enabled?: boolean; slaMinutes?: number; memberIds?: string[] }) {
+  async updateSettings(dto: { enabled?: boolean; slaMinutes?: number; memberIds?: string[]; swatMemberIds?: string[] }) {
     const s = await this.getSettings();
     if (dto.enabled !== undefined) s.enabled = dto.enabled;
     if (dto.slaMinutes !== undefined) s.slaMinutes = Math.max(1, dto.slaMinutes);
     if (dto.memberIds !== undefined) {
       s.memberIds = dto.memberIds;
       s.pointer = 0;
+    }
+    if (dto.swatMemberIds !== undefined) {
+      // Só corretor ativo, sem repetir, no máximo 16.
+      const unicos = [...new Set(dto.swatMemberIds.filter(Boolean))];
+      s.swatMemberIds = (await this.filtrarAtivos(unicos)).slice(0, SWAT_MAX);
+      s.swatPointer = 0;
     }
     return this.settingsRepo.save(s);
   }
@@ -254,6 +305,8 @@ export class LeadQueueService {
   async enqueueLead(input: {
     conversationId: string;
     leadId?: string;
+    // Lead SWAT: só gira entre os SWAT de plantão; sem nenhum, espera um SWAT (não vai pra fila normal).
+    swat?: boolean;
   }): Promise<LeadQueueAssignment | null> {
     const s = await this.getSettings();
     if (!s.enabled) return null;
@@ -267,6 +320,23 @@ export class LeadQueueService {
       ],
     });
     if (aberta) return aberta;
+
+    if (input.swat) {
+      const swat = await this.swatDoTurno(s);
+      if (swat.length === 0) {
+        this.logger.log(`Lead SWAT ${input.conversationId} sem SWAT de plantão → aguardando.`);
+        return this.assignRepo.save(
+          this.assignRepo.create({ conversationId: input.conversationId, leadId: input.leadId, assignedToId: "", dueAt: new Date(), status: "aguardando", attempts: 0, swat: true })
+        );
+      }
+      const quem = await this.proximoSwat(s, swat);
+      const salvo = await this.assignRepo.save(
+        this.assignRepo.create({ conversationId: input.conversationId, leadId: input.leadId, assignedToId: quem, dueAt: this.prazoSwat(), status: "pendente", attempts: 1, swat: true })
+      );
+      await this.atribuir(input.conversationId, input.leadId, quem);
+      this.logger.log(`Lead SWAT ${input.conversationId} atribuído a ${quem}.`);
+      return salvo;
+    }
 
     const membros = await this.atendentesDoTurno();
     if (membros.length === 0) {
@@ -406,6 +476,7 @@ export class LeadQueueService {
     if (!s.enabled) return 0;
     const membros = await this.atendentesDoTurno();
     if (membros.length === 0) return 0;
+    const swat = await this.swatDoTurno(s);
 
     const espera = await this.assignRepo.find({
       where: { status: "aguardando" },
@@ -414,6 +485,22 @@ export class LeadQueueService {
     const agora = Date.now();
     let count = 0;
     for (const a of espera) {
+      // Lead SWAT só sai pra SWAT de plantão; sem nenhum, continua esperando.
+      if (a.swat) {
+        if (!swat.length) continue;
+        if (await this.assignmentMorto(a)) {
+          a.status = "atendido";
+          await this.assignRepo.save(a);
+          continue;
+        }
+        const quem = await this.proximoSwat(s, swat);
+        Object.assign(a, { status: "pendente", assignedToId: quem, attempts: 1, dueAt: this.prazoSwat() });
+        await this.assignRepo.save(a);
+        await this.atribuir(a.conversationId, a.leadId, quem);
+        await this.avisarEspecialistaNoTurno(a.conversationId, quem);
+        count++;
+        continue;
+      }
       // Lead AGENDADO pra mais tarde: segura até o horário marcado.
       if (a.agendadoPara && new Date(a.agendadoPara).getTime() > agora) continue;
       // Conversa pessoal ("não é lead") ou lead excluído → encerra, não distribui.
@@ -525,6 +612,8 @@ export class LeadQueueService {
       } as any)
       .catch(() => {});
     this.logger.log(`IA agendou visita do lead ${leadId} para ${quando.toISOString()}.`);
+    // Pediu visita = lead qualificado → fila SWAT (se ainda não tem corretor atendendo).
+    await this.promoverSwat(leadId).catch((err) => this.logger.warn(`Falha ao promover SWAT: ${(err as Error).message}`));
     return appt;
   }
 
@@ -556,9 +645,12 @@ export class LeadQueueService {
 
     const s = await this.getSettings();
     if (!s.enabled) return 0;
-    const membros = await this.atendentesDoTurno();
+    const membrosNormais = await this.atendentesDoTurno();
+    const swatAgora = await this.swatDoTurno(s);
     let count = 0;
     for (const a of expired) {
+      // SWAT gira só entre os SWAT de plantão (prazo de 15 min); a fila normal, entre todos.
+      const membros = a.swat ? swatAgora : membrosNormais;
       // Conversa pessoal ("não é lead") ou lead excluído → encerra, NÃO reenvia
       // mensagem nem reatribui (era isso que virava spam de 15 em 15 min).
       if (await this.assignmentMorto(a)) {
@@ -593,15 +685,19 @@ export class LeadQueueService {
         conversationId: a.conversationId,
         leadId: a.leadId,
         assignedToId: nextUser,
-        dueAt: this.prazo(s),
+        dueAt: a.swat ? this.prazoSwat() : this.prazo(s),
         status: "pendente",
         attempts: a.attempts + 1,
+        swat: a.swat,
       });
       await this.assignRepo.save(next);
       await this.atribuir(a.conversationId, a.leadId, nextUser);
       // O lead repassado CONTA como a vez dele: o "Próximo" anda pro seguinte
       // (senão o mesmo corretor recebia o repassado E o próximo lead novo).
-      await this.avancarDepoisDe(nextUser, membros);
+      if (a.swat) {
+        s.swatPointer = (membros.indexOf(nextUser) + 1) % membros.length;
+        await this.settingsRepo.update(s.id, { swatPointer: s.swatPointer } as any);
+      } else await this.avancarDepoisDe(nextUser, membros);
       // Passou pro próximo: o cliente NÃO recebe aviso de troca (Rodrigo 07/11 — via "Anita"
       // e logo depois "agora é o Diego"); o novo corretor se apresenta na conversa.
       count++;
@@ -620,7 +716,7 @@ export class LeadQueueService {
       .filter((r) => !!r.leadId)
       .map((r) => {
         const l = leads.find((x) => x.id === r.leadId);
-        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, anuncio: ANUNCIO.includes(l?.source ?? ""), dueAt: r.dueAt as Date | null, transferido: false };
+        return { id: r.id, leadId: r.leadId, nome: l?.name ?? "Lead", empreendimento: l?.empreendimento ?? null, anuncio: ANUNCIO.includes(l?.source ?? ""), dueAt: r.dueAt as Date | null, transferido: false, swat: !!r.swat };
       });
     // Transferidos pra ele nas últimas 12 h (gestor mandou o lead).
     const transf = await this.leadsRepo.find({
@@ -733,6 +829,8 @@ export class LeadQueueService {
     ordem: { userId: string; nome: string; proximo: boolean }[];
     aguardando: number;
     aguardandoLeads: { nome: string; phone: string; agendadoPara?: Date }[];
+    swat: { userId: string; nome: string; proximo: boolean }[];
+    swatEsperando: number;
   }> {
     const membros = await this.atendentesDoTurno(); // já na ordem do rodízio (escala)
     const s = await this.getSettings();
@@ -756,7 +854,8 @@ export class LeadQueueService {
         });
     const aguardando = isDiretor ? espera.length : 0;
 
-    if (membros.length === 0) return { turnoAtivo: false, ordem: [], aguardando, aguardandoLeads };
+    const swatEsperando = isDiretor ? espera.filter((a) => a.swat).length : 0;
+    if (membros.length === 0) return { turnoAtivo: false, ordem: [], aguardando, aguardandoLeads, swat: [], swatEsperando };
 
     const users = await this.usersRepo.find({ where: { id: In(membros) } });
     const nomePorId = new Map(users.map((u) => [u.id, u.name]));
@@ -766,6 +865,10 @@ export class LeadQueueService {
       nome: nomePorId.get(id) ?? "—",
       proximo: i === nextIdx,
     }));
-    return { turnoAtivo: true, ordem, aguardando, aguardandoLeads };
+    // SWAT de plantão agora, na ordem do rodízio SWAT.
+    const swatIds = await this.swatDoTurno(s);
+    const swatNext = swatIds.length ? (((s.swatPointer ?? 0) % swatIds.length) + swatIds.length) % swatIds.length : -1;
+    const swat = swatIds.map((id, i) => ({ userId: id, nome: nomePorId.get(id) ?? "—", proximo: i === swatNext }));
+    return { turnoAtivo: true, ordem, aguardando, aguardandoLeads, swat, swatEsperando };
   }
 }
