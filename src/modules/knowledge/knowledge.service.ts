@@ -68,6 +68,18 @@ const TOP_K = 8;
 
 @Injectable()
 export class KnowledgeService {
+  /** Arquivo original de um item (R2 ou imagem em data URI) — pra baixar o book. */
+  async arquivo(id: string): Promise<{ buffer: Buffer; contentType: string; nome: string } | null> {
+    const it = await this.repo.findOne({ where: { id } });
+    const key = it?.fileKey;
+    if (!key) return null;
+    const nome = key.split("/").pop() || "arquivo";
+    const m = /^data:([^;]+);base64,(.+)$/.exec(key);
+    if (m) return { buffer: Buffer.from(m[2], "base64"), contentType: m[1], nome: `${it!.title || "imagem"}` };
+    const o = await this.storage.getObject(key);
+    return o ? { ...o, nome: nome.replace(/^\d+-/, "") } : null;
+  }
+
   constructor(
     @InjectRepository(KnowledgeItem)
     private readonly repo: Repository<KnowledgeItem>,

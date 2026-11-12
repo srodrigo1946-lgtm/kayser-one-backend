@@ -9,7 +9,9 @@ import {
   UseGuards,
   UploadedFile,
   UseInterceptors,
+  Res,
 } from "@nestjs/common";
+import { Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsBoolean, IsEnum, IsOptional, IsString } from "class-validator";
@@ -72,6 +74,18 @@ export class KnowledgeController {
       type: body?.type,
       propertyId: body?.propertyId || undefined,
     });
+  }
+
+  @Get(":id/arquivo")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Baixar o arquivo original (PDF/imagem) de um item — só Diretor" })
+  async arquivo(@Param("id") id: string, @Res() res: Response) {
+    const a = await this.knowledgeService.arquivo(id);
+    if (!a) return res.status(404).json({ message: "Arquivo não encontrado." });
+    res.setHeader("Content-Type", a.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(a.nome)}"`);
+    return res.send(a.buffer);
   }
 
   @Put(":id")
