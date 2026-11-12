@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Query, Body, Res, UseGuards } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { Response } from "express";
 import { MetaFormsService } from "./meta-forms.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -49,6 +50,13 @@ export class MetaFormsController {
   sincronizar(@Query("horas") horas?: string) {
     const h = Math.min(Math.max(Number(horas) || 72, 1), 24 * 30);
     return this.meta.sincronizar(h);
+  }
+
+  @Post("vitrine-lead")
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @ApiOperation({ summary: "Formulário da vitrine pública imoveis.kayserone.com.br (sem login)" })
+  vitrine(@Body() body: any) {
+    return this.meta.recebeVitrine(body);
   }
 
   @Post("lead-direct")

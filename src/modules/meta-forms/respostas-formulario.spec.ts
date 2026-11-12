@@ -24,6 +24,21 @@ describe("respostasFormulario (formulário SWAT)", () => {
     expect(await s.recebeDireto("errado", { telefone: "21999990000" })).toEqual({ ok: false });
   });
 
+  it("vitrine: SWAT por padrão, geral se pedir, ignora robô e telefone ruim", async () => {
+    const { MetaFormsService } = await import("./meta-forms.service");
+    const s: any = new MetaFormsService({} as any, {} as any, {} as any, { get: () => "" } as any, {} as any, {} as any);
+    const criados: any[] = [];
+    s.criarLead = async (d: any) => criados.push(d);
+    await s.recebeVitrine({ nome: "Ana Lima", telefone: "21999990000", renda: "R$ 10 mil a R$ 30 mil", objetivo: "Morar", imovel: "Stillo Barra" });
+    expect(criados[0].formulario).toBe("Vitrine SWAT - Stillo Barra");
+    expect(criados[0].respostas).toContain("Objetivo: Morar");
+    await s.recebeVitrine({ nome: "Ana Lima", telefone: "21999990000", fila: "geral" });
+    expect(criados[1].formulario).toBe("Vitrine - Geral");
+    expect(await s.recebeVitrine({ nome: "Robo", telefone: "21999990000", site: "x" })).toEqual({ ok: true });
+    expect((await s.recebeVitrine({ nome: "Ana", telefone: "123" })).ok).toBe(false);
+    expect(criados).toHaveLength(2);
+  });
+
   it("sem pergunta personalizada = vazio", () => {
     expect(respostasFormulario([{ name: "full_name", values: ["Ana"] }])).toEqual([]);
   });

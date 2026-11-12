@@ -170,6 +170,34 @@ export class MetaFormsService {
     return { ok: true };
   }
 
+  /**
+   * Formulário da vitrine pública (imoveis.kayserone.com.br, 12/11). Sem token (o site é público):
+   * só cria lead com nome + telefone válidos, campo-isca vazio e limite por IP no controller.
+   * Vai pra SWAT ("Vitrine SWAT - <imóvel>") ou pra fila geral (fila="geral").
+   */
+  async recebeVitrine(b: any): Promise<{ ok: boolean; erro?: string }> {
+    if (b?.site) return { ok: true }; // robô preencheu o campo escondido
+    const corta = (v: any, n: number) => String(v ?? "").trim().slice(0, n);
+    const nome = corta(b?.nome, 80);
+    const phone = String(b?.telefone ?? "").replace(/\D/g, "");
+    if (nome.length < 3 || phone.length < 10 || phone.length > 13) return { ok: false, erro: "Confira o nome e o telefone com DDD." };
+    const imovel = corta(b?.imovel, 80);
+    const respostas = [
+      b?.renda && `Renda bruta: ${corta(b.renda, 60)}`,
+      b?.objetivo && `Objetivo: ${corta(b.objetivo, 30)}`,
+      imovel && `Imóvel de interesse: ${imovel}`,
+      "Origem: vitrine imoveis.kayserone.com.br",
+    ].filter(Boolean) as string[];
+    await this.criarLead({
+      name: nome,
+      phone,
+      email: corta(b?.email, 120) || undefined,
+      formulario: `${b?.fila === "geral" ? "Vitrine" : "Vitrine SWAT"} - ${imovel || "Geral"}`,
+      respostas,
+    });
+    return { ok: true };
+  }
+
   /** IDs dos formulários permitidos (Configurações → Integrações). Vazio = todos. */
   private async formsPermitidos(): Promise<string[]> {
     const s = await this.settings.get().catch(() => null);
