@@ -155,10 +155,17 @@ export class MetaFormsService {
     };
     const phone = pega("phone", "telefone", "phone_number", "celular", "whatsapp").replace(/\D/g, "");
     if (!phone) return { ok: false };
+    // Vitrine (imoveis.kayserone.com.br, 12/11): manda o nome do formulário ("Vitrine SWAT — Villa Santé"
+    // → fila SWAT + empreendimento) e as respostas (["Renda bruta: ...", "Objetivo: Morar"]).
+    const respostas = Array.isArray(body?.respostas)
+      ? body.respostas.map((r: any) => String(r ?? "").slice(0, 200)).filter(Boolean).slice(0, 10)
+      : [];
     await this.criarLead({
       name: pega("name", "nome", "full_name") || "Contato do formulário",
       phone,
       email: pega("email", "e-mail") || undefined,
+      formulario: pega("formulario", "form_name").slice(0, 120) || undefined,
+      respostas,
     });
     return { ok: true };
   }

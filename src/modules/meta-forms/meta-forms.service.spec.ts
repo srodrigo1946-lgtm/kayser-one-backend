@@ -130,6 +130,6 @@ describe("MetaFormsService", () => {
 
     const r = await s.recebeDireto("segredo", { nome: "Lorena", telefone: "+55 21 96950-9865", email: "a@b.com" });
     expect(r).toEqual({ ok: true });
-    expect(criados[0]).toEqual({ name: "Lorena", phone: "5521969509865", email: "a@b.com" });
+    expect(criados[0]).toMatchObject({ name: "Lorena", phone: "5521969509865", email: "a@b.com", respostas: [] });
   });
 });
