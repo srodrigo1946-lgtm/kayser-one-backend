@@ -186,7 +186,7 @@ export class MetaFormsService {
       b?.renda && `Renda bruta: ${corta(b.renda, 60)}`,
       b?.objetivo && `Objetivo: ${corta(b.objetivo, 30)}`,
       imovel && `Imóvel de interesse: ${imovel}`,
-      "Origem: vitrine imoveis.kayserone.com.br",
+      `Origem: vitrine imoveis.kayserone.com.br${b?.campanha ? ` (${corta(b.campanha, 80)})` : ""}`,
     ].filter(Boolean) as string[];
     await this.criarLead({
       name: nome,
