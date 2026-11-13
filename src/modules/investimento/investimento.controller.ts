@@ -1,4 +1,5 @@
-import { Controller, Get, Put, Post, Delete, Query, Body, UseGuards } from "@nestjs/common";
+import { Controller, Get, Put, Post, Delete, Query, Body, UseGuards, Res } from "@nestjs/common";
+import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsInt, IsNumber, Min, Max, IsArray, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
@@ -112,6 +113,27 @@ export class InvestimentoController {
     } catch (err: any) {
       return { linhas: 0, erro: err?.response?.data?.error?.message ?? err.message };
     }
+  }
+
+  @Post("tathy/relatorio/enviar")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Enviar agora o relatório da Tathy (PDF + planilha) por e-mail (somente Diretor)" })
+  enviarRelatorio() {
+    return this.tathyService.enviarRelatorio();
+  }
+
+  @Get("tathy/relatorio/arquivo")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Baixar a apresentação (pdf) ou a planilha (xlsx) da Tathy (somente Diretor)" })
+  async baixarRelatorio(@Query("tipo") tipo: string, @Res() res: Response) {
+    const r = await this.tathyService.apresentacao();
+    const xlsx = tipo === "xlsx";
+    const nome = `${xlsx ? "Ranking-e-numeros" : "Apresentacao-trafego"}-${r.inicio.replace("/", "-")}-a-${r.fim.replace("/", "-")}.${xlsx ? "xlsx" : "pdf"}`;
+    res.setHeader("Content-Type", xlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${nome}"`);
+    return res.send(Buffer.from(xlsx ? r.planilha : r.pdf));
   }
 
   // Script colado no Google Ads empurra os anúncios por dia. Público, protegido pelo Verify Token.

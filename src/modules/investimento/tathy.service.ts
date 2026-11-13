@@ -7,6 +7,7 @@ import axios from "axios";
 import { AnuncioDia } from "./anuncio-dia.entity";
 import { InvestimentoService } from "./investimento.service";
 import { SettingsService } from "../settings/settings.service";
+import { brl as brlOuTraco, montarApresentacao, montarPlanilha } from "./tathy-relatorio";
 
 const GRAPH = "https://graph.facebook.com/v26.0";
 
@@ -224,6 +225,111 @@ export class TathyService {
     return { ok: true, linhas: linhas.length };
   }
 
+  /** Números dos últimos 7 dias (até ontem) por canal — pro relatório de segunda. */
+  async semana(): Promise<{ inicio: Date; fim: Date; porCanal: Record<string, { gasto: number; leads: number; semInteresse: number }> }> {
+    const db = this.anuncios.manager;
+    const hojeSP = new Date(Date.now() - 3 * 3600_000);
+    const fim = new Date(Date.UTC(hojeSP.getUTCFullYear(), hojeSP.getUTCMonth(), hojeSP.getUTCDate())); // exclusivo
+    const inicio = new Date(fim.getTime() - 7 * 86_400_000);
+    const ini = inicio.toISOString().slice(0, 10);
+    const fimIso = fim.toISOString().slice(0, 10);
+    const leads: any[] = await db.query(
+      `SELECT ${CANAL_SQL} AS canal,
+         count(*) FILTER (WHERE (l."createdAt" - interval '3 hours')::date >= $1 AND (l."createdAt" - interval '3 hours')::date < $2)::int AS leads,
+         count(*) FILTER (WHERE (l."perdaEm" - interval '3 hours')::date >= $1 AND (l."perdaEm" - interval '3 hours')::date < $2)::int AS "semInteresse"
+       FROM leads l WHERE ${SO_ANUNCIO_SQL} GROUP BY 1`,
+      [ini, fimIso]
+    );
+    const [meta]: any[] = await db.query(
+      `SELECT COALESCE(sum(valor), 0)::float AS gasto FROM ad_investment_days
+       WHERE make_date(ano, mes, dia) >= $1::date AND make_date(ano, mes, dia) < $2::date`,
+      [ini, fimIso]
+    );
+    const [google]: any[] = await db.query(
+      `SELECT COALESCE(sum(gasto), 0)::float AS gasto FROM anuncio_dias WHERE canal = 'google' AND data >= $1 AND data < $2`,
+      [ini, fimIso]
+    );
+    const porCanal: Record<string, { gasto: number; leads: number; semInteresse: number }> = {};
+    for (const c of ["meta", "google"]) {
+      const r = leads.find((x) => x.canal === c);
+      porCanal[c] = { gasto: c === "meta" ? meta.gasto : google.gasto, leads: r?.leads ?? 0, semInteresse: r?.semInteresse ?? 0 };
+    }
+    return { inicio, fim: new Date(fim.getTime() - 86_400_000), porCanal };
+  }
+
+  /** Monta a apresentação (PDF) da semana. */
+  async apresentacao(): Promise<{ pdf: Uint8Array; planilha: Buffer; inicio: string; fim: string; painel: any; semana: any }> {
+    const hojeSP = new Date(Date.now() - 3 * 3600_000);
+    const ano = hojeSP.getUTCFullYear();
+    const mes = hojeSP.getUTCMonth() + 1;
+    const painel = await this.painel(ano, mes);
+    const sem = await this.semana();
+    const dm = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const inicio = dm(sem.inicio);
+    const fim = dm(sem.fim);
+    const dados = { inicio, fim, mesNome: MESES[mes - 1], semana: sem.porCanal, painel };
+    const pdf = await montarApresentacao(dados);
+    const planilha = montarPlanilha(dados);
+    return { pdf, planilha, inicio, fim, painel, semana: sem.porCanal };
+  }
+
+  /** Manda a apresentação por e-mail (Resend) — segunda 9h e pelo botão "Enviar agora". */
+  async enviarRelatorio(para = process.env.TATHY_EMAIL || "srodrigo1946@gmail.com"): Promise<{ ok: boolean; para: string; erro?: string }> {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return { ok: false, para, erro: "RESEND_API_KEY não configurado no servidor." };
+    const { pdf, planilha, inicio, fim, painel, semana } = await this.apresentacao();
+    const c = painel.canais;
+    const tot = (k: string) => (Number(c.meta[k]) || 0) + (Number(c.google[k]) || 0);
+    const linha = (rot: string, m: string, g: string) =>
+      `<tr><td style="padding:6px 12px;color:#a59b8a">${rot}</td><td style="padding:6px 12px;text-align:right">${m}</td><td style="padding:6px 12px;text-align:right">${g}</td></tr>`;
+    const corretores = (painel.porResponsavel ?? []).filter((r: any) => r.cargo === "corretor").reduce((a: number, r: any) => a + r.leads, 0);
+    const gestores = (painel.porResponsavel ?? []).filter((r: any) => r.cargo !== "corretor").reduce((a: number, r: any) => a + r.leads, 0);
+    const html = `<div style="font-family:Arial,sans-serif;background:#0b0a08;color:#f4ede0;padding:24px;border-radius:12px">
+      <div style="color:#d9ad55;font-weight:bold">Tathy · gestora de tráfego</div>
+      <h2 style="margin:6px 0 4px">Relatório semanal de tráfego e leads</h2>
+      <div style="color:#a59b8a">Semana de ${inicio} a ${fim} · só leads de anúncio · apresentação completa em PDF no anexo</div>
+      <table style="margin-top:16px;border-collapse:collapse;color:#f4ede0;font-size:14px">
+        <tr><td></td><td style="padding:6px 12px;color:#3b82f6;text-align:right"><b>Meta</b></td><td style="padding:6px 12px;color:#22c55e;text-align:right"><b>Google Ads</b></td></tr>
+        ${linha("Investido na semana", brlOuTraco(semana.meta.gasto), brlOuTraco(semana.google.gasto))}
+        ${linha("Leads na semana", String(semana.meta.leads), String(semana.google.leads))}
+        ${linha("Custo por lead (mês)", brlOuTraco(c.meta.cpl), brlOuTraco(c.google.cpl))}
+        ${linha("Vendas no mês", String(c.meta.vendas), String(c.google.vendas))}
+      </table>
+      <p style="margin-top:16px">Leads de anúncio em aberto: <b>${corretores + gestores}</b> · com corretor <b>${corretores}</b> · com gerente/Diretor/sem dono <b style="color:#f59e0b">${gestores}</b>.</p>
+      <p>Investimento total no mês: <b>${brlOuTraco(tot("gasto"))}</b> · ${tot("leads")} leads.</p>
+      <ul>${(painel.alertas ?? []).slice(0, 4).map((a: any) => `<li>${a.texto}</li>`).join("")}</ul>
+      <div style="color:#a59b8a;font-size:12px;margin-top:16px">Enviado automaticamente toda segunda às 9h pelo Kayser One.</div>
+    </div>`;
+    try {
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: process.env.SUPPORT_FROM || "K1 <onboarding@resend.dev>",
+          to: para,
+          subject: `Relatório de tráfego e leads — semana ${inicio} a ${fim}`,
+          html,
+          attachments: [
+            { filename: `Apresentacao-trafego-${inicio.replace("/", "-")}-a-${fim.replace("/", "-")}.pdf`, content: Buffer.from(pdf).toString("base64") },
+            { filename: `Ranking-e-numeros-${inicio.replace("/", "-")}-a-${fim.replace("/", "-")}.xlsx`, content: Buffer.from(planilha).toString("base64") },
+          ],
+        }),
+      });
+      if (!r.ok) return { ok: false, para, erro: `Resend recusou (${r.status}): ${(await r.text()).slice(0, 200)}` };
+      this.logger.log(`Relatório da Tathy enviado para ${para} (${inicio}–${fim}).`);
+      return { ok: true, para };
+    } catch (err: any) {
+      return { ok: false, para, erro: err.message };
+    }
+  }
+
+  @Cron("0 9 * * 1", { timeZone: "America/Sao_Paulo" })
+  async relatorioSegunda() {
+    const r = await this.enviarRelatorio().catch((err) => ({ ok: false, erro: err.message }));
+    if (!r.ok) this.logger.warn(`Relatório de segunda da Tathy falhou: ${(r as any).erro}`);
+  }
+
   /** Painel completo da aba Custo por Lead (calculado na hora = tempo real). */
   async painel(ano: number, mes: number) {
     const db = this.anuncios.manager;
@@ -317,6 +423,54 @@ export class TathyService {
        ORDER BY COALESCE(l."etapaDesde", l."createdAt") ASC LIMIT 100`
     );
 
+    // Com quem estão os leads de anúncio ABERTOS: por pessoa (corretor x gerente) — regra do relatório.
+    const porResponsavel: any[] = await db.query(
+      `SELECT COALESCE(u.name, 'Sem dono') AS nome, COALESCE(u.role::text, 'sem_dono') AS cargo,
+         count(*)::int AS leads,
+         count(*) FILTER (WHERE ${CANAL_SQL} = 'meta')::int AS meta,
+         count(*) FILTER (WHERE ${CANAL_SQL} = 'google')::int AS google,
+         round(avg(EXTRACT(EPOCH FROM now() - COALESCE(l."etapaDesde", l."createdAt")) / 86400)::numeric, 1)::float AS "diasMedio"
+       FROM leads l LEFT JOIN users u ON u.id = l."responsavelId"
+       WHERE ${SO_ANUNCIO_SQL} AND l.status::text NOT IN ${FECHADOS}
+       GROUP BY 1, 2 ORDER BY 3 DESC`
+    );
+
+    // RANKING dos corretores (regra 13/11): leads de anúncio recebidos no mês e o que cada um fez,
+    // com porcentagens. "Sem interesse" conta pro corretor que tinha o lead (perdaCorretorId).
+    const rankingCorretores: any[] = await db.query(
+      `WITH base AS (
+         SELECT l.status::text AS status, l."etapaDesde", l."createdAt", ${CANAL_SQL} AS canal,
+                COALESCE(CASE WHEN ur.role::text = 'corretor' THEN l."responsavelId"::text END, l."perdaCorretorId") AS cid
+         FROM leads l LEFT JOIN users ur ON ur.id = l."responsavelId"
+         WHERE ${SO_ANUNCIO_SQL} AND l."createdAt"::date BETWEEN $1 AND $2
+       )
+       SELECT u.name AS nome,
+         count(*)::int AS recebidos,
+         count(*) FILTER (WHERE b.canal = 'meta')::int AS meta,
+         count(*) FILTER (WHERE b.canal = 'google')::int AS google,
+         count(*) FILTER (WHERE b.status NOT IN ${FECHADOS})::int AS abertos,
+         count(*) FILTER (WHERE b.status IN ('agendamento','visita_agendada'))::int AS agendamentos,
+         count(*) FILTER (WHERE b.status IN ('visita_realizada','simulacao','subida_pasta','aprovacao','reprovacao','venda_ganha'))::int AS visitas,
+         count(*) FILTER (WHERE b.status = 'venda_ganha')::int AS vendas,
+         count(*) FILTER (WHERE b.status = 'venda_perdida')::int AS "semInteresse",
+         COALESCE(round(avg(EXTRACT(EPOCH FROM now() - COALESCE(b."etapaDesde", b."createdAt")) / 86400)
+           FILTER (WHERE b.status NOT IN ${FECHADOS})::numeric, 1), 0)::float AS "diasParado"
+       FROM base b JOIN users u ON u.id::text = b.cid
+       GROUP BY u.name
+       ORDER BY 8 DESC, 7 DESC, 6 DESC, 2 DESC`,
+      [ini, fim]
+    );
+    rankingCorretores.forEach((r, i) => {
+      const pc = (n: number) => (r.recebidos ? Math.round((n / r.recebidos) * 1000) / 10 : 0);
+      Object.assign(r, {
+        posicao: i + 1,
+        pctAgendamento: pc(r.agendamentos + r.visitas),
+        pctVisita: pc(r.visitas),
+        pctVenda: pc(r.vendas),
+        pctSemInteresse: pc(r.semInteresse),
+      });
+    });
+
     // "Sem interesse" do mês: motivo, de quem era, quem marcou (só o Diretor vê esta tela).
     const semInteresse: any[] = await db.query(
       `SELECT l.id, l.name AS nome, ${CANAL_SQL} AS canal, l."perdaMotivo" AS motivo, l."perdaEm" AS em,
@@ -367,6 +521,6 @@ export class TathyService {
       anunciosRuins: anuncios.filter((a) => a.nota === "problema").length,
     });
 
-    return { atualizadoEm: new Date().toISOString(), mesAtual, canais, funil, parados, paraDistribuir, semInteresse, ranking, anuncios, alertas };
+    return { atualizadoEm: new Date().toISOString(), mesAtual, canais, funil, parados, paraDistribuir, porResponsavel, rankingCorretores, semInteresse, ranking, anuncios, alertas };
   }
 }
