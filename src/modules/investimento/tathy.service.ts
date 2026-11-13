@@ -368,7 +368,7 @@ export class TathyService {
         gastoHoje: !mesAtual ? 0 : c === "meta" ? metaHoje : g[0].hoje,
         leads: r.leads,
         leadsHoje: mesAtual ? r.leadsHoje : 0,
-        cpl: r.leads ? gasto / r.leads : null,
+        cpl: r.leads && gasto > 0 ? gasto / r.leads : null, // sem gasto = "—", não "R$ 0"
         vendas: r.vendas,
         vgv: r.vgv,
         custoVenda: r.vendas ? gasto / r.vendas : null,
