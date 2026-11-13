@@ -47,8 +47,8 @@ export function avaliarAnuncio(a: AnuncioResumo, cplMedio: number): { nota: Nota
   if ((a.diasSemResultado ?? 0) >= 14 && a.gasto > 0) {
     return { nota: "problema", dica: `Gastou ${brl(a.gasto)} em ${a.diasSemResultado} dias sem nenhum lead. Pausar e trocar o criativo — economiza esse valor por mês.`, cpl, ctr };
   }
-  // Volume mínimo: 7 dias rodando e 1.000 impressões antes de julgar.
-  if ((a.dias ?? 0) < 7 || a.impressoes < 1000) {
+  // Volume mínimo: 1.000 impressões e (7 dias rodando OU 15 resultados) antes de julgar.
+  if (a.impressoes < 1000 || ((a.dias ?? 0) < 7 && a.conversoes < 15)) {
     return { nota: "sem_veredito", dica: `Ainda aprendendo (${a.dias ?? 0} dia(s), ${a.impressoes.toLocaleString("pt-BR")} impressões). Preciso de 7 dias e 1.000 impressões para julgar.`, cpl, ctr };
   }
   // CTR bom e nenhum lead: o anúncio funciona, o problema é a página/oferta.
@@ -112,7 +112,13 @@ export function alertasTathy(d: DadosAlerta): { nivel: "critico" | "atencao" | "
 
 /** Leads de cada ação do Meta (lead do formulário / pixel). */
 export function leadsDasAcoes(actions: { action_type: string; value: string }[] | undefined): number {
-  const tipos = ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"];
+  // Formulário/pixel + anúncio de clique pro WhatsApp (conversa iniciada = o lead que chega no K1).
+  const tipos = [
+    "lead",
+    "onsite_conversion.lead_grouped",
+    "offsite_conversion.fb_pixel_lead",
+    "onsite_conversion.messaging_conversation_started_7d",
+  ];
   return Math.max(0, ...(actions ?? []).filter((a) => tipos.includes(a.action_type)).map((a) => Number(a.value) || 0));
 }
 

@@ -4,9 +4,13 @@ import { exigirMotivoPerda } from "../leads/followup-regras";
 const base = { canal: "meta", anuncio: "A", gasto: 300, cliques: 100, impressoes: 5000, conversoes: 10, dias: 10, diasSemResultado: 0 };
 
 describe("Tathy — nota dos anúncios (critérios de gestor de tráfego)", () => {
-  it("pouco volume = sem veredito", () => {
+  it("pouco volume = sem veredito; 15+ resultados já dá nota antes de 7 dias", () => {
     expect(avaliarAnuncio({ ...base, dias: 3 }, 30).nota).toBe("sem_veredito");
     expect(avaliarAnuncio({ ...base, impressoes: 500 }, 30).nota).toBe("sem_veredito");
+    expect(avaliarAnuncio({ ...base, dias: 4, conversoes: 53, gasto: 551, impressoes: 9590 }, 20).nota).toBe("bom");
+  });
+  it("conta conversa iniciada no WhatsApp como lead", () => {
+    expect(leadsDasAcoes([{ action_type: "onsite_conversion.messaging_conversation_started_7d", value: "31" }])).toBe(31);
   });
   it("14 dias gastando sem lead = problema, mesmo com pouco volume", () => {
     expect(avaliarAnuncio({ ...base, conversoes: 0, dias: 14, diasSemResultado: 14, impressoes: 300 }, 30).nota).toBe("problema");
