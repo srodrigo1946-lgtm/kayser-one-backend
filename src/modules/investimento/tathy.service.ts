@@ -129,7 +129,21 @@ export class TathyService {
 
   private async gravar(linhas: Partial<AnuncioDia>[]) {
     if (!linhas.length) return;
-    await this.anuncios.upsert(linhas as any, ["canal", "data", "anuncio"]);
+    // Anúncios com o mesmo nome no mesmo dia (outra campanha/conta) viram uma linha só —
+    // senão o Postgres recusa ("ON CONFLICT ... cannot affect row a second time").
+    const soma = new Map<string, Partial<AnuncioDia>>();
+    for (const l of linhas) {
+      const k = `${l.canal}|${l.data}|${l.anuncio}`;
+      const a = soma.get(k);
+      if (!a) soma.set(k, { ...l });
+      else {
+        a.gasto = Number(a.gasto) + Number(l.gasto || 0);
+        a.cliques = Number(a.cliques) + Number(l.cliques || 0);
+        a.impressoes = Number(a.impressoes) + Number(l.impressoes || 0);
+        a.conversoes = Number(a.conversoes) + Number(l.conversoes || 0);
+      }
+    }
+    await this.anuncios.upsert([...soma.values()] as any, ["canal", "data", "anuncio"]);
   }
 
   /** Meta: resultado de cada anúncio por dia no mês (de hora em hora junto com o gasto). */
@@ -211,6 +225,8 @@ export class TathyService {
     const ini = `${ano}-${pad(mes)}-01`;
     const fim = `${ano}-${pad(mes)}-${pad(new Date(ano, mes, 0).getDate())}`;
     const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+    // "Hoje" só existe no mês atual (em Outubro não pode mostrar o gasto do dia 13 de Outubro).
+    const mesAtual = hoje.slice(0, 7) === `${ano}-${pad(mes)}`;
 
     // Leads, vendas e "sem interesse" do mês por canal.
     const porCanal: any[] = await db.query(
@@ -225,7 +241,7 @@ export class TathyService {
     );
     // Gasto: Meta = gasto por dia já existente; Google = soma dos anúncios do script.
     const metaGasto = (await this.investimento.get(ano, mes)).valor;
-    const metaHoje = (await this.investimento.getDays(ano, mes)).find((d) => d.dia === Number(hoje.slice(8, 10)))?.valor ?? 0;
+    const metaHoje = mesAtual ? (await this.investimento.getDays(ano, mes)).find((d) => d.dia === Number(hoje.slice(8, 10)))?.valor ?? 0 : 0;
     const g: any[] = await db.query(
       `SELECT COALESCE(sum(gasto),0)::float AS gasto, COALESCE(sum(gasto) FILTER (WHERE data = $3),0)::float AS hoje, count(*)::int AS n
        FROM anuncio_dias WHERE canal = 'google' AND data BETWEEN $1 AND $2`,
@@ -237,9 +253,9 @@ export class TathyService {
       const gasto = c === "meta" ? metaGasto : g[0].gasto;
       canais[c] = {
         gasto,
-        gastoHoje: c === "meta" ? metaHoje : g[0].hoje,
+        gastoHoje: !mesAtual ? 0 : c === "meta" ? metaHoje : g[0].hoje,
         leads: r.leads,
-        leadsHoje: r.leadsHoje,
+        leadsHoje: mesAtual ? r.leadsHoje : 0,
         cpl: r.leads ? gasto / r.leads : null,
         vendas: r.vendas,
         vgv: r.vgv,
@@ -281,6 +297,18 @@ export class TathyService {
               count(*) FILTER (WHERE u.role IS NOT NULL AND u.role <> 'corretor')::int AS "comGestor"
        FROM leads l LEFT JOIN users u ON u.id = l."responsavelId"
        WHERE ${SO_ANUNCIO_SQL} AND l.status::text NOT IN ${FECHADOS}`
+    );
+
+    // Leads de anúncio ABERTOS parados com gerente/Diretor ou sem dono → pra distribuir (com nome).
+    const paraDistribuir: any[] = await db.query(
+      `SELECT l.id, l.name AS nome, ${CANAL_SQL} AS canal, COALESCE(k.title, l.status::text) AS etapa,
+         round((EXTRACT(EPOCH FROM now() - COALESCE(l."etapaDesde", l."createdAt")) / 86400)::numeric, 1)::float AS dias,
+         u.name AS responsavel, u.role AS cargo
+       FROM leads l
+       LEFT JOIN users u ON u.id = l."responsavelId"
+       LEFT JOIN kanban_columns k ON k.key = l.status::text
+       WHERE ${SO_ANUNCIO_SQL} AND l.status::text NOT IN ${FECHADOS} AND (u.id IS NULL OR u.role <> 'corretor')
+       ORDER BY COALESCE(l."etapaDesde", l."createdAt") ASC LIMIT 100`
     );
 
     // "Sem interesse" do mês: motivo, de quem era, quem marcou (só o Diretor vê esta tela).
@@ -333,6 +361,6 @@ export class TathyService {
       anunciosRuins: anuncios.filter((a) => a.nota === "problema").length,
     });
 
-    return { atualizadoEm: new Date().toISOString(), canais, funil, parados, semInteresse, ranking, anuncios, alertas };
+    return { atualizadoEm: new Date().toISOString(), mesAtual, canais, funil, parados, paraDistribuir, semInteresse, ranking, anuncios, alertas };
   }
 }
