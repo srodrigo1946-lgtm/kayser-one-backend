@@ -20,7 +20,7 @@ const ehGestor = (u?: User | null) =>
 import { UsersService } from "../users/users.service";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
-import { zeraContagemNaEtapa } from "./followup-regras";
+import { exigirMotivoPerda, zeraContagemNaEtapa } from "./followup-regras";
 import { checarZipBomba } from "../../common/zip-guard";
 
 /** Cabeçalho normalizado: minúsculo, sem acento, só letras/números ("Nome Completo" → "nomecompleto"). */
@@ -300,6 +300,8 @@ export class LeadsService {
       }
     }
     if (dto.status !== undefined && dto.status !== lead.status) await this.checarColunaGestores(dto.status, user);
+    const motivoPerda = exigirMotivoPerda(lead.status, dto.status, dto.perdaMotivo, user);
+    delete (dto as any).perdaMotivo;
     const prevResponsavelId = lead.responsavelId ?? null;
     const prevStatus = lead.status;
     Object.assign(lead, dto);
@@ -330,7 +332,7 @@ export class LeadsService {
       }
     }
     if (saved.status === LeadStatus.VENDA_PERDIDA && prevStatus !== LeadStatus.VENDA_PERDIDA) {
-      await this.arquivarSemInteresse(saved, user);
+      await this.arquivarSemInteresse(saved, user, motivoPerda, prevResponsavelId);
     }
     return saved;
   }
@@ -378,10 +380,12 @@ export class LeadsService {
     return { transferidos: mover.length };
   }
 
-  async updateStatus(id: string, status: string, order?: number, user?: User) {
+  async updateStatus(id: string, status: string, order?: number, user?: User, motivo?: string) {
     const lead = await this.findOne(id, user);
     const fromStatus = lead.status;
     if (status !== fromStatus) await this.checarColunaGestores(status, user);
+    const motivoPerda = exigirMotivoPerda(fromStatus, status, motivo, user);
+    const corretorAntes = lead.responsavelId ?? null;
     lead.status = status as LeadStatus;
     if (order !== undefined) lead.kanbanOrder = order;
     // Entrou em agendamento / visita realizada / venda ganha: zera os dias sem contato.
@@ -407,7 +411,7 @@ export class LeadsService {
           .update({ leadId: saved.id, status: "pendente" }, { status: "atendido" })
           .catch(() => {});
       }
-      if (saved.status === LeadStatus.VENDA_PERDIDA) await this.arquivarSemInteresse(saved, user);
+      if (saved.status === LeadStatus.VENDA_PERDIDA) await this.arquivarSemInteresse(saved, user, motivoPerda, corretorAntes);
     }
     return saved;
   }
@@ -416,9 +420,17 @@ export class LeadsService {
    * "Cliente sem interesse" (venda_perdida): o lead volta pro Diretor como
    * responsável (sai da carteira do corretor) e o histórico é apagado.
    */
-  async arquivarSemInteresse(lead: Lead, user?: User) {
-    // O histórico some (regra do Rodrigo) — fica no log do servidor quem moveu.
+  async arquivarSemInteresse(lead: Lead, user?: User, motivo?: string | null, corretorId?: string | null) {
+    // O histórico some (regra do Rodrigo) — quem marcou, de quem era e o motivo ficam no lead (só o Diretor vê).
     this.logger.log(`Sem interesse: lead ${lead.id} (${lead.name}) movido por ${user?.name ?? "sistema"} — histórico apagado.`);
+    await this.leadsRepo
+      .update(lead.id, {
+        perdaMotivo: motivo || (user ? null : "Marcado automaticamente pelo sistema"),
+        perdaPorId: user?.id ?? null,
+        perdaCorretorId: corretorId ?? lead.responsavelId ?? null,
+        perdaEm: new Date(),
+      } as any)
+      .catch((err) => this.logger.warn(`Falha ao gravar motivo de sem interesse: ${(err as Error).message}`));
     try {
       const diretor = await this.leadsRepo.manager.getRepository(User).findOne({
         where: { role: UserRole.DIRETOR, empresaId: IsNull() },

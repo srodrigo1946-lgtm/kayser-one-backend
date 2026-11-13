@@ -57,7 +57,7 @@ describe("LeadsService", () => {
     leadsRepo.manager = { getRepository: () => ({ findOne: async () => ({ id: "dir" }) }) };
     leadsRepo.findOne.mockResolvedValue({ id: "l9", status: "arquivo_dos_times", responsavelId: "c1" });
     convRepo.update = jest.fn(async () => ({}));
-    const r: any = await service.updateStatus("l9", "venda_perdida", undefined, diretor);
+    const r: any = await service.updateStatus("l9", "venda_perdida", undefined, diretor, "Cliente comprou com outra construtora");
     expect(leadsRepo.update).toHaveBeenCalledWith("l9", { responsavelId: "dir" });
     expect(history.remove).toHaveBeenCalledWith("l9");
     expect(r.responsavelId).toBe("dir");

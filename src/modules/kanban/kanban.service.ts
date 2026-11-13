@@ -108,13 +108,13 @@ export class KanbanService {
     }));
   }
 
-  async moveCard(leadId: string, toStatus: string, toOrder: number, user?: User, dataAgendamento?: string) {
+  async moveCard(leadId: string, toStatus: string, toOrder: number, user?: User, dataAgendamento?: string, motivo?: string) {
     if (user && !ehGestor(user)) {
       const destino = await this.columnsRepo.findOne({ where: { key: toStatus } });
       if (destino?.somenteGestores) throw new ForbiddenException("Essa coluna é só para gerentes.");
     }
     // Delega ao LeadsService para registrar o histórico da movimentação.
-    const r = await this.leadsService.updateStatus(leadId, toStatus, toOrder, user);
+    const r = await this.leadsService.updateStatus(leadId, toStatus, toOrder, user, motivo);
     if (toStatus === LeadStatus.AGENDAMENTO && dataAgendamento) await this.gravarAgendamento(leadId, new Date(dataAgendamento));
     return r;
   }

@@ -356,7 +356,7 @@ export class ConversationsService {
       const status = ETIQUETA_STATUS[et] ?? et;
       if (status && conv.leadId) {
         try {
-          await this.leads.updateStatus(conv.leadId, status, undefined, requester);
+          await this.leads.updateStatus(conv.leadId, status, undefined, requester, "Marcado pela etiqueta no WhatsApp (Conversas ao vivo)");
         } catch {
           /* não bloqueia a etiqueta se o kanban falhar */
         }

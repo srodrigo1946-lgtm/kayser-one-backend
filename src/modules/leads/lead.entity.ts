@@ -183,6 +183,20 @@ export class Lead {
   @Column({ type: "timestamp", nullable: true })
   dataAgendamento: Date | null;
 
+  // Desde quando está na etapa atual (trigger no banco atualiza a cada mudança de status — 13/11).
+  @Column({ type: "timestamp", nullable: true })
+  etapaDesde: Date | null;
+
+  // "Sem interesse" (13/11): motivo obrigatório, quem marcou, de qual corretor era e quando. Só o Diretor vê.
+  @Column({ type: "text", nullable: true })
+  perdaMotivo: string | null;
+  @Column({ type: "varchar", nullable: true })
+  perdaPorId: string | null;
+  @Column({ type: "varchar", nullable: true })
+  perdaCorretorId: string | null;
+  @Column({ type: "timestamp", nullable: true })
+  perdaEm: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

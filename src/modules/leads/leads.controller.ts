@@ -104,10 +104,10 @@ export class LeadsController {
   @ApiOperation({ summary: "Mover lead no Kanban" })
   updateStatus(
     @Param("id") id: string,
-    @Body() body: { status: string; order?: number },
+    @Body() body: { status: string; order?: number; motivo?: string },
     @Request() req: any
   ) {
-    return this.leadsService.updateStatus(id, body.status, body.order, req.user);
+    return this.leadsService.updateStatus(id, body.status, body.order, req.user, body.motivo);
   }
 
   @Delete(":id")

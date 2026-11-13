@@ -59,6 +59,40 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "whatsappCaiuEm" timestamp DEFAULT '2026-11-06 10:00:00'`);
         await this.dataSource.query(`ALTER TABLE lead_queue_settings ALTER COLUMN "whatsappCaiuEm" DROP DEFAULT`);
       }],
+      // Tathy / Custo por Lead (13/11): tempo na etapa, motivo de "sem interesse" e anúncios por dia.
+      ["tathy", async () => {
+        const q = (s: string) => this.dataSource.query(s);
+        await q(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "etapaDesde" timestamp`);
+        await q(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "perdaMotivo" text`);
+        await q(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "perdaPorId" varchar`);
+        await q(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "perdaCorretorId" varchar`);
+        await q(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "perdaEm" timestamp`);
+        // Toda mudança de etapa (Kanban, IA, reengajamento, update direto) marca a hora.
+        await q(`CREATE OR REPLACE FUNCTION k1_etapa_desde() RETURNS trigger AS $$
+          BEGIN
+            IF TG_OP = 'INSERT' OR NEW.status IS DISTINCT FROM OLD.status THEN NEW."etapaDesde" := now(); END IF;
+            RETURN NEW;
+          END $$ LANGUAGE plpgsql`);
+        await q(`DROP TRIGGER IF EXISTS trg_k1_etapa_desde ON leads`);
+        await q(`CREATE TRIGGER trg_k1_etapa_desde BEFORE INSERT OR UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION k1_etapa_desde()`);
+        // Leads antigos: última mudança de etapa no histórico; sem histórico, a criação.
+        await q(`UPDATE leads l SET "etapaDesde" = COALESCE(
+                   (SELECT max(h."createdAt") FROM lead_history h WHERE h."leadId" = l.id AND h."toStatus" = l.status::text),
+                   l."createdAt")
+                 WHERE l."etapaDesde" IS NULL`);
+        await q(`CREATE TABLE IF NOT EXISTS anuncio_dias (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          canal varchar NOT NULL,
+          data date NOT NULL,
+          anuncio varchar(300) NOT NULL,
+          campanha varchar(300),
+          gasto numeric NOT NULL DEFAULT 0,
+          cliques int NOT NULL DEFAULT 0,
+          impressoes int NOT NULL DEFAULT 0,
+          conversoes numeric NOT NULL DEFAULT 0,
+          CONSTRAINT uq_anuncio_dia UNIQUE (canal, data, anuncio)
+        )`);
+      }],
       // Fila SWAT (11/11).
       ["filaSwat", async () => {
         await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "swatMemberIds" text`);

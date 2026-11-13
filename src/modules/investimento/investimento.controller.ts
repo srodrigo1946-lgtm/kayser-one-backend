@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsInt, IsNumber, Min, Max, IsArray, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { InvestimentoService } from "./investimento.service";
+import { TathyService } from "./tathy.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -42,7 +43,10 @@ class SetDiasDto {
 @ApiBearerAuth()
 @Controller("investimento")
 export class InvestimentoController {
-  constructor(private readonly service: InvestimentoService) {}
+  constructor(
+    private readonly service: InvestimentoService,
+    private readonly tathyService: TathyService
+  ) {}
 
   @Get()
   @UseGuards(JwtAuthGuard)
@@ -88,6 +92,33 @@ export class InvestimentoController {
   @ApiOperation({ summary: "Puxar agora o gasto por dia do Meta (somente Diretor)" })
   sincronizarMeta(@Query("year") year: string, @Query("month") month: string) {
     return this.service.sincronizarMeta(Number(year), Number(month));
+  }
+
+  @Get("tathy")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Tathy: painel de tráfego em tempo real — só leads de anúncio (somente Diretor)" })
+  tathy(@Query("year") year: string, @Query("month") month: string) {
+    return this.tathyService.painel(Number(year), Number(month));
+  }
+
+  @Post("tathy/sincronizar")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Puxar agora os anúncios do Meta (somente Diretor)" })
+  async tathySincronizar(@Query("year") year: string, @Query("month") month: string) {
+    try {
+      return { linhas: await this.tathyService.sincronizarAnunciosMeta(Number(year), Number(month)) };
+    } catch (err: any) {
+      return { linhas: 0, erro: err?.response?.data?.error?.message ?? err.message };
+    }
+  }
+
+  // Script colado no Google Ads empurra os anúncios por dia. Público, protegido pelo Verify Token.
+  @Post("google-direct")
+  @ApiOperation({ summary: "Recebe os anúncios do Google Ads por dia (script da Tathy, token)" })
+  googleDireto(@Query("token") token: string, @Body() body: any) {
+    return this.tathyService.receberGoogle(token, body);
   }
 
   // Entrada automática (FiqOn/Make empurra o gasto do FB). Público, protegido por token.
