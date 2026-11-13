@@ -288,8 +288,8 @@ export class TathyService {
       `SELECT l.id, l.name AS nome, ${CANAL_SQL} AS canal, l."perdaMotivo" AS motivo, l."perdaEm" AS em,
          c.name AS corretor, p.name AS "marcadoPor"
        FROM leads l
-       LEFT JOIN users c ON c.id = l."perdaCorretorId"
-       LEFT JOIN users p ON p.id = l."perdaPorId"
+       LEFT JOIN users c ON c.id::text = l."perdaCorretorId"
+       LEFT JOIN users p ON p.id::text = l."perdaPorId"
        WHERE ${SO_ANUNCIO_SQL} AND l."perdaEm"::date BETWEEN $1 AND $2
        ORDER BY l."perdaEm" DESC LIMIT 100`,
       [ini, fim]
