@@ -19,6 +19,7 @@ export function montarPlanilha(d: DadosRelatorio): Buffer {
   aba(
     "Ranking corretores",
     (P.rankingCorretores ?? []).map((r: any) => ({
+      Troféu: ["🏆 1º lugar", "🥈 2º lugar", "🥉 3º lugar"][r.posicao - 1] ?? "",
       Posição: r.posicao,
       Corretor: r.nome,
       "Leads recebidos": r.recebidos,
@@ -35,7 +36,7 @@ export function montarPlanilha(d: DadosRelatorio): Buffer {
       "% sem interesse": pct(r.pctSemInteresse),
       "Parado em média (dias)": r.diasParado,
     })),
-    [9, 34, 15, 9, 10, 10, 20, 14, 9, 10, 8, 20, 13, 15, 20]
+    [13, 9, 34, 15, 9, 10, 10, 20, 14, 9, 10, 8, 20, 13, 15, 20]
   );
   const linhaCanal = (rot: string, fn: (c: string) => unknown) => ({ Indicador: rot, Meta: fn("meta"), "Google Ads": fn("google") });
   aba(
@@ -192,6 +193,32 @@ class Slide {
   ret(x: number, y: number, w: number, h: number, cor = C.painel, borda?: ReturnType<typeof rgb>) {
     this.p.drawRectangle({ x, y: H - y - h, width: w, height: h, color: cor, ...(borda ? { borderColor: borda, borderWidth: 1 } : {}) });
   }
+  /** Troféu desenhado (a fonte do PDF não tem emoji). (cx, topo) = centro do topo da taça; t = altura. */
+  trofeu(cx: number, topo: number, t: number, cor = C.ouro) {
+    const p = this.p;
+    const y = (v: number) => H - v;
+    const w = t * 0.62;
+    // alças
+    p.drawEllipse({ x: cx - w / 2, y: y(topo + t * 0.2), xScale: t * 0.16, yScale: t * 0.14, borderColor: cor, borderWidth: t * 0.05 });
+    p.drawEllipse({ x: cx + w / 2, y: y(topo + t * 0.2), xScale: t * 0.16, yScale: t * 0.14, borderColor: cor, borderWidth: t * 0.05 });
+    // taça
+    p.drawRectangle({ x: cx - w / 2, y: y(topo + t * 0.3), width: w, height: t * 0.3, color: cor });
+    p.drawEllipse({ x: cx, y: y(topo + t * 0.3), xScale: w / 2, yScale: t * 0.26, color: cor });
+    // brilho
+    p.drawRectangle({ x: cx - w * 0.3, y: y(topo + t * 0.42), width: w * 0.1, height: t * 0.34, color: C.ouroClaro, opacity: 0.6 });
+    // haste e base
+    p.drawRectangle({ x: cx - t * 0.06, y: y(topo + t * 0.78), width: t * 0.12, height: t * 0.24, color: cor });
+    p.drawRectangle({ x: cx - t * 0.26, y: y(topo + t * 0.9), width: t * 0.52, height: t * 0.12, color: cor });
+    p.drawRectangle({ x: cx - t * 0.34, y: y(topo + t), width: t * 0.68, height: t * 0.1, color: cor });
+  }
+  /** Medalha redonda com a posição. */
+  medalha(cx: number, cy: number, r: number, cor: ReturnType<typeof rgb>, n: number) {
+    this.p.drawCircle({ x: cx, y: H - cy, size: r, color: cor });
+    this.p.drawCircle({ x: cx, y: H - cy, size: r * 0.78, borderColor: C.fundo, borderWidth: 1, opacity: 0 });
+    const txt = String(n);
+    const tam = r * 1.1;
+    this.txt(txt, cx - this.largura(txt, tam, true) / 2, cy + tam * 0.36, tam, C.fundo, true);
+  }
   cabecalho(titulo: string, sub: string, n: number, total: number) {
     this.ret(0, 0, W, H, C.fundo);
     this.ret(0, 0, 8, H, C.ouro);
@@ -208,7 +235,7 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
   const f = await pdf.embedFont(StandardFonts.Helvetica);
   const b = await pdf.embedFont(StandardFonts.HelveticaBold);
   const P = d.painel;
-  const TOTAL = 10;
+  const TOTAL = 11;
   const nova = () => new Slide(pdf.addPage([W, H]), f, b);
   const canais = ["meta", "google"];
   const tot = (k: string) => canais.reduce((s, c) => s + (Number(P.canais[c]?.[k]) || 0), 0);
@@ -354,10 +381,45 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
     coluna("Gerentes / Diretor / sem dono", gestores, 498, C.ambar);
   }
 
-  // 6. Ranking dos corretores (regra: com porcentagens e todos os números)
+  // 6. Pódio (troféu) — os 3 primeiros do ranking
   {
     const s = nova();
-    s.cabecalho("Ranking dos corretores", `Leads de anúncio recebidos em ${d.mesNome} e o que cada um fez — planilha completa no anexo`, 6, TOTAL);
+    s.cabecalho("Pódio da semana", `Os 3 melhores corretores com leads de anúncio em ${d.mesNome}`, 6, TOTAL);
+    const top = (P.rankingCorretores ?? []).slice(0, 3) as any[];
+    const PRATA = hex("#c9ced6");
+    const BRONZE = hex("#cd7f32");
+    const pct = (n: number) => `${n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+    // ordem visual: 2º à esquerda, 1º no meio, 3º à direita
+    const lugares: [number, number, number, ReturnType<typeof rgb>][] = [
+      [1, 290, 150, PRATA],
+      [0, 480, 210, C.ouro],
+      [2, 670, 110, BRONZE],
+    ];
+    const base = 500;
+    for (const [i, cx, alt, cor] of lugares) {
+      const r = top[i];
+      if (!r) continue;
+      s.ret(cx - 70, base - alt, 140, alt, cor);
+      s.ret(cx - 70, base - alt, 140, 6, C.texto);
+      const lugar = `${i + 1}º`;
+      s.txt(lugar, cx - s.largura(lugar, 40, true) / 2, base - alt + 56, 40, C.fundo, true);
+      if (i === 0) s.trofeu(cx, base - alt - 150, 70);
+      else s.medalha(cx, base - alt - 82, 16, cor, i + 1);
+      const nome = limpar(r.nome).split(" ").slice(0, 2).join(" ");
+      s.txt(nome, cx - s.largura(nome, 14, true) / 2, base - alt - 46, 14, C.texto, true);
+      const l1 = `${r.vendas} venda(s) · ${r.visitas} visita(s)`;
+      const l2 = `${r.recebidos} leads · ${pct(r.pctAgendamento)} agendaram`;
+      s.txt(l1, cx - s.largura(l1, 10) / 2, base - alt - 28, 10, C.cinza);
+      s.txt(l2, cx - s.largura(l2, 10) / 2, base - alt - 14, 10, C.cinza);
+    }
+    if (!top.length) s.txt("Ainda sem corretores com leads de anúncio no mês.", 48, 200, 14, C.cinza);
+    s.txt("Critério: vendas, depois visitas, depois agendamentos, depois leads recebidos.", 48, 524, 10, C.cinza);
+  }
+
+  // 7. Ranking dos corretores (regra: com porcentagens e todos os números)
+  {
+    const s = nova();
+    s.cabecalho("Ranking dos corretores", `Leads de anúncio recebidos em ${d.mesNome} e o que cada um fez — planilha completa no anexo`, 7, TOTAL);
     const pct = (n: number) => `${n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
     const cols: [string, number][] = [["Recebidos", 440], ["Agend.", 530], ["Visitas", 625], ["Vendas", 715], ["Sem interesse", 830], ["Parado", 912]];
     s.txt("#", 48, 128, 11, C.cinza, true);
@@ -367,8 +429,8 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
     lista.forEach((r: any, i: number) => {
       const y = 156 + i * 29;
       if (i % 2) s.ret(40, y - 19, 880, 29, C.painel);
-      const medalha = i === 0 ? C.ouro : i === 1 ? hex("#c0c0c0") : i === 2 ? hex("#cd7f32") : C.cinza;
-      s.txt(String(r.posicao), 48, y, 13, medalha, true);
+      if (i < 3) s.medalha(56, y - 5, 10, i === 0 ? C.ouro : i === 1 ? hex("#c9ced6") : hex("#cd7f32"), i + 1);
+      else s.txt(String(r.posicao), 50, y, 13, C.cinza, true);
       s.txt(limpar(r.nome).slice(0, 34), 80, y, 12, C.texto, i < 3);
       s.txtDir(r.recebidos, 440, y, 12, C.texto, true);
       s.txtDir(`${r.agendamentos + r.visitas} · ${pct(r.pctAgendamento)}`, 530, y, 11);
@@ -382,10 +444,10 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
     if (resto > 0) s.txt(`+ ${resto} corretor(es) na planilha anexa.`, 48, 512, 11, C.cinza);
   }
 
-  // 7. Leads parados
+  // 8. Leads parados
   {
     const s = nova();
-    s.cabecalho("Leads mais parados na esteira", "Abertos há mais tempo sem mudar de etapa — cobrar quem está com eles", 7, TOTAL);
+    s.cabecalho("Leads mais parados na esteira", "Abertos há mais tempo sem mudar de etapa — cobrar quem está com eles", 8, TOTAL);
     const cols: [string, number, boolean][] = [["Lead", 48, false], ["Canal", 300, false], ["Etapa", 400, false], ["Parado", 640, true], ["Com quem", 912, true]];
     cols.forEach(([t, x, dir]) => (dir ? s.txtDir(t, x, 128, 11, C.cinza, true) : s.txt(t, x, 128, 11, C.cinza, true)));
     (P.parados ?? []).slice(0, 10).forEach((p: any, i: number) => {
@@ -403,7 +465,7 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
   // 6. Anúncios
   {
     const s = nova();
-    s.cabecalho("Anúncios: o que manter, trocar ou escalar", "Nota da Tathy contra a média do próprio canal (critério de gestor de tráfego)", 8, TOTAL);
+    s.cabecalho("Anúncios: o que manter, trocar ou escalar", "Nota da Tathy contra a média do próprio canal (critério de gestor de tráfego)", 9, TOTAL);
     let y = 128;
     const lista = (P.anuncios ?? []).slice(0, 6);
     for (const a of lista) {
@@ -423,7 +485,7 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
   // 7. Sem interesse
   {
     const s = nova();
-    s.cabecalho("Clientes sem interesse", `${d.mesNome}: motivo escrito pelo corretor e quem marcou`, 9, TOTAL);
+    s.cabecalho("Clientes sem interesse", `${d.mesNome}: motivo escrito pelo corretor e quem marcou`, 10, TOTAL);
     s.txt("Por corretor", 48, 128, 14, C.texto, true);
     let y = 158;
     const rk = (P.ranking ?? []).slice(0, 8);
@@ -446,7 +508,7 @@ export async function montarApresentacao(d: DadosRelatorio): Promise<Uint8Array>
   // 8. Plano da semana
   {
     const s = nova();
-    s.cabecalho("Plano para esta semana", "Ações recomendadas pela Tathy, em ordem de impacto", 10, TOTAL);
+    s.cabecalho("Plano para esta semana", "Ações recomendadas pela Tathy, em ordem de impacto", 11, TOTAL);
     const acoes: string[] = [];
     const anuncios = P.anuncios ?? [];
     for (const a of anuncios.filter((x: any) => x.nota === "problema").slice(0, 2)) acoes.push(`Trocar ou pausar "${a.anuncio}" (${CANAL_NOME[a.canal]}): ${a.dica}`);

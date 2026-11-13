@@ -27,17 +27,18 @@ describe("Relatório da Tathy", () => {
   it("tira emoji/seta que a fonte do PDF não imprime", () => {
     expect(limpar("ok → 🔥 ação")).toBe("ok -> ação");
   });
-  it("gera a apresentação (10 slides) sem quebrar com acento/emoji", async () => {
+  it("gera a apresentação (11 slides, com pódio) sem quebrar com acento/emoji", async () => {
     const pdf = await montarApresentacao(dados);
     expect(Buffer.from(pdf).slice(0, 4).toString()).toBe("%PDF");
     const { PDFDocument } = await import("pdf-lib");
-    expect((await PDFDocument.load(pdf)).getPageCount()).toBe(10);
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBe(11);
   });
   it("gera a planilha com o ranking e as porcentagens", () => {
     const wb = XLSX.read(montarPlanilha(dados), { type: "buffer" });
     expect(wb.SheetNames).toEqual(["Ranking corretores", "Meta x Google", "Com quem estão", "Leads parados", "Anúncios", "Sem interesse"]);
     const rk: any[] = XLSX.utils.sheet_to_json(wb.Sheets["Ranking corretores"]);
     expect(rk[0].Corretor).toBe("Claudia Marcello");
+    expect(rk[0].Troféu).toBe("🏆 1º lugar");
     expect(rk[0]["% conversão em venda"]).toBe(11.1);
   });
 });
