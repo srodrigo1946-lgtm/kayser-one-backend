@@ -124,6 +124,14 @@ export class InvestimentoController {
     return this.tathyService.scriptGoogle();
   }
 
+  @Get("tathy/testar-chave")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Testa a chave da Tathy (mostra só o começo e o tamanho) (somente Diretor)" })
+  tathyTestarChave() {
+    return this.tathyService.testarChave();
+  }
+
   @Get("tathy/conversa")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)

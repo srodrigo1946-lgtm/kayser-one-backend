@@ -300,10 +300,34 @@ export class TathyService {
     return { script, temChave: !!token };
   }
 
+  /**
+   * Testa a chave da Tathy (Diretor): mostra só o começo e o tamanho (nunca a chave inteira)
+   * e faz uma chamada mínima na Claude pra dizer se ela é aceita.
+   */
+  async testarChave(): Promise<{ salva: boolean; inicio?: string; tamanho?: number; ok?: boolean; erro?: string }> {
+    const s: any = await this.settings.get();
+    const k: string = s?.tathyClaudeKey || "";
+    if (!k) return { salva: false };
+    const info = { salva: true, inicio: k.slice(0, 14) + "…", tamanho: k.length };
+    try {
+      const r = await axios.get("https://api.anthropic.com/v1/models?limit=1", {
+        headers: { "x-api-key": k, "anthropic-version": "2023-06-01" },
+        timeout: 10_000,
+        validateStatus: () => true,
+      });
+      if (r.status === 200) return { ...info, ok: true };
+      return { ...info, ok: false, erro: `${r.status} ${r.data?.error?.message ?? ""}`.trim() };
+    } catch (err: any) {
+      return { ...info, ok: false, erro: err.message };
+    }
+  }
+
   /** Histórico da conversa com a Tathy (as últimas 60). */
   async conversa(userId: string) {
     const rows = await this.mensagens.find({ where: { userId }, order: { createdAt: "DESC" }, take: 60 });
-    return rows.reverse().map((m) => ({ role: m.role, texto: m.texto, imagens: m.imagens, links: m.links ? m.links.split("\n") : [], em: m.createdAt }));
+    // Pergunta e resposta gravadas no mesmo instante: a pergunta vem antes.
+    rows.sort((a, b) => +a.createdAt - +b.createdAt || (a.role === "user" ? -1 : 1) - (b.role === "user" ? -1 : 1));
+    return rows.map((m) => ({ role: m.role, texto: m.texto, imagens: m.imagens, links: m.links ? m.links.split("\n") : [], em: m.createdAt }));
   }
 
   async limparConversa(userId: string) {
@@ -370,10 +394,8 @@ ${lidos.length ? `\nConteúdo dos links enviados:\n${lidos.join("\n\n")}` : ""}`
         ? `Não consegui responder: nenhuma chave da Claude funcionou. Clique em "Colocar chave da Tathy" (aqui em cima), cole uma chave nova e me pergunte de novo. (detalhe: ${msg.replace(/sk-ant-[\w-]+/g, "sk-ant-…").slice(0, 220)})`
         : `Não consegui responder agora: ${msg.slice(0, 200)}`;
     }
-    await this.mensagens.save([
-      this.mensagens.create({ userId, role: "user", texto: pergunta || "(imagem)", imagens: imagens.length, links: links.join("\n") || null }),
-      this.mensagens.create({ userId, role: "assistant", texto: resposta }),
-    ]);
+    await this.mensagens.save(this.mensagens.create({ userId, role: "user", texto: pergunta || "(imagem)", imagens: imagens.length, links: links.join("\n") || null }));
+    await this.mensagens.save(this.mensagens.create({ userId, role: "assistant", texto: resposta }));
     return { resposta, links, imagens: imagens.length };
   }
 
