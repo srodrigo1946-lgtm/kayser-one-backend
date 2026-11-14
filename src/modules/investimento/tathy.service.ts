@@ -367,7 +367,7 @@ ${lidos.length ? `\nConteúdo dos links enviados:\n${lidos.join("\n\n")}` : ""}`
     } catch (err: any) {
       const msg = String(err?.response?.message ?? err?.message ?? "erro na IA");
       resposta = /401|invalid x-api-key|authentication/i.test(msg)
-        ? "Não consegui responder: nenhuma chave da Claude funcionou. Clique em \"Colocar chave da Tathy\" (aqui em cima), cole uma chave nova e me pergunte de novo."
+        ? `Não consegui responder: nenhuma chave da Claude funcionou. Clique em "Colocar chave da Tathy" (aqui em cima), cole uma chave nova e me pergunte de novo. (detalhe: ${msg.replace(/sk-ant-[\w-]+/g, "sk-ant-…").slice(0, 220)})`
         : `Não consegui responder agora: ${msg.slice(0, 200)}`;
     }
     await this.mensagens.save([
