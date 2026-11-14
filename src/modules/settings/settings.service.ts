@@ -26,9 +26,10 @@ export class SettingsService {
   /** Versão segura para o front: não expõe chaves/tokens nem a imagem (grande). */
   async getPublic() {
     const s = await this.get();
-    const { aiApiKey, audioApiKey, direcionalImage, metaPageToken, metaVerifyToken, ioneClaudeKey, ioneOpenaiKey, ioneUnidadesCsv, marcaLogo, ...rest } = s;
+    const { aiApiKey, audioApiKey, direcionalImage, metaPageToken, metaVerifyToken, ioneClaudeKey, ioneOpenaiKey, ioneUnidadesCsv, marcaLogo, tathyClaudeKey, ...rest } = s;
     return {
       ...rest,
+      hasTathyClaudeKey: !!tathyClaudeKey,
       hasMarcaLogo: !!marcaLogo,
       hasIoneClaudeKey: !!ioneClaudeKey,
       hasIoneOpenaiKey: !!ioneOpenaiKey,
@@ -128,7 +129,7 @@ export class SettingsService {
   async update(dto: Partial<Settings>) {
     const settings = await this.get();
     // Não sobrescreve segredos com vazio (permite manter os existentes).
-    for (const k of ["aiApiKey", "audioApiKey", "metaPageToken", "metaVerifyToken", "ioneClaudeKey", "ioneOpenaiKey"] as const) {
+    for (const k of ["aiApiKey", "audioApiKey", "metaPageToken", "metaVerifyToken", "ioneClaudeKey", "ioneOpenaiKey", "tathyClaudeKey"] as const) {
       if (dto[k] === "" || dto[k] === undefined) delete dto[k];
     }
     Object.assign(settings, dto);

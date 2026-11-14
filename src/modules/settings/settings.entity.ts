@@ -39,6 +39,10 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   ioneClaudeKey: string | null;
 
+  // Chave da Claude só da Tathy (gestora de tráfego) — o Diretor cola na própria Tathy (14/11).
+  @Column({ type: "text", nullable: true })
+  tathyClaudeKey: string | null;
+
   @Column({ type: "text", nullable: true })
   ioneOpenaiKey: string | null;
 

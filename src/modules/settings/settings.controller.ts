@@ -39,6 +39,9 @@ class UpdateSettingsDto {
   ioneClaudeKey?: string;
 
   @IsOptional() @IsString()
+  tathyClaudeKey?: string;
+
+  @IsOptional() @IsString()
   ioneOpenaiKey?: string;
 
   @IsOptional() @IsString()

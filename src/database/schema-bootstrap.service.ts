@@ -93,6 +93,10 @@ export class SchemaBootstrapService implements OnModuleInit {
           CONSTRAINT uq_anuncio_dia UNIQUE (canal, data, anuncio)
         )`);
       }],
+      // Chave da Claude só da Tathy (14/11).
+      ["tathyChave", async () => {
+        await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tathyClaudeKey" text`);
+      }],
       // Conversa com a Tathy (14/11).
       ["tathyMensagens", async () => {
         await this.dataSource.query(`CREATE TABLE IF NOT EXISTS tathy_mensagens (

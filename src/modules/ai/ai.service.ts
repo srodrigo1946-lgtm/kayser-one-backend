@@ -139,8 +139,31 @@ export class AiService {
    * Imagem só no Claude (Anthropic); sem imagem, qualquer provedor configurado.
    */
   async perguntarComImagens(system: string, historico: ChatMessage[], pergunta: string, imagens: { mime: string; base64: string }[] = [], userId?: string): Promise<string> {
-    // Chave própria de quem pergunta (a que já funciona no WhatsApp) antes da chave da empresa.
-    const { provider, model, apiKey } = await this.resolveConfig(await this.getUserAiConfig(userId));
+    // Tenta as chaves do Claude em ordem (Rodrigo 14/11: "usa a mesma chave, não precisa mudar nada"):
+    // a do usuário, a da empresa, a do .env e a da IA One. A primeira que não der 401 responde.
+    const settings: any = await this.settingsService.get();
+    const userAi = await this.getUserAiConfig(userId);
+    const candidatas = [
+      settings.tathyClaudeKey,
+      userAi?.provider === AiProvider.ANTHROPIC || (!userAi?.provider && userAi?.apiKey) ? userAi?.apiKey : undefined,
+      settings.aiProvider === AiProvider.ANTHROPIC ? settings.aiApiKey : undefined,
+      this.config.get<string>("ANTHROPIC_API_KEY"),
+      settings.ioneClaudeKey,
+    ].filter((k, i, a): k is string => !!k && a.indexOf(k) === i);
+    if (candidatas.length) {
+      const model = (settings.aiProvider === AiProvider.ANTHROPIC && settings.aiModel) || DEFAULT_MODELS[AiProvider.ANTHROPIC];
+      let ultimoErro: any;
+      for (const chave of candidatas) {
+        try {
+          return await this.claudeComImagens(chave, model, system, historico, pergunta, imagens);
+        } catch (err: any) {
+          ultimoErro = err;
+          if (err?.status !== 401 && !/invalid x-api-key|authentication/i.test(String(err?.message))) throw err;
+        }
+      }
+      throw ultimoErro;
+    }
+    const { provider, model, apiKey } = await this.resolveConfig(userAi);
     if (provider !== AiProvider.ANTHROPIC) {
       if (imagens.length) throw new BadRequestException("Para analisar imagem a IA da empresa precisa ser a Anthropic (Claude).");
       const r: any =
@@ -149,6 +172,10 @@ export class AiService {
           : await this.chatGemini(apiKey, model, system, [...historico, { role: "user", content: pergunta }]);
       return r.content;
     }
+    return this.claudeComImagens(apiKey, model, system, historico, pergunta, imagens);
+  }
+
+  private async claudeComImagens(apiKey: string, model: string, system: string, historico: ChatMessage[], pergunta: string, imagens: { mime: string; base64: string }[]): Promise<string> {
     const client = new Anthropic({ apiKey });
     const modeloNovo = /claude-(sonnet-5|opus-(5|4-[678])|fable|mythos)/.test(model);
     const response = await client.messages.create({

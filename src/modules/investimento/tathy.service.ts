@@ -367,7 +367,7 @@ ${lidos.length ? `\nConteúdo dos links enviados:\n${lidos.join("\n\n")}` : ""}`
     } catch (err: any) {
       const msg = String(err?.response?.message ?? err?.message ?? "erro na IA");
       resposta = /401|invalid x-api-key|authentication/i.test(msg)
-        ? "Não consegui responder: a chave da IA está inválida ou vencida. Confira a chave em IA Agente (a sua) ou em Configurações (a da empresa) e me pergunte de novo."
+        ? "Não consegui responder: nenhuma chave da Claude funcionou. Clique em \"Colocar chave da Tathy\" (aqui em cima), cole uma chave nova e me pergunte de novo."
         : `Não consegui responder agora: ${msg.slice(0, 200)}`;
     }
     await this.mensagens.save([
