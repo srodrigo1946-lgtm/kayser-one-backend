@@ -161,11 +161,12 @@ export class AiService {
           if (err?.status !== 401 && !/invalid x-api-key|authentication/i.test(String(err?.message))) throw err;
         }
       }
-      throw ultimoErro;
+      // Nenhuma chave da Claude vale: usa o provedor da empresa (o mesmo do WhatsApp), se não for Claude.
+      if (settings.aiProvider === AiProvider.ANTHROPIC || !settings.aiApiKey) throw ultimoErro;
     }
-    const { provider, model, apiKey } = await this.resolveConfig(userAi);
+    const { provider, model, apiKey } = await this.resolveConfig();
     if (provider !== AiProvider.ANTHROPIC) {
-      if (imagens.length) throw new BadRequestException("Para analisar imagem a IA da empresa precisa ser a Anthropic (Claude).");
+      if (imagens.length) throw new BadRequestException("Para analisar imagem a Tathy precisa de uma chave da Claude: clique em \"Colocar chave da Tathy\".");
       const r: any =
         provider === AiProvider.OPENAI
           ? await this.chatOpenAI(apiKey, model, system, [...historico, { role: "user", content: pergunta }])
