@@ -116,6 +116,14 @@ export class InvestimentoController {
     }
   }
 
+  @Get("tathy/script-google")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Script do Google Ads já com a chave, pra colar (somente Diretor)" })
+  tathyScriptGoogle() {
+    return this.tathyService.scriptGoogle();
+  }
+
   @Get("tathy/conversa")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.DIRETOR)

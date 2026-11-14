@@ -269,6 +269,37 @@ export class TathyService {
     return { ok: true, linhas: linhas.length };
   }
 
+  /**
+   * Script do Google Ads já com a chave (só o Diretor vê): ele copia e cola em
+   * Google Ads → Ferramentas → Scripts. Assim ninguém precisa digitar a chave.
+   */
+  async scriptGoogle(): Promise<{ script: string; temChave: boolean }> {
+    const s: any = await this.settings.get().catch(() => null);
+    const token = s?.metaVerifyToken || this.config.get<string>("META_VERIFY_TOKEN") || "";
+    const base = "https://kayser-one-backend-production.up.railway.app/api/v1/investimento/google-direct";
+    const script = `function main() {
+  // Tathy (Kayser One): manda o resultado de cada anúncio do mês para o K1. Programe para rodar a cada hora.
+  var URL_K1 = '${base}?token=${encodeURIComponent(token)}';
+  var q = "SELECT segments.date, campaign.name, ad_group.name, ad_group_ad.ad.id, " +
+    "ad_group_ad.ad.responsive_search_ad.headlines, metrics.cost_micros, metrics.clicks, " +
+    "metrics.impressions, metrics.conversions FROM ad_group_ad WHERE segments.date DURING THIS_MONTH";
+  var it = AdsApp.search(q), linhas = [];
+  while (it.hasNext()) {
+    var r = it.next(), ad = r.adGroupAd.ad;
+    var h = (ad.responsiveSearchAd && ad.responsiveSearchAd.headlines) || [];
+    linhas.push({
+      data: r.segments.date, campanha: r.campaign.name,
+      anuncio: r.adGroup.name + ' · ' + (h.length ? h[0].text : 'Anúncio ' + ad.id),
+      gasto: Number(r.metrics.costMicros) / 1e6, cliques: Number(r.metrics.clicks),
+      impressoes: Number(r.metrics.impressions), conversoes: Number(r.metrics.conversions)
+    });
+  }
+  var resp = UrlFetchApp.fetch(URL_K1, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ linhas: linhas }), muteHttpExceptions: true });
+  Logger.log('K1 respondeu: ' + resp.getContentText() + ' (' + linhas.length + ' linhas)');
+}`;
+    return { script, temChave: !!token };
+  }
+
   /** Histórico da conversa com a Tathy (as últimas 60). */
   async conversa(userId: string) {
     const rows = await this.mensagens.find({ where: { userId }, order: { createdAt: "DESC" }, take: 60 });
@@ -332,9 +363,12 @@ ${lidos.length ? `\nConteúdo dos links enviados:\n${lidos.join("\n\n")}` : ""}`
 
     let resposta: string;
     try {
-      resposta = (await this.ai.perguntarComImagens(system, historico, pergunta || "Analise a imagem.", imagens)) || "(sem resposta)";
+      resposta = (await this.ai.perguntarComImagens(system, historico, pergunta || "Analise a imagem.", imagens, userId)) || "(sem resposta)";
     } catch (err: any) {
-      resposta = `Não consegui responder agora: ${err?.response?.message ?? err?.message ?? "erro na IA"}`;
+      const msg = String(err?.response?.message ?? err?.message ?? "erro na IA");
+      resposta = /401|invalid x-api-key|authentication/i.test(msg)
+        ? "Não consegui responder: a chave da IA está inválida ou vencida. Confira a chave em IA Agente (a sua) ou em Configurações (a da empresa) e me pergunte de novo."
+        : `Não consegui responder agora: ${msg.slice(0, 200)}`;
     }
     await this.mensagens.save([
       this.mensagens.create({ userId, role: "user", texto: pergunta || "(imagem)", imagens: imagens.length, links: links.join("\n") || null }),

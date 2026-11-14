@@ -138,8 +138,9 @@ export class AiService {
    * Pergunta com imagens (Tathy, 14/11): system próprio, histórico e até algumas imagens.
    * Imagem só no Claude (Anthropic); sem imagem, qualquer provedor configurado.
    */
-  async perguntarComImagens(system: string, historico: ChatMessage[], pergunta: string, imagens: { mime: string; base64: string }[] = []): Promise<string> {
-    const { provider, model, apiKey } = await this.resolveConfig();
+  async perguntarComImagens(system: string, historico: ChatMessage[], pergunta: string, imagens: { mime: string; base64: string }[] = [], userId?: string): Promise<string> {
+    // Chave própria de quem pergunta (a que já funciona no WhatsApp) antes da chave da empresa.
+    const { provider, model, apiKey } = await this.resolveConfig(await this.getUserAiConfig(userId));
     if (provider !== AiProvider.ANTHROPIC) {
       if (imagens.length) throw new BadRequestException("Para analisar imagem a IA da empresa precisa ser a Anthropic (Claude).");
       const r: any =
