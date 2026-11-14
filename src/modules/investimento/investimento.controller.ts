@@ -1,4 +1,5 @@
-import { Controller, Get, Put, Post, Delete, Query, Body, UseGuards, Res } from "@nestjs/common";
+import { Controller, Get, Put, Post, Delete, Query, Body, UseGuards, Res, Request } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsInt, IsNumber, Min, Max, IsArray, ValidateNested } from "class-validator";
@@ -113,6 +114,31 @@ export class InvestimentoController {
     } catch (err: any) {
       return { linhas: 0, erro: err?.response?.data?.error?.message ?? err.message };
     }
+  }
+
+  @Get("tathy/conversa")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Histórico da conversa com a Tathy (somente Diretor)" })
+  tathyConversa(@Request() req: any) {
+    return this.tathyService.conversa(req.user.id);
+  }
+
+  @Post("tathy/perguntar")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  @ApiOperation({ summary: "Pergunte à Tathy: texto, imagens e links, com os números ao vivo (somente Diretor)" })
+  tathyPerguntar(@Request() req: any, @Body() body: any) {
+    return this.tathyService.perguntar(req.user.id, body);
+  }
+
+  @Delete("tathy/conversa")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Apagar a conversa com a Tathy (somente Diretor)" })
+  tathyLimpar(@Request() req: any) {
+    return this.tathyService.limparConversa(req.user.id);
   }
 
   @Post("tathy/relatorio/enviar")

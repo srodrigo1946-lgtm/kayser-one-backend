@@ -1,4 +1,14 @@
-import { avaliarAnuncio, alertasTathy, leadsDasAcoes } from "./tathy.service";
+import { avaliarAnuncio, alertasTathy, leadsDasAcoes, lerLink } from "./tathy.service";
+
+describe("Tathy — ler link com segurança", () => {
+  it("recusa IP, localhost e protocolo estranho (não acessa a rede interna)", async () => {
+    expect(await lerLink("http://127.0.0.1/admin")).toMatch(/sites públicos/);
+    expect(await lerLink("http://localhost:3000")).toMatch(/sites públicos/);
+    expect(await lerLink("http://169.254.169.254/latest")).toMatch(/sites públicos/);
+    expect(await lerLink("file:///etc/passwd")).toMatch(/sites públicos/);
+    expect(await lerLink("nada")).toBe("Link inválido.");
+  });
+});
 import { exigirMotivoPerda } from "../leads/followup-regras";
 
 const base = { canal: "meta", anuncio: "A", gasto: 300, cliques: 100, impressoes: 5000, conversoes: 10, dias: 10, diasSemResultado: 0 };

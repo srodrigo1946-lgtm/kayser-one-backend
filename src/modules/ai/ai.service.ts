@@ -134,6 +134,41 @@ export class AiService {
     return { provider, model, apiKey };
   }
 
+  /**
+   * Pergunta com imagens (Tathy, 14/11): system próprio, histórico e até algumas imagens.
+   * Imagem só no Claude (Anthropic); sem imagem, qualquer provedor configurado.
+   */
+  async perguntarComImagens(system: string, historico: ChatMessage[], pergunta: string, imagens: { mime: string; base64: string }[] = []): Promise<string> {
+    const { provider, model, apiKey } = await this.resolveConfig();
+    if (provider !== AiProvider.ANTHROPIC) {
+      if (imagens.length) throw new BadRequestException("Para analisar imagem a IA da empresa precisa ser a Anthropic (Claude).");
+      const r: any =
+        provider === AiProvider.OPENAI
+          ? await this.chatOpenAI(apiKey, model, system, [...historico, { role: "user", content: pergunta }])
+          : await this.chatGemini(apiKey, model, system, [...historico, { role: "user", content: pergunta }]);
+      return r.content;
+    }
+    const client = new Anthropic({ apiKey });
+    const modeloNovo = /claude-(sonnet-5|opus-(5|4-[678])|fable|mythos)/.test(model);
+    const response = await client.messages.create({
+      model,
+      max_tokens: modeloNovo ? 8000 : 2048,
+      system,
+      messages: [
+        ...historico,
+        {
+          role: "user",
+          content: [
+            ...imagens.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.base64 } })),
+            { type: "text", text: pergunta },
+          ],
+        },
+      ],
+      ...(modeloNovo ? { output_config: { effort: "medium" } } : {}),
+    } as any);
+    return (response.content as any[]).filter((b) => b.type === "text").map((b) => b.text as string).join("").trim();
+  }
+
   async chat(messages: ChatMessage[], userAi?: UserAiConfig, extraSystem?: string, propertyId?: string | null) {
     const { provider, model, apiKey } = await this.resolveConfig(userAi);
     // Consulta do RAG = as 3 últimas mensagens do cliente (uma pergunta solta como

@@ -93,6 +93,19 @@ export class SchemaBootstrapService implements OnModuleInit {
           CONSTRAINT uq_anuncio_dia UNIQUE (canal, data, anuncio)
         )`);
       }],
+      // Conversa com a Tathy (14/11).
+      ["tathyMensagens", async () => {
+        await this.dataSource.query(`CREATE TABLE IF NOT EXISTS tathy_mensagens (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "userId" varchar NOT NULL,
+          role varchar NOT NULL,
+          texto text NOT NULL,
+          imagens int NOT NULL DEFAULT 0,
+          links text,
+          "createdAt" timestamp NOT NULL DEFAULT now()
+        )`);
+        await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_tathy_msg_user ON tathy_mensagens ("userId", "createdAt")`);
+      }],
       // Fila SWAT (11/11).
       ["filaSwat", async () => {
         await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "swatMemberIds" text`);

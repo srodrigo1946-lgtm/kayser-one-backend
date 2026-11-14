@@ -5,6 +5,48 @@ import { ConfigService } from "@nestjs/config";
 import { Repository } from "typeorm";
 import axios from "axios";
 import { AnuncioDia } from "./anuncio-dia.entity";
+import { TathyMensagem } from "./tathy-mensagem.entity";
+import { AiService } from "../ai/ai.service";
+
+/**
+ * Lê um link pra Tathy analisar: só http(s) de site público (nada de IP/localhost), 10 s,
+ * até 2 MB; devolve título, descrição e o texto da página (sem scripts).
+ */
+export async function lerLink(url: string): Promise<string> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return "Link inválido.";
+  }
+  const host = u.hostname.toLowerCase();
+  if (!/^https?:$/.test(u.protocol) || host === "localhost" || /\.(local|internal)$/.test(host) || /^[\d.]+$/.test(host) || host.includes(":")) {
+    return "Por segurança só leio links de sites públicos (endereço com nome, http/https).";
+  }
+  try {
+    const { data } = await axios.get(u.toString(), {
+      timeout: 10_000,
+      maxContentLength: 2_000_000,
+      maxRedirects: 3,
+      responseType: "text",
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; KayserOne-Tathy/1.0)", "Accept-Language": "pt-BR" },
+    });
+    const html = String(data);
+    const meta = (p: string) => html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${p}["'][^>]+content=["']([^"']*)`, "i"))?.[1] ?? "";
+    const titulo = html.match(/<title[^>]*>([^<]*)/i)?.[1]?.trim() ?? "";
+    const texto = html
+      .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 6000);
+    return [`Título: ${titulo || meta("og:title")}`, `Descrição: ${meta("og:description") || meta("description")}`, `Texto: ${texto}`].join("\n");
+  } catch (err: any) {
+    return `Não consegui abrir o link (${err?.response?.status ?? err?.code ?? err?.message}). Se for do Facebook/Instagram, ele pede login: mande um print.`;
+  }
+}
 import { InvestimentoService } from "./investimento.service";
 import { SettingsService } from "../settings/settings.service";
 import { brl as brlOuTraco, montarApresentacao, montarPlanilha } from "./tathy-relatorio";
@@ -129,6 +171,8 @@ export class TathyService {
 
   constructor(
     @InjectRepository(AnuncioDia) private readonly anuncios: Repository<AnuncioDia>,
+    @InjectRepository(TathyMensagem) private readonly mensagens: Repository<TathyMensagem>,
+    private readonly ai: AiService,
     private readonly investimento: InvestimentoService,
     private readonly settings: SettingsService,
     private readonly config: ConfigService
@@ -223,6 +267,80 @@ export class TathyService {
       }));
     await this.gravar(linhas);
     return { ok: true, linhas: linhas.length };
+  }
+
+  /** Histórico da conversa com a Tathy (as últimas 60). */
+  async conversa(userId: string) {
+    const rows = await this.mensagens.find({ where: { userId }, order: { createdAt: "DESC" }, take: 60 });
+    return rows.reverse().map((m) => ({ role: m.role, texto: m.texto, imagens: m.imagens, links: m.links ? m.links.split("\n") : [], em: m.createdAt }));
+  }
+
+  async limparConversa(userId: string) {
+    await this.mensagens.delete({ userId });
+    return { ok: true };
+  }
+
+  /**
+   * Pergunte à Tathy (14/11): responde na hora com os números AO VIVO do painel, lê imagens
+   * (criativo/print) e links (anúncio/página). Tudo gravado. Sincera, rápida, solução primeiro.
+   */
+  async perguntar(userId: string, body: { pergunta?: string; imagens?: { mime: string; base64: string }[] }) {
+    const pergunta = String(body?.pergunta ?? "").trim().slice(0, 4000);
+    const imagens = (Array.isArray(body?.imagens) ? body.imagens : [])
+      .filter((i) => /^image\/(png|jpe?g|webp|gif)$/.test(String(i?.mime)) && typeof i?.base64 === "string" && i.base64.length < 7_000_000)
+      .slice(0, 4)
+      .map((i) => ({ mime: i.mime === "image/jpg" ? "image/jpeg" : i.mime, base64: i.base64 }));
+    if (!pergunta && !imagens.length) return { resposta: "Escreva sua pergunta ou mande uma imagem." };
+    const links = [...new Set(pergunta.match(/https?:\/\/[^\s<>"')]+/g) ?? [])].slice(0, 3);
+
+    const hojeSP = new Date(Date.now() - 3 * 3600_000);
+    const painel = await this.painel(hojeSP.getUTCFullYear(), hojeSP.getUTCMonth() + 1);
+    const lidos = await Promise.all(links.map(async (l) => `### ${l}\n${await lerLink(l)}`));
+    const historico = (await this.mensagens.find({ where: { userId }, order: { createdAt: "DESC" }, take: 12 }))
+      .reverse()
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.texto }));
+
+    const resumo = {
+      atualizadoEm: painel.atualizadoEm,
+      canais: painel.canais,
+      alertas: painel.alertas,
+      anuncios: painel.anuncios,
+      funil: painel.funil,
+      comQuem: painel.porResponsavel.slice(0, 30),
+      ranking: painel.rankingCorretores.slice(0, 20),
+      maisParados: painel.parados.slice(0, 15),
+      paraDistribuir: painel.paraDistribuir.slice(0, 20),
+      semInteresse: painel.semInteresse.slice(0, 25),
+    };
+    const system = `Você é a Tathy, gestora de tráfego do Kayser One (imobiliária no Rio de Janeiro, lançamentos e imóveis prontos).
+Fala com o Rodrigo, Diretor. Responda SEMPRE em português do Brasil.
+
+Jeito de trabalhar (regra do Rodrigo):
+- Seja SINCERA: se está ruim, diga que está ruim e por quê. Nada de enrolar ou elogiar à toa.
+- Seja RÁPIDA e PRÁTICA: comece pela solução/ação, depois o motivo em 1–2 linhas. Respostas curtas, em tópicos.
+- Toda ação com valor em reais (ex.: "tire R$ 30/dia do anúncio X"), nunca só porcentagem.
+- Use os números AO VIVO abaixo. Nunca invente número; se não tiver o dado, diga qual falta e onde pegar.
+- REGRA: só leads de anúncio (Meta e Google Ads separados). Lead do Google = vitrine imoveis.kayserone.com.br.
+- Critérios de gestor de tráfego: compare com a média do próprio canal; pouco volume = não dá veredito; CTR bom e sem lead = problema na página/oferta, não no anúncio; um anúncio com mais de 70% dos leads deixa o canal frágil.
+- Imagem (criativo/print): diga o que funciona e o que trocar (gancho, preço, bairro, chamada, legibilidade no celular, logo de terceiros) e proponha 2 ou 3 títulos/textos prontos.
+- Link: analise o que foi lido; se a página não abriu (ex.: Facebook pede login), diga isso e peça um print.
+- Você não executa ações sozinha no Meta/Google: diga exatamente onde clicar. No K1, aponte o botão (ex.: gaveta "Leads para distribuir" → "Fila do plantão").
+
+Números ao vivo do painel (JSON):
+${JSON.stringify(resumo).slice(0, 60000)}
+${lidos.length ? `\nConteúdo dos links enviados:\n${lidos.join("\n\n")}` : ""}`;
+
+    let resposta: string;
+    try {
+      resposta = (await this.ai.perguntarComImagens(system, historico, pergunta || "Analise a imagem.", imagens)) || "(sem resposta)";
+    } catch (err: any) {
+      resposta = `Não consegui responder agora: ${err?.response?.message ?? err?.message ?? "erro na IA"}`;
+    }
+    await this.mensagens.save([
+      this.mensagens.create({ userId, role: "user", texto: pergunta || "(imagem)", imagens: imagens.length, links: links.join("\n") || null }),
+      this.mensagens.create({ userId, role: "assistant", texto: resposta }),
+    ]);
+    return { resposta, links, imagens: imagens.length };
   }
 
   /** Números dos últimos 7 dias (até ontem) por canal — pro relatório de segunda. */
