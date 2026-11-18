@@ -3,6 +3,13 @@ import { telefoneBloqueado, bloquearTelefones } from "../leads/bloqueio";
 
 /** A nossa mensagem ofereceu sair respondendo NÃO ("digite NÃO para sair", "responda NÃO"...). */
 export const OFERECEU_SAIR = /\b(digit\w*|respond\w*|escrev\w*|mand\w*|envi\w*)\s+(um\s+)?["“]?n[ãa]o\b/i;
+
+/** Recusa clara: "não", "não obrigado", "sem interesse", "não quero", "já comprei". "Não posso…" NÃO conta. */
+export function recusou(texto: string): boolean {
+  const t = (texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(nao|n)( (obrigad[oa]|valeu|grat[oa]))?( (pelo contato|mesmo))?$/.test(t)) return true;
+  return /\b(sem interesse|nao tenho (mais )?interesse|nao (me )?interessa|nao quero|ja comprei)\b/.test(t);
+}
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, MoreThan, Repository } from "typeorm";
 import { comCodigoBrasil, variantesDoTelefone } from "../../common/telefone";

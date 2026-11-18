@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { ConversationsService, OFERECEU_SAIR } from "../conversations/conversations.service";
+import { ConversationsService, OFERECEU_SAIR, recusou } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
 import { WhatsappService, pedeParar } from "./whatsapp.service";
@@ -8,7 +8,7 @@ import { UsersService } from "../users/users.service";
 import { User, UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { IaOneService, IA_ONE_INSTANCIA } from "./ia-one.service";
-import { ReengajamentoService, classificarResposta } from "./reengajamento.service";
+import { ReengajamentoService } from "./reengajamento.service";
 
 /**
  * O cliente mandou ÁUDIO → a resposta vira voz. Texto pra ser FALADO é diferente do
@@ -372,7 +372,7 @@ export class WhatsappFlowService {
           return { persisted: true, autoReply: false, reengajamento: true };
         }
         // Respondeu NÃO à mensagem que oferecia sair ("digite NÃO para sair") → sai do Kayser One.
-        if (classificarResposta(textoCliente) === "nao" && (await this.conversations.removerSeRecusou(conv).catch(() => false))) {
+        if (recusou(textoCliente) && (await this.conversations.removerSeRecusou(conv).catch(() => false))) {
           this.logger.log(`Cliente ${remoteJid} respondeu NÃO à oferta de sair — removido do Kayser One.`);
           return { persisted: true, autoReply: false, recusou: true };
         }
@@ -585,7 +585,7 @@ export class WhatsappFlowService {
   async limparRecusaram(confirmar: boolean) {
     const vistos = new Set<string>();
     const itens = (await this.conversations.candidatosRecusaram()).filter((c) => {
-      if (vistos.has(c.id) || !OFERECEU_SAIR.test(c.nossa || "") || classificarResposta(c.resposta) !== "nao") return false;
+      if (vistos.has(c.id) || !OFERECEU_SAIR.test(c.nossa || "") || !recusou(c.resposta)) return false;
       vistos.add(c.id);
       return true;
     });
