@@ -49,6 +49,9 @@ export class Property {
   // Raio do check-in só deste stand (ex.: 1500 m enquanto calibra). Vazio = padrão 500 m.
   @Column({ type: "int", nullable: true })
   standRaio: number | null;
+  // Stand SEM empreendimento (ex.: Shopping Nova América): fica inativo pro resto do K1, só vale no plantão.
+  @Column({ default: false })
+  soStand: boolean;
   @Column({ nullable: true })
   bairro: string;
   @Column({ nullable: true })

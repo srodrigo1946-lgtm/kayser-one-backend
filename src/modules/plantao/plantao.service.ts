@@ -487,7 +487,7 @@ export class PlantaoService implements OnModuleInit {
 
   /** Stands = imóveis ativos com endereço de stand já LOCALIZADO no mapa. */
   async stands(): Promise<Stand[]> {
-    const ps = await this.props.find({ where: { active: true, standLat: Not(IsNull()) } as any });
+    const ps = await this.props.find({ where: [{ active: true, standLat: Not(IsNull()) }, { soStand: true, standLat: Not(IsNull()) }] as any });
     return ps
       .filter((p) => p.standLat != null && p.standLng != null)
       .map((p) => ({ propertyId: p.id, nome: p.name, endereco: p.standAddress || "", lat: Number(p.standLat), lng: Number(p.standLng), raio: p.standRaio ?? null }));
@@ -505,9 +505,14 @@ export class PlantaoService implements OnModuleInit {
 
   /** Quantos stands (endereço de stand dos imóveis ativos) existem e quantos faltam localizar. */
   private async contagemStands(): Promise<{ total: number; faltam: number }> {
-    const ps = await this.props.find({ where: { active: true } });
+    const ps = await this.imoveisDoPlantao();
     const comStand = ps.filter((p) => (p.standAddress || "").trim());
     return { total: comStand.length, faltam: comStand.filter((p) => p.standLat == null).length };
+  }
+
+  /** Imóveis ativos + stands sem empreendimento (soStand). */
+  private imoveisDoPlantao(order?: any) {
+    return this.props.find({ where: [{ active: true }, { soStand: true }] as any, ...(order ? { order } : {}) });
   }
 
   /** Busca a coordenada de um endereço (OpenStreetMap/Nominatim). */
@@ -562,7 +567,7 @@ export class PlantaoService implements OnModuleInit {
 
   /** Localiza no mapa os stands (endereço de stand dos imóveis) ainda sem coordenada. */
   async localizarStands(): Promise<{ localizados: number; semLocalizacao: string[] }> {
-    const ps = await this.props.find({ where: { active: true } });
+    const ps = await this.imoveisDoPlantao();
     const pendentes = ps.filter((p) => (p.standAddress || "").trim() && p.standLat == null);
     let localizados = 0;
     const semLocalizacao: string[] = [];
@@ -651,7 +656,7 @@ export class PlantaoService implements OnModuleInit {
 
   /** Painel do Diretor: imóveis com stand, se já estão no mapa, e os check-ins do turno. */
   async painel() {
-    const ps = await this.props.find({ where: { active: true }, order: { name: "ASC" } });
+    const ps = await this.imoveisDoPlantao({ name: "ASC" });
     // Imóveis com o MESMO endereço de stand = 1 stand só (uma linha com os nomes juntos).
     const porEndereco = new Map<string, { propertyId: string; nome: string; endereco: string; localizado: boolean; lat: number | null; lng: number | null; raio: number }>();
     for (const p of ps.filter((x) => (x.standAddress || "").trim())) {

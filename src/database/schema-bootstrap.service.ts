@@ -99,6 +99,15 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "editadaEm" timestamptz`);
         await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standRaio" integer`);
       }],
+      // Stand sem empreendimento: Shopping Nova América, 1500 m até calibrar pelos check-ins (18/11).
+      ["standNovaAmerica", async () => {
+        await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "soStand" boolean NOT NULL DEFAULT false`);
+        await this.dataSource.query(
+          `INSERT INTO properties (name, "standAddress", cidade, estado, active, "soStand", "standRaio")
+           SELECT 'Shopping Nova América', 'Av. Pastor Martin Luther King Jr., 126 – Del Castilho, Rio de Janeiro – RJ', 'Rio de Janeiro', 'RJ', false, true, 1500
+            WHERE NOT EXISTS (SELECT 1 FROM properties WHERE "soStand" = true AND name = 'Shopping Nova América')`
+        );
+      }],
       // Chave da Claude só da Tathy (14/11).
       ["tathyChave", async () => {
         await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tathyClaudeKey" text`);
