@@ -80,6 +80,14 @@ export class PlantaoController {
     return this.plantao.recalibrarStands();
   }
 
+  @Post("stand/:id/raio")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Raio próprio do stand (ex.: 1500 m pra calibrar); raio null = padrão (Diretor)" })
+  raioStand(@Param("id", ParseUUIDPipe) id: string, @Body() body: { raio: number | null }) {
+    return this.plantao.definirRaio(id, body?.raio ?? null);
+  }
+
   @Post("checkin/:id/usar-como-stand")
   @UseGuards(RolesGuard)
   @Roles(UserRole.DIRETOR)

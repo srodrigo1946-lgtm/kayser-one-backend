@@ -93,6 +93,12 @@ export class SchemaBootstrapService implements OnModuleInit {
           CONSTRAINT uq_anuncio_dia UNIQUE (canal, data, anuncio)
         )`);
       }],
+      // Editar mensagem enviada (18/11): id do WhatsApp + quando editou. Stand com raio próprio (calibrar).
+      ["editarMensagem", async () => {
+        await this.dataSource.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "waId" varchar`);
+        await this.dataSource.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS "editadaEm" timestamptz`);
+        await this.dataSource.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS "standRaio" integer`);
+      }],
       // Chave da Claude só da Tathy (14/11).
       ["tathyChave", async () => {
         await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tathyClaudeKey" text`);

@@ -306,6 +306,44 @@ export class WhatsappService {
     }
   }
 
+  /** Edita uma mensagem de texto já enviada (WhatsApp deixa até 15 min). */
+  async editText(instanceName: string, to: string, waId: string, text: string) {
+    const remoteJid = to.includes("@") ? to : `${comCodigoBrasil(to)}@s.whatsapp.net`;
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/chat/updateMessage/${instanceName}`,
+        { number: remoteJid.split("@")[0], key: { remoteJid, fromMe: true, id: waId }, text },
+        { headers: this.headers }
+      );
+      this.logger.log(`Mensagem ${waId} editada via ${instanceName}`);
+      return data;
+    } catch (err: any) {
+      this.logger.error(`Evolution /updateMessage falhou (${instanceName}): ${err?.response?.status ?? ""} ${JSON.stringify(err?.response?.data ?? err?.message).slice(0, 300)}`);
+      throw erroEvolution(err, instanceName);
+    }
+  }
+
+  /** Mensagem antiga sem id guardado: procura no WhatsApp a nossa última com esse texto. */
+  async acharIdEnviada(instanceName: string, to: string, text: string): Promise<string | null> {
+    const remoteJid = to.includes("@") ? to : `${comCodigoBrasil(to)}@s.whatsapp.net`;
+    try {
+      const { data } = await axios.post(
+        `${this.apiUrl}/chat/findMessages/${instanceName}`,
+        { where: { key: { remoteJid, fromMe: true } }, limit: 30 },
+        { headers: this.headers }
+      );
+      const lista: any[] = data?.messages?.records ?? data?.records ?? (Array.isArray(data) ? data : []);
+      const alvo = text.trim();
+      const m = lista.find((r) => {
+        const t = r?.message?.conversation ?? r?.message?.extendedTextMessage?.text ?? "";
+        return r?.key?.fromMe && String(t).trim() === alvo;
+      });
+      return m?.key?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Busca a URL da foto de perfil de um contato. Retorna null se não houver/for privada. */
   async fetchProfilePicture(instanceName: string, number: string): Promise<string | null> {
     try {

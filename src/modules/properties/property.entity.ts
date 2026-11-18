@@ -46,6 +46,9 @@ export class Property {
   standLat: number;
   @Column({ type: "float", nullable: true })
   standLng: number;
+  // Raio do check-in só deste stand (ex.: 1500 m enquanto calibra). Vazio = padrão 500 m.
+  @Column({ type: "int", nullable: true })
+  standRaio: number | null;
   @Column({ nullable: true })
   bairro: string;
   @Column({ nullable: true })

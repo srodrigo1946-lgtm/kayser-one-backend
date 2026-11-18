@@ -22,6 +22,8 @@ import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
 import { exigirMotivoPerda, zeraContagemNaEtapa } from "./followup-regras";
 import { checarZipBomba } from "../../common/zip-guard";
+import { numerosSemWhatsapp } from "../../common/whatsapp-numeros";
+import { comCodigoBrasil } from "../../common/telefone";
 
 /** Cabeçalho normalizado: minúsculo, sem acento, só letras/números ("Nome Completo" → "nomecompleto"). */
 function normCab(h: any): string {
@@ -498,6 +500,23 @@ export class LeadsService {
     return { key: col[0].key };
   }
 
+  /** Números da planilha sem WhatsApp (pelo número central da Evolution). */
+  private async numerosSemWhatsapp(telefones: string[]): Promise<Set<string>> {
+    if (!telefones.length) return new Set();
+    const d = await Promise.resolve()
+      .then(() =>
+        this.leadsRepo.manager.getRepository(User).findOne({ where: { role: UserRole.DIRETOR, empresaId: IsNull() }, order: { createdAt: "ASC" } })
+      )
+      .catch(() => null);
+    if (!d) return new Set();
+    return numerosSemWhatsapp(
+      this.config.get("EVOLUTION_API_URL", "http://localhost:8080"),
+      this.config.get("EVOLUTION_API_KEY", ""),
+      `user_${d.id}`,
+      telefones
+    );
+  }
+
   async importFromExcel(file: Express.Multer.File, user: User, time?: string, status?: string, lotesJson?: string, filaEquipe = false) {
     if (!file?.buffer) throw new BadRequestException("Envie a planilha.");
     // Fila da Equipe: só gestor abaixo do Diretor (a fila do Diretor é a central, com check-in).
@@ -578,7 +597,14 @@ export class LeadsService {
     const leads: Lead[] = [];
     let duplicates = 0;
     let semTelefone = 0;
+    let semWhatsapp = 0;
     const vistos = new Set<string>();
+
+    // Número sem WhatsApp não entra (checa todos antes, pelo número central).
+    const iTel = mapa.indexOf("phone");
+    const iZap = mapa.indexOf("whatsapp");
+    const telDaLinha = (r: any[]) => String((iTel >= 0 && String(r[iTel] ?? "").trim()) || (iZap >= 0 ? r[iZap] : "") || "").replace(/\D/g, "");
+    const semZap = await this.numerosSemWhatsapp(rows.map(telDaLinha).filter((t) => t.length >= 10));
 
     for (const row of rows) {
       const dto: Partial<CreateLeadDto> = {};
@@ -591,6 +617,7 @@ export class LeadsService {
       // Telefone: só dígitos (Excel às vezes guarda como número). Sem telefone, usa o WhatsApp.
       const tel = String(dto.phone || dto.whatsapp || "").replace(/\D/g, "");
       if (tel.length < 8) { semTelefone++; continue; }
+      if (semZap.has(comCodigoBrasil(tel))) { semWhatsapp++; continue; }
       dto.phone = tel;
       if (dto.whatsapp) dto.whatsapp = String(dto.whatsapp).replace(/\D/g, "") || undefined;
       if (!dto.name) dto.name = "Contato da planilha";
@@ -664,6 +691,7 @@ export class LeadsService {
       imported: leads.length,
       duplicates,
       semTelefone,
+      semWhatsapp,
       total: rows.length,
       porLote,
       restante: Math.max(0, leads.length - lotes.reduce((a, l) => a + l.quantidade, 0)),

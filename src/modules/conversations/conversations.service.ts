@@ -666,6 +666,31 @@ export class ConversationsService {
     return this.addMessage(conversationId, content, "out", false);
   }
 
+  /** Guarda o id do WhatsApp da mensagem enviada (pra poder editar). */
+  async setWaId(messageId: string, waId: string) {
+    await this.msgRepo.update(messageId, { waId } as any);
+  }
+
+  /** Mensagem + conversa pra editar: só a enviada (texto), da equipe de quem pede. */
+  async mensagemParaEditar(messageId: string, user: User) {
+    const msg = await this.msgRepo.findOne({ where: { id: messageId } });
+    if (!msg) throw new NotFoundException("Mensagem não encontrada.");
+    const conv = await this.convRepo.findOne({ where: { id: msg.conversationId }, relations: ["lead"] });
+    if (!conv) throw new NotFoundException("Conversa não encontrada.");
+    await this.assertConvScope(conv, user);
+    if (msg.direction !== "out") throw new BadRequestException("Só dá pra editar mensagem enviada por nós.");
+    if (msg.mediaType) throw new BadRequestException("Áudio, foto e arquivo não dá pra editar — só texto.");
+    if (Date.now() - new Date(msg.createdAt).getTime() > 15 * 60_000)
+      throw new BadRequestException("O WhatsApp só deixa editar até 15 minutos depois do envio.");
+    return { msg, conv };
+  }
+
+  /** Marca a mensagem como editada (texto novo + hora). */
+  async marcarEditada(messageId: string, content: string) {
+    await this.updateMessageContent(messageId, content);
+    await this.msgRepo.update(messageId, { editadaEm: new Date() } as any);
+  }
+
   /** Troca o texto de uma mensagem (ex.: "🎤 Áudio" → transcrição) e a prévia da conversa. */
   async updateMessageContent(messageId: string, content: string) {
     const msg = await this.msgRepo.findOne({ where: { id: messageId } });

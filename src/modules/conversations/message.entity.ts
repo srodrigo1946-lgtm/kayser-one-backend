@@ -47,6 +47,14 @@ export class Message {
   @Column({ type: "text", nullable: true })
   adPreview: string | null;
 
+  // Id da mensagem no WhatsApp (key.id) — usado pra EDITAR depois de enviada.
+  @Column({ type: "varchar", nullable: true })
+  waId: string | null;
+
+  // Quando foi editada pela tela (Conversas ao vivo).
+  @Column({ type: "timestamptz", nullable: true })
+  editadaEm: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

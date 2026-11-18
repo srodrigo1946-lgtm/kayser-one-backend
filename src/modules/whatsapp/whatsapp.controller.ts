@@ -52,6 +52,12 @@ export class WhatsappController {
     return this.flowService.sendManual(req.user.id, body.to, body.text, req.user);
   }
 
+  @Post("edit")
+  @ApiOperation({ summary: "Editar mensagem de texto enviada (até 15 min)" })
+  editMessage(@Body() body: { messageId: string; text: string }, @Request() req: any) {
+    return this.flowService.editarMensagem(String(body?.messageId ?? ""), String(body?.text ?? ""), req.user);
+  }
+
   @Post("send-media")
   @ApiOperation({ summary: "Enviar arquivo/imagem (registra na conversa)" })
   sendMediaMessage(

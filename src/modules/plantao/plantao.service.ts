@@ -147,7 +147,7 @@ export function bloqueiosEfetivos(
 }
 
 /** Stand mais perto + se está dentro do raio (tolera até 50 m de erro do GPS). */
-export function standMaisPerto<T extends { lat: number; lng: number }>(
+export function standMaisPerto<T extends { lat: number; lng: number; raio?: number | null }>(
   lat: number,
   lng: number,
   stands: T[],
@@ -160,25 +160,25 @@ export function standMaisPerto<T extends { lat: number; lng: number }>(
   }
   if (!melhor) return null;
   const folga = Math.min(Math.max(precisao || 0, 0), 50);
-  return { ...melhor, dentro: melhor.distancia <= RAIO_CHECKIN + folga };
+  return { ...melhor, dentro: melhor.distancia <= (melhor.stand.raio || RAIO_CHECKIN) + folga };
 }
 
 /**
  * Depois do check-in: está longe do stand? Desconta o erro do GPS (até 100 m) pra não
  * tirar ninguém por oscilação; leitura muito ruim (precisão > 150 m) não conta (null).
  */
-export function longeDoStand(distancia: number, precisao?: number | null): boolean | null {
+export function longeDoStand(distancia: number, precisao?: number | null, raio?: number | null): boolean | null {
   const p = Number(precisao);
   if (isFinite(p) && p > 150) return null;
   const folga = Math.min(Math.max(isFinite(p) ? p : 0, 0), 100);
-  return distancia - folga > RAIO_CHECKIN;
+  return distancia - folga > (raio || RAIO_CHECKIN);
 }
 /** Leituras seguidas longe do stand pra sair do plantão (o app manda a posição a cada 2 min). */
 export const SAIDA_LEITURAS = 2;
 /** Plantão das 18h em diante: pode sair do stand sem perder o plantão (Rodrigo 11/10; 18h–22h desde 20/10). */
 export const turnoLivreDoStand = (horaInicio: string) => (horaInicio || "") >= "18:00";
 
-type Stand = { propertyId: string; nome: string; endereco: string; lat: number; lng: number };
+type Stand = { propertyId: string; nome: string; endereco: string; lat: number; lng: number; raio: number | null };
 
 @Injectable()
 export class PlantaoService implements OnModuleInit {
@@ -490,7 +490,7 @@ export class PlantaoService implements OnModuleInit {
     const ps = await this.props.find({ where: { active: true, standLat: Not(IsNull()) } as any });
     return ps
       .filter((p) => p.standLat != null && p.standLng != null)
-      .map((p) => ({ propertyId: p.id, nome: p.name, endereco: p.standAddress || "", lat: Number(p.standLat), lng: Number(p.standLng) }));
+      .map((p) => ({ propertyId: p.id, nome: p.name, endereco: p.standAddress || "", lat: Number(p.standLat), lng: Number(p.standLng), raio: p.standRaio ?? null }));
   }
 
   /** A regra do check-in só vale quando existe pelo menos um stand localizado. */
@@ -637,19 +637,41 @@ export class PlantaoService implements OnModuleInit {
     return { ok: true, atualizados: iguais.length };
   }
 
+  /** Diretor: raio próprio do stand (ex.: 1500 m pra calibrar); null volta ao padrão. Vale pra quem divide o endereço. */
+  async definirRaio(propertyId: string, raio: number | null) {
+    const r = raio == null ? null : Math.round(Number(raio));
+    if (r != null && (!isFinite(r) || r < 100 || r > 5000)) throw new BadRequestException("Raio entre 100 e 5000 m.");
+    const p = await this.props.findOne({ where: { id: propertyId } });
+    if (!p) throw new BadRequestException("Imóvel não encontrado.");
+    const k = p.standAddress ? chaveStand(p.standAddress) : "";
+    const iguais = k ? (await this.props.find()).filter((x) => x.standAddress && chaveStand(x.standAddress) === k).map((x) => x.id) : [p.id];
+    await this.props.update({ id: In(iguais) }, { standRaio: r } as any);
+    return { ok: true, raio: r ?? RAIO_CHECKIN };
+  }
+
   /** Painel do Diretor: imóveis com stand, se já estão no mapa, e os check-ins do turno. */
   async painel() {
     const ps = await this.props.find({ where: { active: true }, order: { name: "ASC" } });
-    const stands = ps
-      .filter((p) => (p.standAddress || "").trim())
-      .map((p) => ({
+    // Imóveis com o MESMO endereço de stand = 1 stand só (uma linha com os nomes juntos).
+    const porEndereco = new Map<string, { propertyId: string; nome: string; endereco: string; localizado: boolean; lat: number | null; lng: number | null; raio: number }>();
+    for (const p of ps.filter((x) => (x.standAddress || "").trim())) {
+      const k = chaveStand(p.standAddress);
+      const j = porEndereco.get(k);
+      if (j) {
+        j.nome += ` · ${p.name}`;
+        continue;
+      }
+      porEndereco.set(k, {
         propertyId: p.id,
         nome: p.name,
         endereco: p.standAddress,
         localizado: p.standLat != null,
         lat: p.standLat ?? null,
         lng: p.standLng ?? null,
-      }));
+        raio: p.standRaio || RAIO_CHECKIN,
+      });
+    }
+    const stands = [...porEndereco.values()];
     const data = hojeSP();
     const cks = await this.checkins.find({ where: { data }, order: { createdAt: "ASC" } });
     const nomes = new Map(
@@ -772,6 +794,8 @@ export class PlantaoService implements OnModuleInit {
       }
       const moveu = distanciaMetros(st.lat, st.lng, centro.lat, centro.lng);
       await this.definirLocalizacao(st.propertyId, centro.lat, centro.lng);
+      // Calibrado pelos check-ins: o raio maior (ex.: 1500 m) volta pro padrão.
+      if (st.raio) await this.definirRaio(st.propertyId, null);
       resultado.push({ stand: st.nome, pessoas: centro.pessoas, moveuMetros: moveu });
     }
     this.logger.log(`Stands recalibrados pelos check-ins: ${JSON.stringify(resultado)}`);
@@ -831,7 +855,7 @@ export class PlantaoService implements OnModuleInit {
     const p = await this.props.findOne({ where: { id: ck.propertyId } });
     if (!p || p.standLat == null || p.standLng == null) return { status: "sem-stand" as const };
     const distancia = distanciaMetros(lat, lng, Number(p.standLat), Number(p.standLng));
-    const longe = longeDoStand(distancia, precisao);
+    const longe = longeDoStand(distancia, precisao, p.standRaio);
     if (longe === null) return { status: "gps-ruim" as const, distancia };
     if (!longe) {
       this.longeSeguidas.delete(ck.id);
@@ -892,7 +916,7 @@ export class PlantaoService implements OnModuleInit {
     if (!r || !r.dentro) {
       const km = r ? (r.distancia >= 1000 ? `${(r.distancia / 1000).toFixed(1)} km` : `${r.distancia} m`) : "?";
       throw new BadRequestException(
-        `Você está a ${km} do stand mais perto (${r?.stand.nome ?? "—"}). Chegue no stand (até ${RAIO_CHECKIN} m) pra fazer o check-in.`
+        `Você está a ${km} do stand mais perto (${r?.stand.nome ?? "—"}). Chegue no stand (até ${r?.stand.raio || RAIO_CHECKIN} m) pra fazer o check-in.`
       );
     }
     await this.checkins.save(

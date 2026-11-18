@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConversationsService } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
@@ -562,12 +562,30 @@ export class WhatsappFlowService {
       instanceOwner = central;
       await this.conversations.definirInstancia(conv.id, central).catch(() => {});
     }
-    await this.conversations.addMessage(conv.id, text, "out", false);
+    const msg = await this.conversations.addMessage(conv.id, text, "out", false);
     // O que o corretor conversou também conta pro score (ex.: agendou visita).
     if (conv.leadId) this.agendarScore(conv.id, conv.leadId);
     // Mensagem do corretor tira o lead do "Novo Lead" → Primeiro Contato (encerra os 15 min da fila).
     if (conv.leadId) await this.leadQueue.primeiroContatoDoCorretor(conv.leadId).catch(() => false);
-    return this.whatsapp.sendText(`user_${instanceOwner}`, remoteJid, text);
+    const r = await this.whatsapp.sendText(`user_${instanceOwner}`, remoteJid, text);
+    // Guarda o id do WhatsApp pra poder editar depois.
+    if (r?.key?.id) await this.conversations.setWaId(msg.id, r.key.id).catch(() => {});
+    return r;
+  }
+
+  /** Edita (até 15 min) uma mensagem de texto enviada — corretor ou IA. */
+  async editarMensagem(messageId: string, text: string, requester: User) {
+    const novo = (text || "").trim();
+    if (!novo) throw new BadRequestException("Escreva o texto novo.");
+    const { msg, conv } = await this.conversations.mensagemParaEditar(messageId, requester);
+    const central = await this.conversations.diretorCentralId();
+    const instancia = `user_${conv.instanceOwnerId || central}`;
+    const waId = msg.waId || (await this.whatsapp.acharIdEnviada(instancia, conv.remoteJid, msg.content));
+    if (!waId) throw new BadRequestException("Não achei essa mensagem no WhatsApp pra editar.");
+    await this.whatsapp.editText(instancia, conv.remoteJid, waId, novo);
+    if (!msg.waId) await this.conversations.setWaId(msg.id, waId).catch(() => {});
+    await this.conversations.marcarEditada(msg.id, novo);
+    return { ok: true };
   }
 
   /**
