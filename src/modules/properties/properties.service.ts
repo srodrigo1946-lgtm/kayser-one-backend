@@ -41,19 +41,21 @@ export class PropertiesService {
   }
 
   async findAll(search?: string) {
+    // Stand sem empreendimento (soStand) não é imóvel: fica só no painel do plantão.
+    const imovel = { soStand: false };
     if (search && search.trim()) {
       const q = `%${search.trim()}%`;
       return this.repo.find({
         where: [
-          { name: ILike(q) },
-          { cidade: ILike(q) },
-          { bairro: ILike(q) },
-          { construtora: ILike(q) },
+          { ...imovel, name: ILike(q) },
+          { ...imovel, cidade: ILike(q) },
+          { ...imovel, bairro: ILike(q) },
+          { ...imovel, construtora: ILike(q) },
         ],
         order: { createdAt: "DESC" },
       });
     }
-    return this.repo.find({ order: { createdAt: "DESC" } });
+    return this.repo.find({ where: imovel, order: { createdAt: "DESC" } });
   }
 
   async findOne(id: string) {
