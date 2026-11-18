@@ -52,6 +52,14 @@ export class WhatsappController {
     return this.flowService.sendManual(req.user.id, body.to, body.text, req.user);
   }
 
+  @Post("recusaram")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Quem respondeu NÃO à oferta de sair (confirmar=true tira do Kayser One)" })
+  recusaram(@Body() body: { confirmar?: boolean }) {
+    return this.flowService.limparRecusaram(body?.confirmar === true);
+  }
+
   @Post("edit")
   @ApiOperation({ summary: "Editar mensagem de texto enviada (até 15 min)" })
   editMessage(@Body() body: { messageId: string; text: string }, @Request() req: any) {

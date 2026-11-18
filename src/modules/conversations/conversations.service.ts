@@ -1,5 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from "@nestjs/common";
-import { telefoneBloqueado } from "../leads/bloqueio";
+import { telefoneBloqueado, bloquearTelefones } from "../leads/bloqueio";
+
+/** A nossa mensagem ofereceu sair respondendo NÃO ("digite NÃO para sair", "responda NÃO"...). */
+export const OFERECEU_SAIR = /\b(digit\w*|respond\w*|escrev\w*|mand\w*|envi\w*)\s+(um\s+)?["“]?n[ãa]o\b/i;
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, MoreThan, Repository } from "typeorm";
 import { comCodigoBrasil, variantesDoTelefone } from "../../common/telefone";
@@ -271,6 +274,44 @@ export class ConversationsService {
     }
     await this.tirarDoCrm(conv);
     return true;
+  }
+
+  /**
+   * Cliente respondeu "NÃO" à nossa mensagem que oferecia sair ("digite NÃO para sair"):
+   * sai do Kayser One (igual "não é lead") e o telefone não volta por planilha.
+   * Quem já está negociando (agendamento em diante) fica. Devolve true se tirou.
+   */
+  async removerSeRecusou(conv: Conversation): Promise<boolean> {
+    if (conv.isGroup || conv.naoLead || !conv.leadId) return false;
+    const ultimaNossa = await this.msgRepo.findOne({ where: { conversationId: conv.id, direction: "out" }, order: { createdAt: "DESC" } });
+    if (!ultimaNossa || !OFERECEU_SAIR.test(ultimaNossa.content || "")) return false;
+    const lead = await this.leadsRepo.findOne({ where: { id: conv.leadId }, select: ["id", "status", "phone", "whatsapp"] });
+    if (lead && NEGOCIANDO.includes(lead.status as LeadStatus)) return false;
+    if (lead) await bloquearTelefones(this.leadsRepo.manager, lead.phone, lead.whatsapp).catch(() => null);
+    await this.tirarDoCrm(conv);
+    return true;
+  }
+
+  /** Casos antigos: resposta curta do cliente logo depois da nossa mensagem que oferecia sair. */
+  async candidatosRecusaram(): Promise<{ id: string; leadId: string; nome: string | null; status: string | null; resposta: string; nossa: string }[]> {
+    return this.convRepo.query(
+      `SELECT c.id, c."leadId", COALESCE(l.name, c."contactName") AS nome, l.status, m.content AS resposta, o.content AS nossa
+         FROM conversations c
+         JOIN leads l ON l.id = c."leadId"
+         JOIN messages m ON m."conversationId" = c.id AND m.direction = 'in' AND length(m.content) <= 60
+         JOIN LATERAL (SELECT content FROM messages x WHERE x."conversationId" = c.id AND x.direction = 'out' AND x."createdAt" < m."createdAt"
+                        ORDER BY x."createdAt" DESC LIMIT 1) o ON true
+        WHERE c."naoLead" = false AND c."isGroup" = false AND (l.status IS NULL OR l.status <> ALL($1))
+        ORDER BY c.id, m."createdAt"`,
+      [NEGOCIANDO]
+    );
+  }
+
+  /** Tira do CRM pela recusa (bloqueia o telefone pra não voltar por planilha). */
+  async removerPorRecusa(conversationId: string, leadId: string) {
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId }, select: ["id", "phone", "whatsapp"] });
+    if (lead) await bloquearTelefones(this.leadsRepo.manager, lead.phone, lead.whatsapp).catch(() => null);
+    await this.tirarDoCrm({ id: conversationId, leadId } as Conversation);
   }
 
   /**

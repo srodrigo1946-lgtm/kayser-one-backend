@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { ConversationsService } from "../conversations/conversations.service";
+import { ConversationsService, OFERECEU_SAIR } from "../conversations/conversations.service";
 import { SettingsService } from "../settings/settings.service";
 import { AiService } from "../ai/ai.service";
 import { WhatsappService, pedeParar } from "./whatsapp.service";
@@ -8,7 +8,7 @@ import { UsersService } from "../users/users.service";
 import { User, UserRole } from "../users/user.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { IaOneService, IA_ONE_INSTANCIA } from "./ia-one.service";
-import { ReengajamentoService } from "./reengajamento.service";
+import { ReengajamentoService, classificarResposta } from "./reengajamento.service";
 
 /**
  * O cliente mandou ÁUDIO → a resposta vira voz. Texto pra ser FALADO é diferente do
@@ -371,6 +371,11 @@ export class WhatsappFlowService {
         if (await this.reengajamento.tratarResposta(conv.leadId, textoCliente, instanceName, remoteJidFull).catch(() => false)) {
           return { persisted: true, autoReply: false, reengajamento: true };
         }
+        // Respondeu NÃO à mensagem que oferecia sair ("digite NÃO para sair") → sai do Kayser One.
+        if (classificarResposta(textoCliente) === "nao" && (await this.conversations.removerSeRecusou(conv).catch(() => false))) {
+          this.logger.log(`Cliente ${remoteJid} respondeu NÃO à oferta de sair — removido do Kayser One.`);
+          return { persisted: true, autoReply: false, recusou: true };
+        }
       }
 
       if (ehCentral && !conv.fromAd) {
@@ -571,6 +576,21 @@ export class WhatsappFlowService {
     // Guarda o id do WhatsApp pra poder editar depois.
     if (r?.key?.id) await this.conversations.setWaId(msg.id, r.key.id).catch(() => {});
     return r;
+  }
+
+  /**
+   * Casos antigos de "respondeu NÃO à oferta de sair": confirmar=false só lista;
+   * true tira do Kayser One. A 1ª resposta do cliente depois da oferta precisa ser NÃO.
+   */
+  async limparRecusaram(confirmar: boolean) {
+    const vistos = new Set<string>();
+    const itens = (await this.conversations.candidatosRecusaram()).filter((c) => {
+      if (vistos.has(c.id) || !OFERECEU_SAIR.test(c.nossa || "") || classificarResposta(c.resposta) !== "nao") return false;
+      vistos.add(c.id);
+      return true;
+    });
+    if (confirmar) for (const c of itens) await this.conversations.removerPorRecusa(c.id, c.leadId);
+    return { total: itens.length, removidos: confirmar ? itens.length : 0, itens: itens.slice(0, 300).map((c) => ({ nome: c.nome, status: c.status, resposta: c.resposta })) };
   }
 
   /** Edita (até 15 min) uma mensagem de texto enviada — corretor ou IA. */
