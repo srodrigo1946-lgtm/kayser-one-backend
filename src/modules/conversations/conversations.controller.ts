@@ -48,6 +48,12 @@ export class ConversationsController {
     return this.conversationsService.limparLinksAnuncio(true);
   }
 
+  @Post("iniciar")
+  @ApiOperation({ summary: "Iniciar conversa pelo lead (cria se não existe) — o corretor manda a 1ª mensagem" })
+  iniciar(@Body() body: { leadId: string }, @Request() req: any) {
+    return this.conversationsService.iniciarPorLead(String(body?.leadId ?? ""), req.user);
+  }
+
   @Get(":id/messages")
   @ApiOperation({ summary: "Mensagens de uma conversa" })
   messages(@Param("id") id: string, @Request() req: any) {

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { telefoneBloqueado } from "../leads/bloqueio";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, MoreThan, Repository } from "typeorm";
@@ -602,6 +602,31 @@ export class ConversationsService {
   }
 
   /** Vincula um lead à conversa (usado pela entrada de formulário Meta). */
+  /**
+   * Iniciar conversa pelo lead (Rodrigo 18/11): o corretor abre a conversa ao vivo e manda a 1ª
+   * mensagem ele mesmo, sem depender da IA. Cria a conversa se ainda não existe. Respeita a equipe.
+   */
+  async iniciarPorLead(leadId: string, user: User): Promise<{ id: string }> {
+    const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
+    if (!lead) throw new NotFoundException("Lead não encontrado.");
+    const scopeIds = await this.users.getScopeIds(user);
+    if (scopeIds !== null && (!lead.responsavelId || !scopeIds.includes(lead.responsavelId))) {
+      throw new ForbiddenException("Esse lead não é da sua equipe.");
+    }
+    const tel = String(lead.whatsapp || lead.phone || "").replace(/\D/g, "");
+    if (tel.length < 10) throw new BadRequestException("O lead está sem telefone válido.");
+    const conv = await this.findOrCreateByPhone(tel);
+    const mudar: Partial<Conversation> = {};
+    if (!conv.leadId) await this.setLead(conv.id, lead.id, lead.name);
+    if (!conv.assignedToId && lead.responsavelId) mudar.assignedToId = lead.responsavelId;
+    if (!conv.instanceOwnerId) {
+      const central = await this.diretorCentralId();
+      if (central) mudar.instanceOwnerId = central;
+    }
+    if (Object.keys(mudar).length) await this.convRepo.update(conv.id, mudar as any);
+    return { id: conv.id };
+  }
+
   async setLead(conversationId: string, leadId: string, contactName?: string) {
     await this.convRepo.update(conversationId, {
       leadId,
