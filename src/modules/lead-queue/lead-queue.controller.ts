@@ -12,6 +12,11 @@ class UpdateQueueDto {
   @IsOptional() @IsArray() @ArrayMaxSize(16) @IsString({ each: true }) swatMemberIds?: string[];
 }
 
+class DistribuirDto {
+  // true = fila SWAT (só os SWAT de plantão); vazio = fila normal.
+  @IsOptional() @IsBoolean() swat?: boolean;
+}
+
 class AgendarDto {
   // Horário futuro em ISO (o front manda o datetime-local convertido pra ISO).
   @IsISO8601() quando!: string;
@@ -71,9 +76,9 @@ export class LeadQueueController {
 
   @Post("distribuir/:leadId")
   @UseGuards(DiretorGuard)
-  @ApiOperation({ summary: "Joga um lead manual no rodízio de plantão (somente Diretor)" })
-  distribuir(@Param("leadId") leadId: string) {
-    return this.queue.distribuirLeadManual(leadId);
+  @ApiOperation({ summary: "Joga um lead manual no rodízio de plantão — fila normal ou SWAT (somente Diretor)" })
+  distribuir(@Param("leadId") leadId: string, @Body() dto: DistribuirDto) {
+    return this.queue.distribuirLeadManual(leadId, dto?.swat === true);
   }
 
   @Post("agendar/:leadId")

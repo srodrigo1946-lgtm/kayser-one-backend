@@ -378,7 +378,8 @@ export class LeadQueueService {
    * painel do lead. Devolve um status pra UI mostrar o que aconteceu.
    */
   async distribuirLeadManual(
-    leadId: string
+    leadId: string,
+    swat = false
   ): Promise<{ status: "distribuido" | "aguardando" | "ja_na_fila" | "sem_telefone" | "fila_desligada"; assignedToId?: string }> {
     const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
     if (!lead) throw new NotFoundException("Lead não encontrado.");
@@ -401,7 +402,7 @@ export class LeadQueueService {
     });
     if (aberta) return { status: aberta.status as any, assignedToId: aberta.assignedToId || undefined };
 
-    const a = await this.enqueueLead({ conversationId: conv.id, leadId: lead.id });
+    const a = await this.enqueueLead({ conversationId: conv.id, leadId: lead.id, swat });
     if (!a) return { status: "fila_desligada" };
     return {
       status: a.status === "aguardando" ? "aguardando" : "distribuido",

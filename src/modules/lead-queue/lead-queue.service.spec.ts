@@ -274,6 +274,16 @@ describe("LeadQueueService", () => {
     expect((await svc.distribuirLeadManual("L1")).status).toBe("aguardando");
   });
 
+  it("distribuirLeadManual com swat manda pra fila SWAT", async () => {
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [], ["A"], undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    const spy = jest.spyOn(svc, "enqueueLead").mockResolvedValue({ status: "aguardando", assignedToId: "" } as any);
+    expect((await svc.distribuirLeadManual("L1", true)).status).toBe("aguardando");
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ leadId: "L1", swat: true }));
+  });
+
   it("agendarLead deixa o lead aguardando com o horário marcado", async () => {
     const { svc, assignments } = make(
       { enabled: true, slaMinutes: 5, pointer: 0 },
