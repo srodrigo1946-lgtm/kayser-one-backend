@@ -113,14 +113,6 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS bolsao boolean NOT NULL DEFAULT false`);
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "bolsaoEm" timestamptz`);
       }],
-      // Leads do formulário SWAT sem empreendimento → Ilha Stay (a campanha SWAT é dele, Rodrigo 20/11).
-      ["swatIlhaStay", async () => {
-        await this.dataSource.query(
-          `UPDATE leads l SET empreendimento = p.name, "propertyId" = p.id
-             FROM (SELECT id, name FROM properties WHERE name ILIKE 'Ilha stay%' AND active = true ORDER BY "createdAt" LIMIT 1) p
-            WHERE l.campanha ILIKE 'swat%' AND l.source = 'formulario_meta' AND COALESCE(l.empreendimento, '') = ''`
-        );
-      }],
       // Chave da Claude só da Tathy (14/11).
       ["tathyChave", async () => {
         await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tathyClaudeKey" text`);

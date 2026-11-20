@@ -13,11 +13,7 @@ import { SettingsService } from "../settings/settings.service";
 import { Property } from "../properties/property.entity";
 import { detectarEmpreendimento } from "../knowledge/knowledge.service";
 import { numerosSemWhatsapp } from "../../common/whatsapp-numeros";
-import { comCodigoBrasil } from "../../common/telefone";
-
-/** Empreendimento da campanha SWAT (o formulário "SWAT" não traz o nome do imóvel). */
-export const EMPREENDIMENTO_SWAT = "Ilha stay";
-import { WhatsappService } from "../whatsapp/whatsapp.service";
+import { comCodigoBrasil } from "../../common/telefone";import { WhatsappService } from "../whatsapp/whatsapp.service";
 import { User, UserRole } from "../users/user.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { LeadQueueAssignment } from "../lead-queue/lead-queue-assignment.entity";
@@ -115,6 +111,8 @@ interface DadosLead {
   formId?: string;
   /** Respostas das perguntas personalizadas ("Renda Bruta: acima R$10.000"). */
   respostas?: string[];
+  /** Campanha | conjunto | anúncio do Meta (indica o empreendimento quando o formulário não diz). */
+  anuncio?: string;
 }
 
 @Injectable()
@@ -281,10 +279,13 @@ export class MetaFormsService {
       this.logger.warn("META_PAGE_ACCESS_TOKEN ausente — não busco o lead do formulário.");
       return null;
     }
-    const { data } = await axios.get(`${GRAPH}/${leadgenId}`, {
-      params: { access_token: token, fields: "field_data,form_id" },
-    });
+    // Nome da campanha/conjunto/anúncio indica o empreendimento ("SWAT Stillo"). Sem permissão
+    // de anúncios o Meta recusa esses campos → busca de novo só o básico.
+    const pedir = (fields: string) => axios.get(`${GRAPH}/${leadgenId}`, { params: { access_token: token, fields } });
+    const { data } = await pedir("field_data,form_id,campaign_name,adset_name,ad_name").catch(() => pedir("field_data,form_id"));
     const dados = this.mapFieldData(data?.field_data ?? []);
+    dados.anuncio = [data?.campaign_name, data?.adset_name, data?.ad_name].filter(Boolean).join(" | ") || undefined;
+    if (dados.anuncio) dados.respostas = [...(dados.respostas ?? []), `Anúncio: ${dados.anuncio}`];
     if (data?.form_id) dados.formId = String(data.form_id);
     if (data?.form_id) {
       const form = await axios
@@ -346,12 +347,13 @@ export class MetaFormsService {
       return false;
     }
     // O nome do formulário indica o empreendimento ("Ilha stay lead" → Ilha stay home Resort).
+    // Empreendimento: nome do formulário → campanha/conjunto/anúncio do Meta → respostas do formulário.
+    // A SWAT usa vários empreendimentos (Rodrigo 20/11): nada fixo — sem pista, fica em branco.
     let imovel: Property | null = null;
-    if (dados.formulario) {
+    const pistas = [dados.formulario, dados.anuncio, ...(dados.respostas ?? [])].filter(Boolean) as string[];
+    if (pistas.length) {
       const props = await this.leadsRepo.manager.getRepository(Property).find({ where: { active: true } }).catch(() => []);
-      imovel = detectarEmpreendimento(dados.formulario, props);
-      // Formulário "SWAT" não tem o nome do imóvel: a campanha SWAT é do Ilha Stay (Rodrigo 20/11).
-      if (!imovel && /^\s*swat/i.test(dados.formulario)) imovel = detectarEmpreendimento(EMPREENDIMENTO_SWAT, props);
+      for (const p of pistas) if (!imovel) imovel = detectarEmpreendimento(p, props);
     }
     const lead = await this.leadsRepo.save(
       this.leadsRepo.create({
