@@ -137,6 +137,12 @@ export class Lead {
   @Column({ default: false })
   swat: boolean;
 
+  // Bolsão (20/11): lead SWAT parado 48h na 1ª etapa → qualquer um do K1 pode pegar.
+  @Column({ default: false })
+  bolsao: boolean;
+  @Column({ type: "timestamptz", nullable: true })
+  bolsaoEm: Date | null;
+
   @Column({ nullable: true })
   responsavelId: string;
 

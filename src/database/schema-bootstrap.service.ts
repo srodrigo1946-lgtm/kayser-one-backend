@@ -108,6 +108,11 @@ export class SchemaBootstrapService implements OnModuleInit {
             WHERE NOT EXISTS (SELECT 1 FROM properties WHERE "soStand" = true AND name = 'Shopping Nova América')`
         );
       }],
+      // Bolsão (20/11): lead SWAT parado 48h vai pro Bolsão.
+      ["bolsao", async () => {
+        await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS bolsao boolean NOT NULL DEFAULT false`);
+        await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "bolsaoEm" timestamptz`);
+      }],
       // Chave da Claude só da Tathy (14/11).
       ["tathyChave", async () => {
         await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tathyClaudeKey" text`);

@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CorujaoService } from "./corujao.service";
 import { CorujaoController } from "./corujao.controller";
+import { BolsaoService } from "./bolsao.service";
+import { BolsaoController } from "./bolsao.controller";
 import { Lead } from "../leads/lead.entity";
 import { Conversation } from "../conversations/conversation.entity";
 import { User } from "../users/user.entity";
@@ -15,7 +17,7 @@ import { LeadHistoryModule } from "../lead-history/lead-history.module";
     SettingsModule,
     LeadHistoryModule,
   ],
-  providers: [CorujaoService],
-  controllers: [CorujaoController],
+  providers: [CorujaoService, BolsaoService],
+  controllers: [CorujaoController, BolsaoController],
 })
 export class CorujaoModule {}
