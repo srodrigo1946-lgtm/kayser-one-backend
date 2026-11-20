@@ -57,9 +57,10 @@ const GRAPH = "https://graph.facebook.com/v26.0";
  * Tathy — gestora de tráfego (Rodrigo 13/11). REGRA: só leads de ANÚNCIO.
  * Google Ads = leads da vitrine (campanha "Vitrine…"); Meta = anúncio / formulário Meta.
  */
-export const CANAL_SQL = `CASE WHEN l.campanha ILIKE 'Vitrine%' THEN 'google'
+// Google = vitrine ou lead cadastrado à mão com origem "google_ads" (Diretor, 20/11).
+export const CANAL_SQL = `CASE WHEN l.campanha ILIKE 'Vitrine%' OR l.origem = 'google_ads' THEN 'google'
   WHEN l.source::text IN ('anuncio','formulario_meta') THEN 'meta' END`;
-export const SO_ANUNCIO_SQL = `(l.campanha ILIKE 'Vitrine%' OR l.source::text IN ('anuncio','formulario_meta'))`;
+export const SO_ANUNCIO_SQL = `(l.campanha ILIKE 'Vitrine%' OR l.origem = 'google_ads' OR l.source::text IN ('anuncio','formulario_meta'))`;
 const FECHADOS = `('venda_ganha','venda_perdida')`;
 
 // Critérios de gestor de tráfego (skill ad-manager): Bom / Atenção / Problema / Sem veredito,

@@ -248,8 +248,18 @@ export class LeadsService {
   }
 
   async create(dto: CreateLeadDto, user: User, source: LeadSource = LeadSource.MANUAL) {
+    // Diretor pode marcar a origem paga no cadastro (Formulário Meta / anúncio) — conta no tráfego.
+    const sourcePedido = dto.source;
+    delete (dto as any).source;
     // Só o cadastro manual barra duplicado — anúncio/WhatsApp entram por source próprio.
     if (source === LeadSource.MANUAL) await this.assertNaoDuplicado(dto);
+    // Só entra no K1 lead que tem WhatsApp (regra do Rodrigo; Evolution fora = deixa entrar).
+    if (source === LeadSource.MANUAL) {
+      const tel = String(dto.whatsapp || dto.phone || "").replace(/\D/g, "");
+      if ((await this.numerosSemWhatsapp([tel])).has(comCodigoBrasil(tel))) {
+        throw new BadRequestException("Esse número não tem WhatsApp — o lead não entra no K1. Confira o telefone com DDD.");
+      }
+    }
     // Cargo abaixo do Diretor cadastra COM o time de origem (ex.: "Time Isaac"):
     // não mistura com lead de anúncio nem com os do Diretor, e não conta no painel.
     if (source === LeadSource.MANUAL && user.role !== UserRole.DIRETOR) {
@@ -264,6 +274,9 @@ export class LeadsService {
       if (scopeIds !== null && !scopeIds.includes(dto.responsavelId)) {
         throw new ForbiddenException("Você só pode atribuir o lead a alguém da sua equipe.");
       }
+    }
+    if (source === LeadSource.MANUAL && user.role === UserRole.DIRETOR && (sourcePedido === "formulario_meta" || sourcePedido === "anuncio")) {
+      source = sourcePedido as LeadSource;
     }
     const lead = this.leadsRepo.create({
       ...dto,

@@ -12,6 +12,8 @@ import { LeadQueueService, nomeCurto } from "../lead-queue/lead-queue.service";
 import { SettingsService } from "../settings/settings.service";
 import { Property } from "../properties/property.entity";
 import { detectarEmpreendimento } from "../knowledge/knowledge.service";
+import { numerosSemWhatsapp } from "../../common/whatsapp-numeros";
+import { comCodigoBrasil } from "../../common/telefone";
 
 /** Empreendimento da campanha SWAT (o formulário "SWAT" não traz o nome do imóvel). */
 export const EMPREENDIMENTO_SWAT = "Ilha stay";
@@ -321,6 +323,22 @@ export class MetaFormsService {
     if (existente) {
       this.logger.log(`Formulário: ${dados.phone} já é lead (${existente.id}) — ignorado.`);
       return false;
+    }
+    // Só entra no K1 lead que tem WhatsApp (regra do Rodrigo; Evolution fora = deixa entrar).
+    const central = await Promise.resolve()
+      .then(() => this.conversations.diretorCentralId())
+      .catch(() => null);
+    if (central) {
+      const sem = await numerosSemWhatsapp(
+        this.config.get("EVOLUTION_API_URL", "http://localhost:8080"),
+        this.config.get("EVOLUTION_API_KEY", ""),
+        `user_${central}`,
+        [dados.phone]
+      );
+      if (sem.has(comCodigoBrasil(dados.phone))) {
+        this.logger.log(`Formulário: ${dados.phone} não tem WhatsApp — não entra no K1.`);
+        return false;
+      }
     }
     const conv = await this.conversations.findOrCreateByPhone(dados.phone);
     if (conv.leadId) {
