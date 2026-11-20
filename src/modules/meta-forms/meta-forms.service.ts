@@ -12,6 +12,9 @@ import { LeadQueueService, nomeCurto } from "../lead-queue/lead-queue.service";
 import { SettingsService } from "../settings/settings.service";
 import { Property } from "../properties/property.entity";
 import { detectarEmpreendimento } from "../knowledge/knowledge.service";
+
+/** Empreendimento da campanha SWAT (o formulário "SWAT" não traz o nome do imóvel). */
+export const EMPREENDIMENTO_SWAT = "Ilha stay";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
 import { User, UserRole } from "../users/user.entity";
 import { Conversation } from "../conversations/conversation.entity";
@@ -329,6 +332,8 @@ export class MetaFormsService {
     if (dados.formulario) {
       const props = await this.leadsRepo.manager.getRepository(Property).find({ where: { active: true } }).catch(() => []);
       imovel = detectarEmpreendimento(dados.formulario, props);
+      // Formulário "SWAT" não tem o nome do imóvel: a campanha SWAT é do Ilha Stay (Rodrigo 20/11).
+      if (!imovel && /^\s*swat/i.test(dados.formulario)) imovel = detectarEmpreendimento(EMPREENDIMENTO_SWAT, props);
     }
     const lead = await this.leadsRepo.save(
       this.leadsRepo.create({
