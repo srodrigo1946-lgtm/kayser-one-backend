@@ -573,7 +573,12 @@ export class LeadsService {
       throw new BadRequestException("Informe o nome do time da planilha (ex.: Time Isaac).");
     }
     checarZipBomba(file.buffer);
-    const wb = XLSX.read(file.buffer, { type: "buffer" });
+    // .xlsx é zip ("PK"); CSV é texto → ler como UTF-8 (senão acento/emoji vira "ð¥").
+    const ehZip = file.buffer[0] === 0x50 && file.buffer[1] === 0x4b;
+    const ehXlsAntigo = file.buffer[0] === 0xd0 && file.buffer[1] === 0xcf;
+    const wb = ehZip || ehXlsAntigo
+      ? XLSX.read(file.buffer, { type: "buffer" })
+      : XLSX.read(file.buffer.toString("utf8").replace(/^﻿/, ""), { type: "string" });
     // Acha a aba e a LINHA de cabeçalho (pode não ser a 1ª) que tenha telefone/celular.
     let linhas: any[][] = [];
     let cab = -1;
