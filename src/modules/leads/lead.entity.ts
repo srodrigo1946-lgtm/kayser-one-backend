@@ -98,6 +98,10 @@ export class Lead {
   @Column({ nullable: true })
   cpf: string;
 
+  // Ranking do cliente (Diamante/Ouro/Prata/Bronze/Aço/Não elegível…), vem da planilha (20/11).
+  @Column({ type: "varchar", nullable: true })
+  ranking: string | null;
+
   @Column({ type: "date", nullable: true })
   dataNascimento: string;
 

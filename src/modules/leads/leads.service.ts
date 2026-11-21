@@ -34,6 +34,9 @@ function normCab(h: any): string {
 export function campoDoCabecalho(h: any): keyof CreateLeadDto | null {
   const c = normCab(h);
   if (!c) return null;
+  // Ranking do cliente (Diamante/Ouro/Prata/Bronze/Aço…) e CPF (pra consulta de crédito).
+  if (/^(ranking|classificacao)/.test(c)) return "ranking";
+  if (/^cpf/.test(c)) return "cpf";
   if (/^(whatsapp|whats|zap|wpp)/.test(c)) return "whatsapp";
   if (/(telefone|celular|fone|^tel|phone|contato|numero|^cel)/.test(c)) return "phone";
   if (/(email|mail)/.test(c)) return "email";
@@ -611,6 +614,7 @@ export class LeadsService {
     let duplicates = 0;
     let semTelefone = 0;
     let semWhatsapp = 0;
+    let rankingAtualizado = 0;
     const vistos = new Set<string>();
 
     // Número sem WhatsApp não entra (checa todos antes, pelo número central).
@@ -650,7 +654,18 @@ export class LeadsService {
       if (tels.some((t) => vistos.has(t))) { duplicates++; continue; }
       tels.forEach((t) => vistos.add(t));
       const exists = await this.leadsRepo.findOne({ where: [{ phone: In(tels) }, { whatsapp: In(tels) }] });
-      if (exists) { duplicates++; continue; }
+      if (exists) {
+        duplicates++;
+        // Já está no K1: a planilha atualiza só o ranking (e o CPF se faltava) — não duplica o lead.
+        const extra: Partial<Lead> = {};
+        if (dto.ranking && dto.ranking !== exists.ranking) extra.ranking = dto.ranking;
+        if (dto.cpf && !exists.cpf) extra.cpf = dto.cpf;
+        if (Object.keys(extra).length) {
+          await this.leadsRepo.update(exists.id, extra as any).catch(() => null);
+          rankingAtualizado++;
+        }
+        continue;
+      }
 
       // Qual lote esta linha pega (pela quantidade já importada).
       let acum = 0;
@@ -705,6 +720,7 @@ export class LeadsService {
       duplicates,
       semTelefone,
       semWhatsapp,
+      rankingAtualizado,
       total: rows.length,
       porLote,
       restante: Math.max(0, leads.length - lotes.reduce((a, l) => a + l.quantidade, 0)),

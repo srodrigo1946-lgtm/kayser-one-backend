@@ -74,6 +74,8 @@ export class CreateLeadDto {
 
   // Cadastro completo (financiamento / Subir Pasta para Análise).
   @ApiPropertyOptional() @IsOptional() @IsString() cpf?: string;
+  // Ranking do cliente (Diamante/Ouro/Prata/Bronze/Aço…), vem da planilha (20/11).
+  @ApiPropertyOptional() @IsOptional() @IsString() ranking?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() dataNascimento?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() estadoCivil?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() cep?: string;

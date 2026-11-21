@@ -113,6 +113,10 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS bolsao boolean NOT NULL DEFAULT false`);
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "bolsaoEm" timestamptz`);
       }],
+      // Ranking do cliente vindo da planilha (21/11).
+      ["leadRanking", async () => {
+        await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS ranking varchar`);
+      }],
       // Chave da Claude só da Tathy (14/11).
       ["tathyChave", async () => {
         await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "tathyClaudeKey" text`);
