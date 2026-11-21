@@ -11,7 +11,8 @@ describe("Bolsão", () => {
     expect(h("agendamento")).toBe(168);
     expect(h("visita_realizada")).toBe(360);
     expect(h("subida_pasta")).toBe(720);
-    expect(prazoBolsao("em_atendimento", base)).toBeNull();
+    expect(h("em_atendimento")).toBe(72);
+    expect(prazoBolsao("simulacao", base)).toBeNull();
   });
 
   it("só corretor da casa pega; gestor, empresa parceira e inativo não", () => {

@@ -5,6 +5,7 @@
 export const PRAZO_BOLSAO_HORAS: Record<string, number> = {
   novo_lead: 48,
   primeiro_contato: 48,
+  em_atendimento: 72,
   agendamento: 7 * 24,
   visita_agendada: 7 * 24,
   visita_realizada: 15 * 24,
