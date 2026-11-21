@@ -127,6 +127,17 @@ describe("2ª chamada (01/11)", () => {
     expect(await s.tratarResposta("L1", "sim", "inst", "55")).toBe(true);
     expect(enviados[0]).toContain("especialista");
   });
+  it("SIM do repique volta pro corretor e NÃO entra na fila do plantão (21/11)", async () => {
+    const { ReengajamentoService } = require("./reengajamento.service");
+    const lead = { id: "L1", name: "ana", status: "venda_perdida", reengajadoEm: new Date(), perdaCorretorId: "C1", responsavelId: "D" };
+    const upd: any[] = [];
+    const leads: any = { findOne: async () => lead, update: async (_id: string, d: any) => upd.push(d), query: async () => [], manager: { query: async () => [] } };
+    const fila: any = { distribuirLeadManual: jest.fn() };
+    const s = new ReengajamentoService(leads, {} as any, {} as any, { sendText: async () => null } as any, fila, { classificarInteresse: async () => "outro" } as any, {} as any);
+    expect(await s.tratarResposta("L1", "quero sim", "inst", "55")).toBe(true);
+    expect(fila.distribuirLeadManual).not.toHaveBeenCalled();
+    expect(upd.find((d) => d.responsavelId)?.responsavelId).toBe("C1");
+  });
 });
 
 describe("Filas independentes na mesma hora (27/10)", () => {

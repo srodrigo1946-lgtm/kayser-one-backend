@@ -28,6 +28,19 @@ import { ConfigService } from "@nestjs/config";
 
 /** Fila SWAT: prazo do corretor pro 1º contato (Rodrigo 11/11). */
 export const SWAT_SLA_MIN = 15;
+
+/**
+ * Posição de quem é o próximo do rodízio: pela PESSOA gravada (proximoId) quando ela
+ * ainda está no turno; senão pela posição antiga (pointer). A lista muda com check-in/saída,
+ * e só a posição fazia o "Próximo" andar sem lead entregue (Rodrigo 21/11).
+ */
+export function indiceDoProximo(membros: string[], proximoId: string | null | undefined, pointer: number | null | undefined): number {
+  const n = membros.length;
+  if (!n) return 0;
+  const i = proximoId ? membros.indexOf(proximoId) : -1;
+  if (i >= 0) return i;
+  return (((pointer ?? 0) % n) + n) % n;
+}
 export const SWAT_MAX = 16;
 
 // Origem paga (anúncio / formulário Meta): o aviso na tela usa frase própria.
@@ -210,9 +223,10 @@ export class LeadQueueService {
 
   /** Próximo do rodízio SWAT (ponteiro próprio, gravado na hora). */
   private async proximoSwat(s: LeadQueueSettings, membros: string[]): Promise<string> {
-    const idx = (((s.swatPointer ?? 0) % membros.length) + membros.length) % membros.length;
+    const idx = indiceDoProximo(membros, s.swatProximoId, s.swatPointer);
     s.swatPointer = (idx + 1) % membros.length;
-    await this.settingsRepo.update(s.id, { swatPointer: s.swatPointer } as any);
+    s.swatProximoId = membros[s.swatPointer];
+    await this.settingsRepo.update(s.id, { swatPointer: s.swatPointer, swatProximoId: s.swatProximoId } as any);
     return membros[idx];
   }
 
@@ -243,8 +257,9 @@ export class LeadQueueService {
 
   /** Próximo do rodízio (avança o ponteiro em `s`; caller salva `s`). */
   private proximo(s: LeadQueueSettings, membros: string[]): string {
-    const idx = ((s.pointer % membros.length) + membros.length) % membros.length;
+    const idx = indiceDoProximo(membros, s.proximoId, s.pointer);
     s.pointer = (idx + 1) % membros.length;
+    s.proximoId = membros[s.pointer];
     return membros[idx];
   }
 
@@ -253,7 +268,7 @@ export class LeadQueueService {
    * atrás) e um cron podia regravar o ponteiro velho → "a fila não anda".
    */
   private async salvarPonteiro(s: LeadQueueSettings) {
-    await this.settingsRepo.update(s.id, { pointer: s.pointer });
+    await this.settingsRepo.update(s.id, { pointer: s.pointer, proximoId: s.proximoId } as any);
   }
 
   /** Quem acabou de receber um lead: o próximo do rodízio passa a ser o seguinte a ele. */
@@ -262,7 +277,18 @@ export class LeadQueueService {
     if (idx < 0) return;
     const s = await this.getSettings();
     s.pointer = (idx + 1) % membros.length;
+    s.proximoId = membros[s.pointer];
     await this.salvarPonteiro(s);
+  }
+
+  /**
+   * A fila do plantão SÓ anda com lead de anúncio (formulário Meta, anúncio do WhatsApp, vitrine)
+   * ou contato novo que chegou sozinho no número central. Repique, planilha do Diretor e dos
+   * gestores e cadastro manual NÃO entram (Rodrigo 21/11).
+   */
+  async leadDeAnuncio(leadId: string): Promise<boolean> {
+    const l = await this.leadsRepo.findOne({ where: { id: leadId }, select: ["id", "source"] as any });
+    return !!l && ["anuncio", "formulario_meta", "whatsapp"].includes(String(l.source));
   }
 
   private prazo(s: LeadQueueSettings): Date {
@@ -699,7 +725,8 @@ export class LeadQueueService {
       // (senão o mesmo corretor recebia o repassado E o próximo lead novo).
       if (a.swat) {
         s.swatPointer = (membros.indexOf(nextUser) + 1) % membros.length;
-        await this.settingsRepo.update(s.id, { swatPointer: s.swatPointer } as any);
+        s.swatProximoId = membros[s.swatPointer];
+        await this.settingsRepo.update(s.id, { swatPointer: s.swatPointer, swatProximoId: s.swatProximoId } as any);
       } else await this.avancarDepoisDe(nextUser, membros);
       // Passou pro próximo: o cliente NÃO recebe aviso de troca (Rodrigo 07/11 — via "Anita"
       // e logo depois "agora é o Diego"); o novo corretor se apresenta na conversa.
@@ -862,7 +889,7 @@ export class LeadQueueService {
 
     const users = await this.usersRepo.find({ where: { id: In(membros) } });
     const nomePorId = new Map(users.map((u) => [u.id, u.name]));
-    const nextIdx = ((s.pointer % membros.length) + membros.length) % membros.length;
+    const nextIdx = indiceDoProximo(membros, s.proximoId, s.pointer);
     const ordem = membros.map((id, i) => ({
       userId: id,
       nome: nomePorId.get(id) ?? "—",
@@ -870,7 +897,7 @@ export class LeadQueueService {
     }));
     // SWAT de plantão agora, na ordem do rodízio SWAT.
     const swatIds = await this.swatDoTurno(s);
-    const swatNext = swatIds.length ? (((s.swatPointer ?? 0) % swatIds.length) + swatIds.length) % swatIds.length : -1;
+    const swatNext = swatIds.length ? indiceDoProximo(swatIds, s.swatProximoId, s.swatPointer) : -1;
     const swat = swatIds.map((id, i) => ({ userId: id, nome: nomePorId.get(id) ?? "—", proximo: i === swatNext }));
     return { turnoAtivo: true, ordem, aguardando, aguardandoLeads, swat, swatEsperando };
   }

@@ -380,7 +380,9 @@ export class WhatsappFlowService {
 
       if (ehCentral && !conv.fromAd) {
         const fila = await this.leadQueue.getSettings();
-        if (fila.enabled && conv.leadId && !(await this.leadQueue.jaPassouNaFila(conv.id))) {
+        // Só lead de anúncio / contato novo entra na fila; cliente de planilha ou repique que
+        // responde fica com o corretor dono dele (não toma a vez do plantão — Rodrigo 21/11).
+        if (fila.enabled && conv.leadId && !(await this.leadQueue.jaPassouNaFila(conv.id)) && (await this.leadQueue.leadDeAnuncio(conv.leadId))) {
           const a = await this.leadQueue.enqueueLead({ conversationId: conv.id, leadId: conv.leadId });
           if (a && a.status !== "aguardando") {
             await this.avisarEspecialista(conv, instanceName, remoteJidFull, a.assignedToId);

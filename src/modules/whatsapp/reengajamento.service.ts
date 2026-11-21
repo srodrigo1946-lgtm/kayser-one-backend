@@ -244,12 +244,22 @@ export class ReengajamentoService {
     const nome = primeiroNome(lead.name);
     await this.registrar(lead, r, texto);
     if (r === "nao") return this.removerPorNao(lead, instancia, destino);
-    await this.leads.update(lead.id, { status: LeadStatus.NOVO_LEAD } as any);
+    // Repique NÃO entra na fila do plantão (Rodrigo 21/11): volta pro corretor que tinha o
+    // lead (quem marcou "sem interesse"), com aviso de fogos; sem ninguém, fica com o dono atual.
+    const dono = (lead as any).perdaCorretorId || lead.responsavelId || null;
+    await this.leads.update(lead.id, {
+      status: LeadStatus.NOVO_LEAD,
+      ...(dono ? { responsavelId: dono, transferidoEm: new Date() } : {}),
+    } as any);
+    if (dono) {
+      await this.leads.manager
+        .query(`UPDATE conversations SET "assignedToId" = $1 WHERE "leadId" = $2`, [dono, lead.id])
+        .catch(() => null);
+    }
     await this.whatsapp
       .sendText(instancia, destino, `Que ótimo${nome ? `, ${nome}` : ""}! 😊 Já vou te colocar em contato com um especialista da Kayser.`)
       .catch(() => null);
-    const f = await this.fila.distribuirLeadManual(lead.id).catch(() => null);
-    this.logger.log(`Reengajamento: lead ${lead.id} tem interesse — fila: ${f?.status ?? "erro"}.`);
+    this.logger.log(`Reengajamento: lead ${lead.id} tem interesse — voltou pro corretor ${dono ?? "(sem dono)"}, fora da fila.`);
     return true;
   }
 

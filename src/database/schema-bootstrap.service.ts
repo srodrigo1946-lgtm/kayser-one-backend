@@ -113,6 +113,11 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS bolsao boolean NOT NULL DEFAULT false`);
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "bolsaoEm" timestamptz`);
       }],
+      // Fila: próximo guardado como PESSOA, não posição (21/11).
+      ["filaProximoId", async () => {
+        await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "proximoId" varchar`);
+        await this.dataSource.query(`ALTER TABLE lead_queue_settings ADD COLUMN IF NOT EXISTS "swatProximoId" varchar`);
+      }],
       // Ranking do cliente vindo da planilha (21/11).
       ["leadRanking", async () => {
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS ranking varchar`);

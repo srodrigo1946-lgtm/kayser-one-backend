@@ -31,6 +31,14 @@ export class LeadQueueSettings {
   @Column({ type: "int", default: 0 })
   swatPointer: number;
 
+  // Quem é o PRÓXIMO (pessoa, não posição): a lista muda quando alguém faz check-in ou
+  // sai, e a posição apontava pra outra pessoa sem lead entregue (Rodrigo 21/11).
+  @Column({ type: "varchar", nullable: true })
+  proximoId: string | null;
+
+  @Column({ type: "varchar", nullable: true })
+  swatProximoId: string | null;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }
