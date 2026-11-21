@@ -71,16 +71,18 @@ describe("MetaFormsService", () => {
   it("só aceita lead dos formulários marcados (ex.: só o 'Ilha stay lead')", async () => {
     const settings: any = { get: async () => ({ metaFormIds: "960631980396672" }) };
     const s: any = new MetaFormsService({} as any, {} as any, {} as any, { get: () => "" } as any, settings, {} as any);
-    const buscados: string[] = [];
-    s.fetchLead = async (id: string) => {
-      buscados.push(id);
-      return null; // sem telefone → não cria nada (não toca no banco)
+    const forms: Record<string, [string, string]> = {
+      L1: ["960631980396672", "Ilha stay lead"],
+      L2: ["26634231496201321", "Barra Olimpica"],
+      L3: ["999", "SWAT 10 Stillo"],
     };
-    const evento = (leadgen_id: string, form_id: string) => ({ field: "leadgen", value: { leadgen_id, form_id } });
-    await s.handleLeadgen({
-      entry: [{ changes: [evento("L1", "960631980396672"), evento("L2", "26634231496201321")] }],
-    });
-    expect(buscados).toEqual(["L1"]); // o da Barra Olímpica foi ignorado
+    s.fetchLead = async (id: string) => ({ name: "X", phone: "21999998888", formId: forms[id][0], formulario: forms[id][1] });
+    const criados: string[] = [];
+    s.criarLead = async (d: any) => (criados.push(d.formulario), true);
+    const evento = (leadgen_id: string) => ({ field: "leadgen", value: { leadgen_id, form_id: forms[leadgen_id][0] } });
+    await s.handleLeadgen({ entry: [{ changes: [evento("L1"), evento("L2"), evento("L3")] }] });
+    // Barra Olímpica (não marcado) fica fora; formulário com SWAT no nome entra sozinho.
+    expect(criados).toEqual(["Ilha stay lead", "SWAT 10 Stillo"]);
   });
 
   it("1ª mensagem do formulário: Kayser fora do plantão, corretor no plantão", () => {

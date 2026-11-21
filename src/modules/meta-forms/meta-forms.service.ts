@@ -253,15 +253,12 @@ export class MetaFormsService {
       const leadgenId = ch?.value?.leadgen_id;
       if (!leadgenId) continue;
       // Só os formulários marcados em Configurações (ex.: só o "Ilha stay lead").
-      const formId = ch?.value?.form_id ? String(ch.value.form_id) : "";
-      if (permitidos.length && formId && !permitidos.includes(formId)) {
-        this.logger.log(`Formulário ${formId} fora da lista — lead ${leadgenId} ignorado.`);
-        continue;
-      }
+      // Formulário com "SWAT" no nome entra sozinho (Rodrigo cria vários; 21/11) — os outros só se marcados.
       try {
         const dados = await this.fetchLead(leadgenId);
-        // Confere de novo com o form_id REAL (Graph API): evento sem form_id não fura o filtro.
-        if (dados?.formId && permitidos.length && !permitidos.includes(dados.formId)) {
+        const ehSwat = /swat/i.test(dados?.formulario || "");
+        // Confere com o form_id REAL (Graph API): evento sem form_id não fura o filtro.
+        if (!ehSwat && dados?.formId && permitidos.length && !permitidos.includes(dados.formId)) {
           this.logger.log(`Formulário ${dados.formId} fora da lista — lead ${leadgenId} ignorado.`);
           continue;
         }
@@ -394,7 +391,11 @@ export class MetaFormsService {
     try {
       const token = await this.pageToken();
       if (!token) return { encontrados, novos, erro: "Token da Página do Meta não configurado." };
-      const forms = await this.formsPermitidos();
+      // Marcados + todo formulário ativo com "SWAT" no nome (entra sozinho, 21/11).
+      const swat = (await this.listarFormularios().catch(() => []))
+        .filter((f) => /swat/i.test(f.name) && f.status === "ACTIVE")
+        .map((f) => f.id);
+      const forms = [...new Set([...(await this.formsPermitidos()), ...swat])];
       if (!forms.length) return { encontrados, novos, erro: "Nenhum formulário marcado em Configurações." };
       const desde = Math.floor((Date.now() - horas * 3600_000) / 1000);
       for (const formId of forms) {
