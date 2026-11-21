@@ -10,6 +10,9 @@ export const PRAZO_BOLSAO_HORAS: Record<string, number> = {
   visita_agendada: 7 * 24,
   visita_realizada: 15 * 24,
   subida_pasta: 30 * 24,
+  documentacao: 18 * 24,
+  aprovacao: 30 * 24,
+  reprovacao: 30 * 24,
 };
 
 /** Quando o lead SWAT cai no Bolsão (null = etapa sem relógio). */

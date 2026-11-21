@@ -12,6 +12,9 @@ describe("Bolsão", () => {
     expect(h("visita_realizada")).toBe(360);
     expect(h("subida_pasta")).toBe(720);
     expect(h("em_atendimento")).toBe(72);
+    expect(h("documentacao")).toBe(18 * 24);
+    expect(h("aprovacao")).toBe(30 * 24);
+    expect(h("reprovacao")).toBe(30 * 24);
     expect(prazoBolsao("simulacao", base)).toBeNull();
   });
 
