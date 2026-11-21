@@ -890,6 +890,11 @@ export class LeadQueueService {
     const users = await this.usersRepo.find({ where: { id: In(membros) } });
     const nomePorId = new Map(users.map((u) => [u.id, u.name]));
     const nextIdx = indiceDoProximo(membros, s.proximoId, s.pointer);
+    // Fixa a PESSOA que é a próxima (se ainda não estava gravada ou saiu do turno): daqui pra
+    // frente quem entra ou sai da lista não muda a vez dela.
+    if (!s.proximoId || !membros.includes(s.proximoId)) {
+      await this.settingsRepo.update(s.id, { proximoId: membros[nextIdx], pointer: nextIdx } as any).catch(() => null);
+    }
     const ordem = membros.map((id, i) => ({
       userId: id,
       nome: nomePorId.get(id) ?? "—",
