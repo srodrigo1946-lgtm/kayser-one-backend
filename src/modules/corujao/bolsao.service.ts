@@ -7,12 +7,13 @@ import { Conversation } from "../conversations/conversation.entity";
 import { User, UserRole } from "../users/user.entity";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
+import { PRAZO_BOLSAO_HORAS } from "../../common/prazo-bolsao";
 
-/** Horas paradas na 1ª etapa até o lead SWAT cair no Bolsão (pedido do Rodrigo 20/11). */
-export const BOLSAO_HORAS = 48;
+/** Prazo da 1ª etapa (mostrado na tela); as outras etapas estão em PRAZO_BOLSAO_HORAS. */
+export const BOLSAO_HORAS = PRAZO_BOLSAO_HORAS.primeiro_contato;
 
-/** Quem do K1 pode pegar: usuário ativo da casa (empresa parceira não). */
-export const podePegarBolsao = (u: User) => !!u && u.active !== false && !u.empresaId;
+/** Só CORRETOR da casa pega (empresa parceira e inativo não) — Rodrigo 20/11. */
+export const podePegarBolsao = (u: User) => !!u && u.role === UserRole.CORRETOR && u.active !== false && !u.empresaId;
 
 /**
  * Bolsão: lead da SWAT parado 48h em Novo Lead / Primeiro contato sai da SWAT e vai
@@ -31,12 +32,16 @@ export class BolsaoService {
   /** De hora em hora: move pro Bolsão os SWAT parados 48h na 1ª etapa. */
   @Cron("5 * * * *", { timeZone: "America/Sao_Paulo" })
   async moverParados(): Promise<number> {
+    // Prazo por etapa: 1º contato 48h, agendamento 7d, visita realizada 15d, pasta 30d.
+    const casos = Object.entries(PRAZO_BOLSAO_HORAS)
+      .map(([st, h]) => `WHEN '${st}' THEN ${Number(h)}`)
+      .join(" ");
     const rows: { id: string }[] = await this.leadsRepo.query(
       `UPDATE leads SET bolsao = true, "bolsaoEm" = now(), swat = false
-        WHERE swat = true AND bolsao = false AND status = ANY($1)
-          AND COALESCE("etapaDesde", "createdAt") <= now() - ($2 || ' hours')::interval
+        WHERE swat = true AND bolsao = false AND status::text = ANY($1)
+          AND COALESCE("etapaDesde", "createdAt") <= now() - (CASE status::text ${casos} END) * interval '1 hour'
       RETURNING id`,
-      [[LeadStatus.NOVO_LEAD, LeadStatus.PRIMEIRO_CONTATO], String(BOLSAO_HORAS)]
+      [Object.keys(PRAZO_BOLSAO_HORAS)]
     );
     const lista = Array.isArray(rows[0]) ? (rows[0] as any[]) : rows; // pg devolve [linhas, n] no UPDATE
     const ids = lista.map((r: any) => r.id).filter(Boolean);
@@ -47,10 +52,10 @@ export class BolsaoService {
       .catch(() => null);
     for (const id of ids) {
       await this.history
-        .log({ leadId: id, type: LeadHistoryType.SISTEMA, description: `Bolsão: lead SWAT parado ${BOLSAO_HORAS}h na 1ª etapa — liberado pra qualquer um pegar.` })
+        .log({ leadId: id, type: LeadHistoryType.SISTEMA, description: `Bolsão: o relógio da etapa zerou (SWAT) — liberado pros corretores pegarem.` })
         .catch(() => {});
     }
-    this.logger.log(`Bolsão: ${ids.length} lead(s) SWAT parados ${BOLSAO_HORAS}h foram pro Bolsão.`);
+    this.logger.log(`Bolsão: ${ids.length} lead(s) SWAT com o relógio zerado foram pro Bolsão.`);
     return ids.length;
   }
 

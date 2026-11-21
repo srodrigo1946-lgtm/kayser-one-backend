@@ -1,11 +1,23 @@
 import { BolsaoService, podePegarBolsao } from "./bolsao.service";
+import { prazoBolsao } from "../../common/prazo-bolsao";
 
 const hist = { log: async () => null } as any;
 
 describe("Bolsão", () => {
-  it("todos do K1 pegam; empresa parceira e inativo não", () => {
+  it("prazo por etapa: 48h, 7d, 15d, 30d; outras etapas sem relógio", () => {
+    const base = new Date("2026-11-20T12:00:00Z");
+    const h = (st: string) => (prazoBolsao(st, base)!.getTime() - base.getTime()) / 3_600_000;
+    expect(h("primeiro_contato")).toBe(48);
+    expect(h("agendamento")).toBe(168);
+    expect(h("visita_realizada")).toBe(360);
+    expect(h("subida_pasta")).toBe(720);
+    expect(prazoBolsao("em_atendimento", base)).toBeNull();
+  });
+
+  it("só corretor da casa pega; gestor, empresa parceira e inativo não", () => {
     expect(podePegarBolsao({ role: "corretor", active: true } as any)).toBe(true);
-    expect(podePegarBolsao({ role: "gerente", active: true } as any)).toBe(true);
+    expect(podePegarBolsao({ role: "gerente", active: true } as any)).toBe(false);
+    expect(podePegarBolsao({ role: "diretor", active: true } as any)).toBe(false);
     expect(podePegarBolsao({ role: "corretor", active: true, empresaId: "x" } as any)).toBe(false);
     expect(podePegarBolsao({ role: "corretor", active: false } as any)).toBe(false);
   });
@@ -23,7 +35,7 @@ describe("Bolsão", () => {
     const qb: any = { update: () => qb, set: () => qb, where: () => qb, andWhere: () => qb, execute: async () => ({ affected: 0 }) };
     const leads = { findOne: async () => ({ id: "1", status: "novo_lead" }), createQueryBuilder: () => qb } as any;
     const s = new BolsaoService(leads, { update: async () => null } as any, hist);
-    await expect(s.pegar("1", { name: "Bia", active: true } as any)).rejects.toThrow("já foi pego");
+    await expect(s.pegar("1", { name: "Bia", role: "corretor", active: true } as any)).rejects.toThrow("já foi pego");
   });
 
   it("move os SWAT parados e tira da fila", async () => {

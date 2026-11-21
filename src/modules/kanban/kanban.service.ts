@@ -10,6 +10,7 @@ import { User } from "../users/user.entity";
 import { LeadsService } from "../leads/leads.service";
 import { UsersService } from "../users/users.service";
 import { KanbanColumnEntity } from "./kanban-column.entity";
+import { prazoBolsao } from "../../common/prazo-bolsao";
 
 // Colunas padrão — usadas apenas para semear o banco na primeira vez.
 export const KANBAN_COLUMNS = [
@@ -104,7 +105,12 @@ export class KanbanService {
       somenteGestores: !!col.somenteGestores,
       leads: leads
         .filter((l) => l.status === col.key)
-        .map((l) => ({ ...l, stageSince: sinceMap.get(l.id) ?? l.updatedAt })),
+        .map((l) => ({
+          ...l,
+          stageSince: sinceMap.get(l.id) ?? l.updatedAt,
+          // SWAT: quando o relógio zera e o lead cai no Bolsão (mesma conta do cron).
+          prazoBolsao: l.swat ? prazoBolsao(l.status, l.etapaDesde ?? l.createdAt) : null,
+        })),
     }));
   }
 
