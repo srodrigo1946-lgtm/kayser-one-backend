@@ -832,21 +832,29 @@ export class LeadQueueService {
       .createQueryBuilder("a")
       .where("a.assignedAt >= :since", { since })
       .getMany();
-    const recebidos = new Set(list.map((a) => a.conversationId)).size;
-    // Atendidos = leads DISTINTOS que foram atendidos (não conta reatribuição 2x).
-    const atendidos = new Set(list.filter((a) => a.status === "atendido").map((a) => a.conversationId)).size;
-    const expirados = new Set(list.filter((a) => a.status === "expirado").map((a) => a.conversationId)).size;
-    // Por corretor: quantos leads REAIS (distintos) cada um ATENDEU.
-    const atendidoSets: Record<string, Set<string>> = {};
-    for (const a of list) {
-      if (a.status !== "atendido" || !a.assignedToId) continue;
-      (atendidoSets[a.assignedToId] ??= new Set()).add(a.conversationId);
-    }
-    const porCargo: Record<string, number> = {};
-    for (const [id, set] of Object.entries(atendidoSets)) porCargo[id] = set.size;
+    const metricas = (rows: typeof list) => {
+      const recebidos = new Set(rows.map((a) => a.conversationId)).size;
+      // Atendidos = leads DISTINTOS que foram atendidos (não conta reatribuição 2x).
+      const atendidos = new Set(rows.filter((a) => a.status === "atendido").map((a) => a.conversationId)).size;
+      const expirados = new Set(rows.filter((a) => a.status === "expirado").map((a) => a.conversationId)).size;
+      // Por corretor: quantos leads REAIS (distintos) cada um ATENDEU.
+      const atendidoSets: Record<string, Set<string>> = {};
+      for (const a of rows) {
+        if (a.status !== "atendido" || !a.assignedToId) continue;
+        (atendidoSets[a.assignedToId] ??= new Set()).add(a.conversationId);
+      }
+      const porCargo: Record<string, number> = {};
+      for (const [id, set] of Object.entries(atendidoSets)) porCargo[id] = set.size;
+      return { recebidos, atendidos, expirados, porCargo };
+    };
     // Leads segurados esperando abrir o turno (não limita por dia — persistem até distribuir).
     const aguardando = await this.assignRepo.count({ where: { status: "aguardando" } });
-    return { recebidos, atendidos, expirados, aguardando, porCargo };
+    // Fila normal e Fila SWAT contadas separadas (Rodrigo 22/11).
+    return {
+      ...metricas(list.filter((a) => !a.swat)),
+      aguardando,
+      swat: metricas(list.filter((a) => !!a.swat)),
+    };
   }
 
   /**
