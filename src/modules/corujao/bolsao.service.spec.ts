@@ -1,4 +1,4 @@
-import { BolsaoService, podePegarBolsao } from "./bolsao.service";
+import { BolsaoService, podePegarBolsao, bloqueadoNoBolsao } from "./bolsao.service";
 import { prazoBolsao } from "../../common/prazo-bolsao";
 
 const hist = { log: async () => null } as any;
@@ -16,6 +16,13 @@ describe("Bolsão", () => {
     expect(h("aprovacao")).toBe(30 * 24);
     expect(h("reprovacao")).toBe(30 * 24);
     expect(prazoBolsao("simulacao", base)).toBeNull();
+  });
+
+  it("bloqueio do Diretor: corretor sozinho ou o time inteiro do gerente", () => {
+    const chefe = new Map<string, string | null>([["c1", "g1"], ["c2", "g2"], ["g1", "d"], ["g2", "d"]]);
+    expect(bloqueadoNoBolsao("c1", new Set(["g1"]), chefe)).toBe(true); // gerente bloqueado → time
+    expect(bloqueadoNoBolsao("c2", new Set(["g1"]), chefe)).toBe(false);
+    expect(bloqueadoNoBolsao("c2", new Set(["c2"]), chefe)).toBe(true);
   });
 
   it("só corretor da casa pega; gestor, empresa parceira e inativo não", () => {

@@ -43,6 +43,11 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   tathyClaudeKey: string | null;
 
+  // Bolsão: quem o Diretor bloqueou de pegar (ids separados por vírgula). Gerente bloqueado
+  // = time inteiro dele bloqueado (22/11).
+  @Column({ type: "text", nullable: true })
+  bolsaoBloqueados: string | null;
+
   @Column({ type: "text", nullable: true })
   ioneOpenaiKey: string | null;
 

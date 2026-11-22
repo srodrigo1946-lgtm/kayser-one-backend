@@ -8,12 +8,26 @@ import { User, UserRole } from "../users/user.entity";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
 import { PRAZO_BOLSAO_HORAS } from "../../common/prazo-bolsao";
+import { SettingsService } from "../settings/settings.service";
 
 /** Prazo da 1ª etapa (mostrado na tela); as outras etapas estão em PRAZO_BOLSAO_HORAS. */
 export const BOLSAO_HORAS = PRAZO_BOLSAO_HORAS.primeiro_contato;
 
 /** Só CORRETOR da casa pega (empresa parceira e inativo não) — Rodrigo 20/11. */
 export const podePegarBolsao = (u: User) => !!u && u.role === UserRole.CORRETOR && u.active !== false && !u.empresaId;
+
+/**
+ * Bloqueado no Bolsão: o próprio id está na lista OU algum chefe acima dele (gerente
+ * bloqueado = time inteiro bloqueado). `chefeDe` = id → managerId.
+ */
+export function bloqueadoNoBolsao(userId: string, bloqueados: Set<string>, chefeDe: Map<string, string | null>): boolean {
+  let atual: string | null | undefined = userId;
+  for (let i = 0; atual && i < 20; i++) {
+    if (bloqueados.has(atual)) return true;
+    atual = chefeDe.get(atual) ?? null;
+  }
+  return false;
+}
 
 /**
  * Bolsão: lead da SWAT parado 48h em Novo Lead / Primeiro contato sai da SWAT e vai
@@ -26,8 +40,52 @@ export class BolsaoService {
   constructor(
     @InjectRepository(Lead) private readonly leadsRepo: Repository<Lead>,
     @InjectRepository(Conversation) private readonly convRepo: Repository<Conversation>,
-    private readonly history: LeadHistoryService
+    private readonly history: LeadHistoryService,
+    @InjectRepository(User) private readonly usersRepo?: Repository<User>,
+    private readonly settings?: SettingsService
   ) {}
+
+  private async listaBloqueados(): Promise<Set<string>> {
+    const s: any = await this.settings?.get().catch(() => null);
+    return new Set(String(s?.bolsaoBloqueados || "").split(",").map((x) => x.trim()).filter(Boolean));
+  }
+
+  /** Pode pegar = corretor da casa, ativo, e nem ele nem o gerente dele bloqueados pelo Diretor. */
+  async podePegar(user: User): Promise<boolean> {
+    if (!podePegarBolsao(user)) return false;
+    const bloq = await this.listaBloqueados();
+    if (!bloq.size || !this.usersRepo) return true;
+    const todos = await this.usersRepo.find({ select: ["id", "managerId"] as any });
+    return !bloqueadoNoBolsao(user.id, bloq, new Map(todos.map((u) => [u.id, (u as any).managerId ?? null])));
+  }
+
+  /** Diretor: gerentes e corretores da casa com o bloqueio de cada um. */
+  async bloqueios() {
+    const bloq = await this.listaBloqueados();
+    const users = this.usersRepo ? await this.usersRepo.find({ where: { active: true } as any, order: { name: "ASC" } }) : [];
+    const casa = users.filter((u) => !u.empresaId && u.role !== UserRole.DIRETOR);
+    const chefeDe = new Map(users.map((u) => [u.id, (u as any).managerId ?? null]));
+    const item = (u: User) => ({
+      id: u.id,
+      nome: u.name,
+      bloqueado: bloq.has(u.id),
+      // Bloqueado pelo gerente (time) — não por ele mesmo.
+      pelaEquipe: !bloq.has(u.id) && bloqueadoNoBolsao(u.id, bloq, chefeDe),
+    });
+    return {
+      gestores: casa.filter((u) => u.role !== UserRole.CORRETOR).map(item),
+      corretores: casa.filter((u) => u.role === UserRole.CORRETOR).map(item),
+    };
+  }
+
+  /** Diretor bloqueia/libera alguém de pegar no Bolsão. */
+  async definirBloqueio(userId: string, bloqueado: boolean) {
+    const bloq = await this.listaBloqueados();
+    if (bloqueado) bloq.add(userId);
+    else bloq.delete(userId);
+    await this.settings?.update({ bolsaoBloqueados: [...bloq].join(",") || null } as any);
+    return { ok: true, bloqueado };
+  }
 
   /** De hora em hora: move pro Bolsão os SWAT parados 48h na 1ª etapa. */
   @Cron("5 * * * *", { timeZone: "America/Sao_Paulo" })
@@ -64,7 +122,7 @@ export class BolsaoService {
     const ehDiretor = user.role === UserRole.DIRETOR;
     const leads = await this.leadsRepo.find({ where: { bolsao: true }, relations: ["responsavel"], order: { bolsaoEm: "ASC" }, take: 300 });
     return {
-      podePegar: podePegarBolsao(user),
+      podePegar: await this.podePegar(user),
       horas: BOLSAO_HORAS,
       leads: leads.map((l) => ({
         id: l.id,
@@ -79,7 +137,7 @@ export class BolsaoService {
 
   /** Pega o lead: vira de quem clicou primeiro e entra em Primeiro contato. */
   async pegar(leadId: string, user: User) {
-    if (!podePegarBolsao(user)) throw new ForbiddenException("Você não pode pegar leads do Bolsão.");
+    if (!(await this.podePegar(user))) throw new ForbiddenException("Você não pode pegar leads do Bolsão (fale com o Diretor).");
     const lead = await this.leadsRepo.findOne({ where: { id: leadId } });
     if (!lead) throw new NotFoundException("Lead não encontrado.");
     const r = await this.leadsRepo
