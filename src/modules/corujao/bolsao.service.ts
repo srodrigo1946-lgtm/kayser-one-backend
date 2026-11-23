@@ -7,7 +7,7 @@ import { Conversation } from "../conversations/conversation.entity";
 import { User, UserRole } from "../users/user.entity";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
-import { PRAZO_BOLSAO_HORAS } from "../../common/prazo-bolsao";
+import { PRAZO_BOLSAO_HORAS, FILA_NORMAL_DESDE } from "../../common/prazo-bolsao";
 import { SettingsService } from "../settings/settings.service";
 
 /** Prazo da 1ª etapa (mostrado na tela); as outras etapas estão em PRAZO_BOLSAO_HORAS. */
@@ -101,7 +101,20 @@ export class BolsaoService {
       RETURNING id`,
       [Object.keys(PRAZO_BOLSAO_HORAS)]
     );
-    const lista = Array.isArray(rows[0]) ? (rows[0] as any[]) : rows; // pg devolve [linhas, n] no UPDATE
+    // Fila NORMAL também (Rodrigo 23/11): mesmo relógio, contando de quando o lead chegou
+    // pro corretor. Só quem passou 1x pelo Bolsão não volta ("bolsaoEm" vazio) e só
+    // leads distribuídos a partir de FILA_NORMAL_DESDE (não despeja o histórico antigo).
+    const rowsNormal: { id: string }[] = await this.leadsRepo.query(
+      `UPDATE leads l SET bolsao = true, "bolsaoEm" = now()
+         FROM (SELECT "leadId", MAX("assignedAt") AS chegou FROM lead_queue_assignments
+                WHERE swat = false AND "leadId" IS NOT NULL AND "assignedAt" >= $2 GROUP BY "leadId") a
+        WHERE l.id = a."leadId" AND l.swat = false AND l.bolsao = false AND l."bolsaoEm" IS NULL
+          AND l.status::text = ANY($1)
+          AND GREATEST(COALESCE(l."etapaDesde", l."createdAt"), a.chegou) <= now() - (CASE l.status::text ${casos} END) * interval '1 hour'
+      RETURNING l.id`,
+      [Object.keys(PRAZO_BOLSAO_HORAS), FILA_NORMAL_DESDE]
+    ).catch((e: any) => { this.logger.warn(`Bolsão fila normal: ${e?.message}`); return []; });
+    const lista = (Array.isArray(rows[0]) ? (rows[0] as any[]) : rows).concat(Array.isArray(rowsNormal[0]) ? (rowsNormal[0] as any[]) : rowsNormal); // pg devolve [linhas, n] no UPDATE
     const ids = lista.map((r: any) => r.id).filter(Boolean);
     if (!ids.length) return 0;
     // Sai da fila SWAT (ninguém mais é chamado pra ele).
@@ -110,10 +123,10 @@ export class BolsaoService {
       .catch(() => null);
     for (const id of ids) {
       await this.history
-        .log({ leadId: id, type: LeadHistoryType.SISTEMA, description: `Bolsão: o relógio da etapa zerou (SWAT) — liberado pros corretores pegarem.` })
+        .log({ leadId: id, type: LeadHistoryType.SISTEMA, description: `Bolsão: o relógio da etapa zerou — liberado pros corretores pegarem.` })
         .catch(() => {});
     }
-    this.logger.log(`Bolsão: ${ids.length} lead(s) SWAT com o relógio zerado foram pro Bolsão.`);
+    this.logger.log(`Bolsão: ${ids.length} lead(s) com o relógio zerado foram pro Bolsão.`);
     return ids.length;
   }
 

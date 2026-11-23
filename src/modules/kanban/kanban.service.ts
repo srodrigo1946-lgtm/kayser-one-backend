@@ -10,7 +10,7 @@ import { User } from "../users/user.entity";
 import { LeadsService } from "../leads/leads.service";
 import { UsersService } from "../users/users.service";
 import { KanbanColumnEntity } from "./kanban-column.entity";
-import { prazoBolsao } from "../../common/prazo-bolsao";
+import { prazoBolsao, FILA_NORMAL_DESDE } from "../../common/prazo-bolsao";
 
 // Colunas padrão — usadas apenas para semear o banco na primeira vez.
 export const KANBAN_COLUMNS = [
@@ -95,6 +95,28 @@ export class KanbanService {
         /* sem histórico/sqlite — usa updatedAt no fallback abaixo */
       }
     }
+    // Fila normal (23/11): quando chegou pro corretor — o relógio do Bolsão conta daí também.
+    const chegouNormal = new Map<string, Date>();
+    if (ids.length) {
+      try {
+        const rows: { id: string; dt: Date }[] = await this.leadsRepo.manager.query(
+          `SELECT "leadId" AS id, MAX("assignedAt") AS dt FROM lead_queue_assignments
+            WHERE swat = false AND "leadId" = ANY($1) AND "assignedAt" >= $2 GROUP BY "leadId"`,
+          [ids, FILA_NORMAL_DESDE]
+        );
+        for (const r of rows) chegouNormal.set(r.id, new Date(r.dt));
+      } catch {
+        /* sqlite/testes */
+      }
+    }
+    const relogio = (l: any) => {
+      if (l.bolsao) return null;
+      const base = new Date(l.etapaDesde ?? l.createdAt);
+      if (l.swat) return prazoBolsao(l.status, base);
+      const chegou = chegouNormal.get(l.id);
+      if (!chegou || l.bolsaoEm) return null; // já passou pelo Bolsão 1x
+      return prazoBolsao(l.status, chegou > base ? chegou : base);
+    };
 
     return columns.map((col) => ({
       id: col.key, // o front usa como status (drag & drop)
@@ -108,8 +130,8 @@ export class KanbanService {
         .map((l) => ({
           ...l,
           stageSince: sinceMap.get(l.id) ?? l.updatedAt,
-          // SWAT: quando o relógio zera e o lead cai no Bolsão (mesma conta do cron).
-          prazoBolsao: l.swat ? prazoBolsao(l.status, l.etapaDesde ?? l.createdAt) : null,
+          // SWAT e fila normal: quando o relógio zera e o lead cai no Bolsão (mesma conta do cron).
+          prazoBolsao: relogio(l),
         })),
     }));
   }

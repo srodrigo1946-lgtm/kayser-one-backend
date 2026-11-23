@@ -51,9 +51,20 @@ describe("Bolsão", () => {
 
   it("move os SWAT parados e tira da fila", async () => {
     const qs: string[] = [];
-    const leads = { query: async (q: string) => (qs.push(q), q.startsWith("UPDATE leads") ? [[{ id: "a" }, { id: "b" }], 2] : []) } as any;
+    const leads = {
+      query: async (q: string) => {
+        qs.push(q);
+        if (q.startsWith("UPDATE leads SET")) return [[{ id: "a" }, { id: "b" }], 2]; // SWAT
+        if (q.startsWith("UPDATE leads l")) return [[{ id: "c" }], 1]; // fila normal (23/11)
+        return [];
+      },
+    } as any;
     const s = new BolsaoService(leads, {} as any, hist);
-    expect(await s.moverParados()).toBe(2);
-    expect(qs.some((q) => q.includes("lead_queue_assignments"))).toBe(true);
+    expect(await s.moverParados()).toBe(3);
+    expect(qs.some((q) => q.includes("UPDATE lead_queue_assignments"))).toBe(true);
+    // Fila normal: só quem nunca passou pelo Bolsão e veio da fila normal.
+    const normal = qs.find((q) => q.startsWith("UPDATE leads l")) || "";
+    expect(normal).toContain('"bolsaoEm" IS NULL');
+    expect(normal).toContain("swat = false");
   });
 });

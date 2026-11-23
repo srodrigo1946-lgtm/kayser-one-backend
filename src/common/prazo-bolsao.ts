@@ -16,6 +16,9 @@ export const PRAZO_BOLSAO_HORAS: Record<string, number> = {
 };
 
 /** Quando o lead SWAT cai no Bolsão (null = etapa sem relógio). */
+/** Fila normal entra no Bolsão só pros leads distribuídos a partir daqui (regra nova de 23/11). */
+export const FILA_NORMAL_DESDE = "2026-11-23T00:00:00-03:00";
+
 export function prazoBolsao(status: string, entrouNaEtapa: Date | string | null | undefined): Date | null {
   const h = PRAZO_BOLSAO_HORAS[status];
   if (!h || !entrouNaEtapa) return null;
