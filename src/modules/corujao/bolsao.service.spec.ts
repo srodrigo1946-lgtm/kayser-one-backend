@@ -1,5 +1,5 @@
 import { BolsaoService, podePegarBolsao, bloqueadoNoBolsao } from "./bolsao.service";
-import { prazoBolsao } from "../../common/prazo-bolsao";
+import { prazoBolsao, ehLeadDeAnuncio } from "../../common/prazo-bolsao";
 
 const hist = { log: async () => null } as any;
 
@@ -66,5 +66,15 @@ describe("Bolsão", () => {
     const normal = qs.find((q) => q.startsWith("UPDATE leads l")) || "";
     expect(normal).toContain('"bolsaoEm" IS NULL');
     expect(normal).toContain("swat = false");
+    // Todos os leads de anúncio (23/11), contando a partir do início do SLA.
+    expect(normal).toContain("google_ads");
+    expect(normal).toContain("$3::timestamptz");
+  });
+
+  it("lead de anúncio = Meta (form/anúncio/WhatsApp), Google Ads ou Vitrine", () => {
+    expect(ehLeadDeAnuncio({ source: "formulario_meta" })).toBe(true);
+    expect(ehLeadDeAnuncio({ source: "manual", origem: "google_ads" })).toBe(true);
+    expect(ehLeadDeAnuncio({ source: "manual", campanha: "Vitrine Stillo" })).toBe(true);
+    expect(ehLeadDeAnuncio({ source: "planilha", origem: "Time Isaac" })).toBe(false);
   });
 });

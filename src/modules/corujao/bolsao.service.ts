@@ -7,7 +7,7 @@ import { Conversation } from "../conversations/conversation.entity";
 import { User, UserRole } from "../users/user.entity";
 import { LeadHistoryService } from "../lead-history/lead-history.service";
 import { LeadHistoryType } from "../lead-history/lead-history.entity";
-import { PRAZO_BOLSAO_HORAS, FILA_NORMAL_DESDE } from "../../common/prazo-bolsao";
+import { PRAZO_BOLSAO_HORAS, FILA_NORMAL_DESDE, SLA_ANUNCIO_DESDE, LEAD_ANUNCIO_SQL } from "../../common/prazo-bolsao";
 import { SettingsService } from "../settings/settings.service";
 
 /** Prazo da 1ª etapa (mostrado na tela); as outras etapas estão em PRAZO_BOLSAO_HORAS. */
@@ -101,19 +101,22 @@ export class BolsaoService {
       RETURNING id`,
       [Object.keys(PRAZO_BOLSAO_HORAS)]
     );
-    // Fila NORMAL também (Rodrigo 23/11): mesmo relógio, contando de quando o lead chegou
-    // pro corretor. Só quem passou 1x pelo Bolsão não volta ("bolsaoEm" vazio) e só
-    // leads distribuídos a partir de FILA_NORMAL_DESDE (não despeja o histórico antigo).
+    // Fila NORMAL e TODOS os leads de anúncio (Facebook/Meta e Google Ads) — Rodrigo 23/11.
+    // Relógio = maior entre: entrou na etapa, chegou pro corretor pela fila, início do SLA
+    // (SLA_ANUNCIO_DESDE — histórico antigo não despenca). Só 1x: "bolsaoEm" vazio.
     const rowsNormal: { id: string }[] = await this.leadsRepo.query(
       `UPDATE leads l SET bolsao = true, "bolsaoEm" = now()
-         FROM (SELECT "leadId", MAX("assignedAt") AS chegou FROM lead_queue_assignments
-                WHERE swat = false AND "leadId" IS NOT NULL AND "assignedAt" >= $2 GROUP BY "leadId") a
-        WHERE l.id = a."leadId" AND l.swat = false AND l.bolsao = false AND l."bolsaoEm" IS NULL
-          AND l.status::text = ANY($1)
-          AND GREATEST(COALESCE(l."etapaDesde", l."createdAt"), a.chegou) <= now() - (CASE l.status::text ${casos} END) * interval '1 hour'
+         FROM (SELECT x.id, (SELECT MAX(a."assignedAt") FROM lead_queue_assignments a
+                              WHERE a."leadId" = x.id AND a.swat = false AND a."assignedAt" >= $2) AS chegou
+                 FROM leads x
+                WHERE x.swat = false AND x.bolsao = false AND x."bolsaoEm" IS NULL AND x.status::text = ANY($1)) c
+        WHERE l.id = c.id
+          AND (${LEAD_ANUNCIO_SQL} OR c.chegou IS NOT NULL)
+          AND GREATEST(COALESCE(l."etapaDesde", l."createdAt"), COALESCE(c.chegou, $3::timestamptz), $3::timestamptz)
+              <= now() - (CASE l.status::text ${casos} END) * interval '1 hour'
       RETURNING l.id`,
-      [Object.keys(PRAZO_BOLSAO_HORAS), FILA_NORMAL_DESDE]
-    ).catch((e: any) => { this.logger.warn(`Bolsão fila normal: ${e?.message}`); return []; });
+      [Object.keys(PRAZO_BOLSAO_HORAS), FILA_NORMAL_DESDE, SLA_ANUNCIO_DESDE]
+    ).catch((e: any) => { this.logger.warn(`Bolsão fila normal/anúncio: ${e?.message}`); return []; });
     const lista = (Array.isArray(rows[0]) ? (rows[0] as any[]) : rows).concat(Array.isArray(rowsNormal[0]) ? (rowsNormal[0] as any[]) : rowsNormal); // pg devolve [linhas, n] no UPDATE
     const ids = lista.map((r: any) => r.id).filter(Boolean);
     if (!ids.length) return 0;

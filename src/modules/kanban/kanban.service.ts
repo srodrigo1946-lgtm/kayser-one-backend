@@ -10,7 +10,7 @@ import { User } from "../users/user.entity";
 import { LeadsService } from "../leads/leads.service";
 import { UsersService } from "../users/users.service";
 import { KanbanColumnEntity } from "./kanban-column.entity";
-import { prazoBolsao, FILA_NORMAL_DESDE } from "../../common/prazo-bolsao";
+import { prazoBolsao, FILA_NORMAL_DESDE, SLA_ANUNCIO_DESDE, ehLeadDeAnuncio } from "../../common/prazo-bolsao";
 
 // Colunas padrão — usadas apenas para semear o banco na primeira vez.
 export const KANBAN_COLUMNS = [
@@ -114,8 +114,10 @@ export class KanbanService {
       const base = new Date(l.etapaDesde ?? l.createdAt);
       if (l.swat) return prazoBolsao(l.status, base);
       const chegou = chegouNormal.get(l.id);
-      if (!chegou || l.bolsaoEm) return null; // já passou pelo Bolsão 1x
-      return prazoBolsao(l.status, chegou > base ? chegou : base);
+      if (l.bolsaoEm || (!chegou && !ehLeadDeAnuncio(l))) return null; // já passou 1x / não é anúncio nem fila
+      // Mesma conta do cron: maior entre etapa, chegada pela fila e início do SLA de anúncio.
+      const t = Math.max(base.getTime(), chegou?.getTime() ?? 0, new Date(SLA_ANUNCIO_DESDE).getTime());
+      return prazoBolsao(l.status, new Date(t));
     };
 
     return columns.map((col) => ({
