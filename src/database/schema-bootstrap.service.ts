@@ -113,6 +113,23 @@ export class SchemaBootstrapService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS bolsao boolean NOT NULL DEFAULT false`);
         await this.dataSource.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "bolsaoEm" timestamptz`);
       }],
+      // Discador (24/11): config + registro das ligações.
+      ["discador", async () => {
+        await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "discadorLigado" boolean NOT NULL DEFAULT false`);
+        await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "discadorCorretores" text`);
+        await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "discadorNumeros" text`);
+        await this.dataSource.query(`CREATE TABLE IF NOT EXISTS discador_ligacoes (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "leadId" varchar NOT NULL,
+          "userId" varchar NOT NULL,
+          resultado varchar NOT NULL,
+          "duracaoSeg" int,
+          anotacao text,
+          "whatsappEnviado" boolean NOT NULL DEFAULT false,
+          "createdAt" timestamptz NOT NULL DEFAULT now()
+        )`);
+        await this.dataSource.query(`CREATE INDEX IF NOT EXISTS idx_discador_data ON discador_ligacoes ("createdAt")`);
+      }],
       // Bolsão: bloqueados de pegar (22/11).
       ["bolsaoBloqueados", async () => {
         await this.dataSource.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bolsaoBloqueados" text`);

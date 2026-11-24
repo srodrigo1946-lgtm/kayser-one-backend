@@ -48,6 +48,16 @@ export class Settings {
   @Column({ type: "text", nullable: true })
   bolsaoBloqueados: string | null;
 
+  // Discador (24/11): liga/desliga, corretores incluídos e os 3 números virtuais (vírgula).
+  @Column({ type: "boolean", default: false })
+  discadorLigado: boolean;
+
+  @Column({ type: "text", nullable: true })
+  discadorCorretores: string | null;
+
+  @Column({ type: "text", nullable: true })
+  discadorNumeros: string | null;
+
   @Column({ type: "text", nullable: true })
   ioneOpenaiKey: string | null;
 
