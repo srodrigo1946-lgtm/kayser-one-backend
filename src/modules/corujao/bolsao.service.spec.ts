@@ -62,9 +62,9 @@ describe("Bolsão", () => {
     const s = new BolsaoService(leads, {} as any, hist);
     expect(await s.moverParados()).toBe(3);
     expect(qs.some((q) => q.includes("UPDATE lead_queue_assignments"))).toBe(true);
-    // Fila normal: só quem nunca passou pelo Bolsão e veio da fila normal.
+    // Fila normal / anúncio: fora da SWAT e fora do Bolsão (pode voltar depois de pego).
     const normal = qs.find((q) => q.startsWith("UPDATE leads l")) || "";
-    expect(normal).toContain('"bolsaoEm" IS NULL');
+    expect(normal).toContain("x.bolsao = false");
     expect(normal).toContain("swat = false");
     // Todos os leads de anúncio (23/11), contando a partir do início do SLA.
     expect(normal).toContain("google_ads");

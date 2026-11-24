@@ -114,7 +114,7 @@ export class KanbanService {
       const base = new Date(l.etapaDesde ?? l.createdAt);
       if (l.swat) return prazoBolsao(l.status, base);
       const chegou = chegouNormal.get(l.id);
-      if (l.bolsaoEm || (!chegou && !ehLeadDeAnuncio(l))) return null; // já passou 1x / não é anúncio nem fila
+      if (!chegou && !ehLeadDeAnuncio(l)) return null; // não é anúncio nem veio da fila
       // Mesma conta do cron: maior entre etapa, chegada pela fila e início do SLA de anúncio.
       const t = Math.max(base.getTime(), chegou?.getTime() ?? 0, new Date(SLA_ANUNCIO_DESDE).getTime());
       return prazoBolsao(l.status, new Date(t));

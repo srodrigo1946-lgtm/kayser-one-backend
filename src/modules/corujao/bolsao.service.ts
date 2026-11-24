@@ -103,13 +103,14 @@ export class BolsaoService {
     );
     // Fila NORMAL e TODOS os leads de anúncio (Facebook/Meta e Google Ads) — Rodrigo 23/11.
     // Relógio = maior entre: entrou na etapa, chegou pro corretor pela fila, início do SLA
-    // (SLA_ANUNCIO_DESDE — histórico antigo não despenca). Só 1x: "bolsaoEm" vazio.
+    // (SLA_ANUNCIO_DESDE — histórico antigo não despenca). Pegou do Bolsão e parou de novo →
+    // volta (24/11: o relógio vale sempre; ao pegar, etapaDesde recomeça).
     const rowsNormal: { id: string }[] = await this.leadsRepo.query(
       `UPDATE leads l SET bolsao = true, "bolsaoEm" = now()
          FROM (SELECT x.id, (SELECT MAX(a."assignedAt") FROM lead_queue_assignments a
                               WHERE a."leadId" = x.id AND a.swat = false AND a."assignedAt" >= $2) AS chegou
                  FROM leads x
-                WHERE x.swat = false AND x.bolsao = false AND x."bolsaoEm" IS NULL AND x.status::text = ANY($1)) c
+                WHERE x.swat = false AND x.bolsao = false AND x.status::text = ANY($1)) c
         WHERE l.id = c.id
           AND (${LEAD_ANUNCIO_SQL} OR c.chegou IS NOT NULL)
           AND GREATEST(COALESCE(l."etapaDesde", l."createdAt"), COALESCE(c.chegou, $3::timestamptz), $3::timestamptz)
@@ -159,7 +160,8 @@ export class BolsaoService {
     const r = await this.leadsRepo
       .createQueryBuilder()
       .update(Lead)
-      .set({ responsavelId: user.id, status: LeadStatus.PRIMEIRO_CONTATO, bolsao: false } as any)
+      // etapaDesde = agora: o relógio recomeça pra quem pegou (zerou de novo → volta pro Bolsão).
+      .set({ responsavelId: user.id, status: LeadStatus.PRIMEIRO_CONTATO, bolsao: false, etapaDesde: () => "now()" } as any)
       .where("id = :id", { id: leadId })
       .andWhere("bolsao = true")
       .execute();
