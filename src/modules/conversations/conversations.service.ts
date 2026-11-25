@@ -470,12 +470,31 @@ export class ConversationsService {
       const { mediaKey, ...rest } = m;
       return { ...rest, hasMedia: !!mediaKey };
     });
-    // Marca como lida
-    if (conv.unreadCount > 0) {
+    // Marca como lida — só quando quem abre é o dono da conversa (ou ela não tem dono).
+    // Diretor/gestor espiando não apaga o aviso "cliente respondeu" do corretor (25/11).
+    const dono = conv.assignedToId || conv.lead?.responsavelId;
+    if (conv.unreadCount > 0 && (!dono || dono === user.id)) {
       conv.unreadCount = 0;
-      await this.convRepo.save(conv);
+      await this.convRepo.update(conv.id, { unreadCount: 0 });
     }
     return { conversation: conv, messages };
+  }
+
+  /**
+   * Devolve o "não lida" das conversas dos últimos 2 dias cuja última mensagem é do cliente
+   * (conta as mensagens dele depois da nossa última). Conserto de 25/11: a leitura em massa
+   * da auditoria tinha zerado os avisos dos corretores.
+   */
+  async restaurarNaoLidas(): Promise<{ restauradas: number }> {
+    const r = await this.convRepo.query(
+      `UPDATE conversations c SET "unreadCount" = t.n FROM (
+         SELECT c2.id, (SELECT count(*) FROM messages m WHERE m."conversationId" = c2.id AND m.direction = 'in'
+                  AND m."createdAt" > COALESCE((SELECT max(o."createdAt") FROM messages o WHERE o."conversationId" = c2.id AND o.direction = 'out'), 'epoch')) AS n
+           FROM conversations c2
+          WHERE c2."isGroup" = false AND c2."unreadCount" = 0 AND c2."lastMessageAt" > now() - interval '2 days'
+       ) t WHERE t.id = c.id AND t.n > 0`
+    );
+    return { restauradas: Array.isArray(r) ? Number(r[1] ?? 0) : 0 };
   }
 
   /**

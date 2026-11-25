@@ -48,6 +48,14 @@ export class ConversationsController {
     return this.conversationsService.limparLinksAnuncio(true);
   }
 
+  @Post("restaurar-nao-lidas")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.DIRETOR)
+  @ApiOperation({ summary: "Devolve o 'não lida' das conversas recentes em que o cliente espera resposta" })
+  restaurarNaoLidas() {
+    return this.conversationsService.restaurarNaoLidas();
+  }
+
   @Post("iniciar")
   @ApiOperation({ summary: "Iniciar conversa pelo lead (cria se não existe) — o corretor manda a 1ª mensagem" })
   iniciar(@Body() body: { leadId: string }, @Request() req: any) {
