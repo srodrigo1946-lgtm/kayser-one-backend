@@ -300,7 +300,7 @@ export class ReengajamentoService {
       `SELECT l.id, l.name,
               (SELECT string_agg(m.content, ' | ' ORDER BY m."createdAt") FROM messages m JOIN conversations c ON c.id = m."conversationId"
                 WHERE c."leadId" = l.id AND m.direction = 'in' AND m."createdAt" >= l."reengajadoEm") AS texto,
-              EXISTS (SELECT 1 FROM reengajamento_eventos e WHERE e."leadId" = l.id AND e.tipo = 'nao') AS "jaNao"
+              EXISTS (SELECT 1 FROM reengajamento_eventos e WHERE e."leadId" = l.id::text AND e.tipo = 'nao') AS "jaNao"
          FROM leads l
         WHERE l."reengajadoEm" IS NOT NULL`
     );
