@@ -6,6 +6,12 @@ describe("Reengajamento dos clientes 'sem interesse'", () => {
       expect(classificarResposta(t)).toBe("nao");
     }
   });
+  it("qualquer negativo também é NÃO (Rodrigo 25/11)", () => {
+    for (const t of ["Não estou procurando", "já tenho apartamento", "estou sem condições", "não tenho condições agora", "número errado", "foi engano", "não me mande mais nada", "Não no momento, obrigada"]) {
+      expect(classificarResposta(t)).toBe("nao");
+    }
+    expect(classificarResposta("já tenho o FGTS")).not.toBe("nao");
+  });
   it("entende SIM (vai pra fila)", () => {
     for (const t of ["Sim", "tenho interesse", "quero saber", "pode mandar", "me conta", "Opa, quais as condições?", "manda mais informações", "Gostei, quero saber mais", "qual o valor?", "estou interessada", "dá pra agendar uma visita?"]) {
       expect(classificarResposta(t)).toBe("sim");
@@ -34,6 +40,7 @@ describe("Fila da Equipe (25/10)", () => {
       findOne: async () => lead,
       update: async (_id: string, d: any) => updates.push(d),
       remove: async () => null,
+      delete: async (w: any) => sql.push(`DELETE ${w.id}`),
       manager: { query: async () => [] },
       query: async (q: string, p: any[]) => {
         sql.push(q);
@@ -85,9 +92,13 @@ describe("Fila da Equipe (25/10)", () => {
   });
 
   it("NÃO tira o lead do Kayser", async () => {
-    const { s, enviados } = montar({ ...base });
+    const { s, enviados, sql } = montar({ ...base });
     expect(await s.tratarResposta("L1", "não tenho interesse", "inst", "55219")).toBe(true);
     expect(enviados[0]).toContain("Não vamos mais te enviar");
+    // Solta a conversa ANTES de apagar (a FK travava o delete e o lead ficava no Kayser).
+    const solta = sql.findIndex((q) => q.includes('SET "naoLead" = true'));
+    expect(solta).toBeGreaterThanOrEqual(0);
+    expect(sql.indexOf("DELETE L1")).toBeGreaterThan(solta);
   });
 
   it("1º contato: 4 textos alternados (o 4º é do Rodrigo), com o nome e a saída", () => {

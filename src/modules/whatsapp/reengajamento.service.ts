@@ -98,7 +98,7 @@ export function dividirHora<T>(equipe: T[], diretor: T[], total: number): T[] {
 export function classificarResposta(texto: string): "sim" | "nao" | "outro" {
   const t = (texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   if (!t) return "outro";
-  if (pedeParar(texto) || /^(nao|n|nao obrigad\w*|obrigad\w*,? nao|sem interesse|nao tenho interesse|nao quero|ja comprei|ja comprei outro|nao preciso)\b[.!]*/.test(t) || /\b(sem interesse|nao tenho (mais )?interesse|nao quero|ja comprei)\b/.test(t) || /\bnao[.!\s]*$/.test(t)) {
+  if (pedeParar(texto) || /^(nao|n|nao obrigad\w*|obrigad\w*,? nao|sem interesse|nao tenho interesse|nao quero|ja comprei|ja comprei outro|nao preciso)\b[.!]*/.test(t) || /\b(sem interesse|nao tenho (mais )?interesse|nao quero|ja comprei|nao (estou|to|tou) (mais )?(procurando|buscando|interessad\w*)|ja (tenho|adquiri|comprei) (minha |meu |um |uma )?(casa|imovel|apartamento|apto|ap)\b|sem condic\w*|nao (tenho|estou com|to com) condic\w*|nao no momento|numero errado|e engano|foi engano|nao (me )?(mande|mandem|envie|enviem|ligue|liguem)|nao e (do )?meu interesse)\b/.test(t) || /\bnao[.!\s]*$/.test(t)) {
     // "Quero não" / "agora não" (fim com "não") também é não.
     return "nao";
   }
@@ -270,10 +270,63 @@ export class ReengajamentoService {
     await this.whatsapp
       .sendText(instancia, destino, `Tudo bem${nome ? `, ${nome}` : ""}! Não vamos mais te enviar mensagens. Obrigado pela atenção 🙏`)
       .catch(() => null);
-    await bloquearTelefones(this.leads.manager, lead.phone, lead.whatsapp).catch(() => null);
-    await this.leads.remove(lead).catch((e) => this.logger.warn(`Reengajamento: não removi o lead ${lead.id} (${e.message}).`));
+    await this.tirarDoKayser(lead);
     this.logger.log(`Reengajamento: lead ${lead.id} disse NÃO — removido do Kayser.`);
     return true;
+  }
+
+  /** Bloqueia o telefone e apaga o lead. Solta a conversa antes (FK travava o delete e o lead ficava). */
+  private async tirarDoKayser(lead: Lead): Promise<boolean> {
+    await bloquearTelefones(this.leads.manager, lead.phone, lead.whatsapp).catch(() => null);
+    await this.leads
+      .query(`UPDATE conversations SET "naoLead" = true, "leadId" = NULL, "assignedToId" = NULL WHERE "leadId" = $1`, [lead.id])
+      .catch(() => null);
+    return this.leads
+      .delete({ id: lead.id })
+      .then(() => true)
+      .catch((e) => {
+        this.logger.warn(`Reengajamento: não removi o lead ${lead.id} (${e.message}).`);
+        return false;
+      });
+  }
+
+  /**
+   * Faxina (Rodrigo 25/11 "todos os não e qualquer negativo, remover do sistema"): leads que
+   * responderam NÃO e ainda estão no Kayser + leads chamados (Fila da Equipe / reengajamento)
+   * cuja resposta do cliente é negativa. Sem mensagem pro cliente. aplicar=false só lista.
+   */
+  async limparNegativos(aplicar: boolean) {
+    const rows: { id: string; name: string; texto: string | null; jaNao: boolean }[] = await this.leads.query(
+      `SELECT l.id, l.name,
+              (SELECT string_agg(m.content, ' | ' ORDER BY m."createdAt") FROM messages m JOIN conversations c ON c.id = m."conversationId"
+                WHERE c."leadId" = l.id AND m.direction = 'in' AND m."createdAt" >= l."reengajadoEm") AS texto,
+              EXISTS (SELECT 1 FROM reengajamento_eventos e WHERE e."leadId" = l.id AND e.tipo = 'nao') AS "jaNao"
+         FROM leads l
+        WHERE l."reengajadoEm" IS NOT NULL`
+    );
+    const alvos = rows.filter((r) => {
+      if (r.jaNao) return true;
+      // Última fala do cliente decide (quem disse "não" e depois "quero sim" fica).
+      const falas = (r.texto || "").split(" | ").filter(Boolean);
+      const ultima = falas[falas.length - 1];
+      return !!ultima && classificarResposta(ultima) === "nao";
+    });
+    let removidos = 0;
+    if (aplicar) {
+      for (const r of alvos) {
+        const lead = await this.leads.findOne({ where: { id: r.id } });
+        if (!lead) continue;
+        if (!r.jaNao) await this.registrar(lead, "nao", (r.texto || "").slice(-500), lead.filaEquipeId);
+        if (await this.tirarDoKayser(lead)) removidos++;
+      }
+      this.logger.log(`Reengajamento: faxina dos negativos — ${removidos}/${alvos.length} lead(s) removido(s).`);
+    }
+    return {
+      encontrados: alvos.length,
+      removidos,
+      jaDisseramNao: alvos.filter((r) => r.jaNao).length,
+      lista: alvos.slice(0, 300).map((r) => ({ nome: r.name, resposta: (r.texto || "").slice(-160) })),
+    };
   }
 
   /**

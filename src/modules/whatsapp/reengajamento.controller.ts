@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Put, Query, Request, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Param, Post, Put, Query, Request, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsArray, IsBoolean, IsString } from "class-validator";
@@ -21,6 +21,18 @@ export class ReengajamentoController {
   @ApiOperation({ summary: "Enviados, sim (fila), não (removidos), aguardando e últimas respostas" })
   painel() {
     return this.reengajamento.painel();
+  }
+
+  @Get("negativos")
+  @ApiOperation({ summary: "Prévia: leads que disseram NÃO / responderam negativo e ainda estão no Kayser" })
+  negativos() {
+    return this.reengajamento.limparNegativos(false);
+  }
+
+  @Post("negativos/limpar")
+  @ApiOperation({ summary: "Remove do Kayser (e bloqueia o telefone) todos os negativos da prévia" })
+  limparNegativos() {
+    return this.reengajamento.limparNegativos(true);
   }
 
   @Get("relatorio")
