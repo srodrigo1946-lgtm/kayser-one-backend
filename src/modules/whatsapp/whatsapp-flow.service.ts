@@ -95,6 +95,22 @@ Hoje é ${hoje} (horário de Brasília). Nenhum corretor está de plantão agora
 }
 
 /**
+ * Cliente respondeu à nossa chamada (reengajamento / 1º contato da planilha) com pergunta
+ * ou comentário ("depende do local", "em qual estado?"): a IA conversa e qualifica (Rodrigo 25/11).
+ */
+export function promptRespostaChamada(marca?: string | null): string {
+  const quem = marca ? `a *One*, assistente virtual da *${marca}* (não use o nome "Kayser")` : "o *Kayser*, assistente virtual da equipe";
+  return `=== O CLIENTE RESPONDEU À NOSSA MENSAGEM — VOCÊ CONTINUA A CONVERSA ===
+Nós mandamos uma mensagem para este cliente e ele respondeu com uma pergunta ou comentário. Você é ${quem}.
+- Se ainda não se apresentou nesta conversa, apresente-se numa frase curta e já responda o que ele perguntou.
+- Responda SÓ com a base de conhecimento e a lista de empreendimentos; se não souber, diga que o especialista confirma.
+- Descubra com naturalidade, uma pergunta por vez: região/bairro de interesse, quantos quartos, renda, FGTS/entrada.
+- Se ele procura uma região onde não temos empreendimento, diga com sinceridade e pergunte se outra região serve.
+- Se ele quiser valores, visita ou falar com alguém, diga que um especialista vai falar com ele em seguida.
+- Formato WhatsApp: mensagens curtas, negrito com UMA estrela, sem títulos nem tabelas. Não prometa preço/condição fora da base.`;
+}
+
+/**
  * Cartão do anúncio (29/10): o que o WhatsApp mostra em cima da 1ª mensagem do cliente —
  * título, texto, imagem e link. A imagem vem como URL (thumbnailUrl/mediaUrl) ou em base64
  * (thumbnail). Sem título nem imagem, não há o que mostrar → undefined.
@@ -368,13 +384,26 @@ export class WhatsappFlowService {
         // Score em TODA conversa com lead — no plantão também (a IA só lê, não responde).
         this.agendarScore(conv.id, conv.leadId);
         // Resposta ao reengajamento ("sem interesse"): NÃO → sai do Kayser; SIM → fila.
-        if (await this.reengajamento.tratarResposta(conv.leadId, textoCliente, instanceName, remoteJidFull).catch(() => false)) {
+        const re = await this.reengajamento.tratarResposta(conv.leadId, textoCliente, instanceName, remoteJidFull).catch(() => false);
+        if (re === "ia") {
+          // Pergunta/comentário à nossa chamada: a IA responde e qualifica — a não ser que um humano já esteja na conversa.
+          if ((!mediaType || audioTranscrito) && !(await this.conversations.humanoRespondeuRecente(conv.id, 12))) {
+            const marca = (await this.settings.get()).marcaNome;
+            return this.responderForaDoPlantao(conv, instanceName, remoteJidFull, responderEmAudio, promptRespostaChamada(marca));
+          }
           return { persisted: true, autoReply: false, reengajamento: true };
         }
+        if (re) return { persisted: true, autoReply: false, reengajamento: true };
         // Respondeu NÃO à mensagem que oferecia sair ("digite NÃO para sair") → sai do Kayser One.
         if (recusou(textoCliente) && (await this.conversations.removerSeRecusou(conv).catch(() => false))) {
           this.logger.log(`Cliente ${remoteJid} respondeu NÃO à oferta de sair — removido do Kayser One.`);
           return { persisted: true, autoReply: false, recusou: true };
+        }
+        // "Não, obrigada" à boas-vindas (sem oferta de sair): lead novo vira "sem interesse" (Rodrigo 25/11).
+        if (recusou(textoCliente) && (await this.conversations.semInteresseSeRecusou(conv).catch(() => false))) {
+          this.logger.log(`Cliente ${remoteJid} recusou na boas-vindas — lead marcado sem interesse.`);
+          await this.enviarResposta(conv.id, instanceName, remoteJidFull, "Tudo bem! Obrigado pela atenção 🙏 Se mudar de ideia, é só chamar por aqui.").catch(() => null);
+          return { persisted: true, autoReply: true, semInteresse: true };
         }
       }
 
@@ -465,7 +494,8 @@ export class WhatsappFlowService {
     conv: { id: string; leadId?: string | null },
     instanceName: string | undefined,
     remoteJidFull: string,
-    clienteMandouAudio = false
+    clienteMandouAudio = false,
+    instrucao?: string
   ) {
     const settings = await this.settings.get();
     if (!settings.aiAutoReply || settings.whatsappPausado) return { persisted: true, autoReply: false, central: true };
@@ -479,7 +509,7 @@ export class WhatsappFlowService {
           history,
           undefined,
           [
-            promptForaDoPlantao((settings as any).marcaNome),
+            instrucao ?? promptForaDoPlantao((settings as any).marcaNome),
             await this.extraEmpreendimentos(conv.leadId),
             semEmail ? PROMPT_PEDIR_EMAIL : "",
             clienteMandouAudio ? PROMPT_RESPOSTA_FALADA : "",

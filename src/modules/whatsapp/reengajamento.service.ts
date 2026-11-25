@@ -228,9 +228,10 @@ export class ReengajamentoService {
 
   /**
    * Cliente reengajado respondeu (até 15 dias depois). "Não" → sai do Kayser (e o
-   * telefone não volta); "sim" → vai pra fila de atendimento. Devolve true se tratou.
+   * telefone não volta); "sim" → vai pra fila de atendimento. Devolve true se tratou;
+   * "ia" = respondeu outra coisa (pergunta, "depende", "bom dia") → a IA conversa e qualifica (Rodrigo 25/11).
    */
-  async tratarResposta(leadId: string, texto: string, instancia: string, destino: string): Promise<boolean> {
+  async tratarResposta(leadId: string, texto: string, instancia: string, destino: string): Promise<boolean | "ia"> {
     const lead = await this.leads.findOne({ where: { id: leadId } });
     if (lead?.filaEquipeId) return this.respostaDaEquipe(lead, texto, instancia, destino);
     // Prazo de resposta conta da última chamada (1ª ou 2ª).
@@ -240,7 +241,7 @@ export class ReengajamentoService {
     // Palavras conhecidas primeiro; o que não der pra saber, a IA decide.
     let r = classificarResposta(texto);
     if (r === "outro") r = await this.ai.classificarInteresse(texto);
-    if (r === "outro") return false;
+    if (r === "outro") return "ia";
     const nome = primeiroNome(lead.name);
     await this.registrar(lead, r, texto);
     if (r === "nao") return this.removerPorNao(lead, instancia, destino);
@@ -281,14 +282,15 @@ export class ReengajamentoService {
    * "sim" → rodízio entre os corretores da equipe (sem check-in); "não" → sai do Kayser;
    * outra coisa → fica com o gestor em Conversas ao vivo.
    */
-  private async respostaDaEquipe(lead: Lead, texto: string, instancia: string, destino: string): Promise<boolean> {
+  private async respostaDaEquipe(lead: Lead, texto: string, instancia: string, destino: string): Promise<boolean | "ia"> {
     const chamadoEm = (lead as any).reengajadoEm ? new Date((lead as any).reengajadoEm).getTime() : 0;
     if (!chamadoEm) return true; // ainda não chamado
     const jaTratado = lead.transferidoPorId === lead.filaEquipeId && !!lead.transferidoEm && new Date(lead.transferidoEm).getTime() >= chamadoEm;
     if (jaTratado) return true; // já disse sim e foi pro corretor
     let r = classificarResposta(texto);
     if (r === "outro") r = await this.ai.classificarInteresse(texto);
-    if (r === "outro") return true;
+    // Pergunta/comentário até 15 dias depois da chamada: a IA responde e qualifica (antes ficava parado com o gestor).
+    if (r === "outro") return Date.now() - chamadoEm <= 15 * 86_400_000 ? "ia" : true;
     await this.registrar(lead, r, texto, lead.filaEquipeId);
     if (r === "nao") return this.removerPorNao(lead, instancia, destino);
     const nome = primeiroNome(lead.name);

@@ -299,6 +299,18 @@ export class ConversationsService {
     return true;
   }
 
+  /**
+   * "Não, obrigada" à boas-vindas (mensagem SEM oferta de sair): lead ainda em Novo Lead / 1º contato
+   * vira "sem interesse" (não é apagado — o reengajamento pode chamar depois). Devolve true se marcou.
+   */
+  async semInteresseSeRecusou(conv: Conversation): Promise<boolean> {
+    if (conv.isGroup || conv.naoLead || !conv.leadId) return false;
+    const lead = await this.leadsRepo.findOne({ where: { id: conv.leadId }, select: ["id", "status"] });
+    if (!lead || ![LeadStatus.NOVO_LEAD, LeadStatus.PRIMEIRO_CONTATO].includes(lead.status as LeadStatus)) return false;
+    await this.leads.updateStatus(lead.id, LeadStatus.VENDA_PERDIDA, undefined, undefined, "Cliente respondeu que não tem interesse (automático)");
+    return true;
+  }
+
   /** Casos antigos: resposta curta do cliente logo depois da nossa mensagem que oferecia sair. */
   async candidatosRecusaram(): Promise<{ id: string; leadId: string; nome: string | null; status: string | null; resposta: string; nossa: string }[]> {
     return this.convRepo.query(

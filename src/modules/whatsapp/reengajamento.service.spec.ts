@@ -65,9 +65,9 @@ describe("Fila da Equipe (25/10)", () => {
     expect(enviados[0]).toContain("especialista da Kayser");
   });
 
-  it("lead de equipe nunca cai na fila central: resposta solta fica com o gestor", async () => {
+  it("lead de equipe nunca cai na fila central: resposta solta → a IA conversa (25/11), sem mexer no lead", async () => {
     const { s, updates } = montar({ ...base });
-    expect(await s.tratarResposta("L1", "quem é?", "inst", "55219")).toBe(true);
+    expect(await s.tratarResposta("L1", "quem é?", "inst", "55219")).toBe("ia");
     expect(updates).toHaveLength(0);
     // já disse sim e foi pro corretor: também não mexe
     const j = montar({ ...base, responsavelId: "c1", transferidoPorId: "g1", transferidoEm: new Date(Date.now() + 1000) });
