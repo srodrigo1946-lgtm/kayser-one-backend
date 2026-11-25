@@ -1,12 +1,16 @@
 import { Body, Controller, ForbiddenException, Get, Param, Post, Put, Query, Request, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsString } from "class-validator";
+import { IsArray, IsBoolean, IsOptional, IsString } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
 import { ReengajamentoService } from "./reengajamento.service";
+
+class IdsDto {
+  @IsOptional() @IsArray() @IsString({ each: true }) ids?: string[];
+}
 
 /** Acompanhamento do reengajamento dos "sem interesse" (só Diretor). */
 @ApiTags("Reengajamento")
@@ -31,8 +35,8 @@ export class ReengajamentoController {
 
   @Post("negativos/limpar")
   @ApiOperation({ summary: "Remove do Kayser (e bloqueia o telefone) todos os negativos da prévia" })
-  limparNegativos() {
-    return this.reengajamento.limparNegativos(true);
+  limparNegativos(@Body() dto: IdsDto) {
+    return this.reengajamento.limparNegativos(true, dto?.ids);
   }
 
   @Get("relatorio")

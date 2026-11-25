@@ -98,6 +98,10 @@ export function dividirHora<T>(equipe: T[], diretor: T[], total: number): T[] {
 export function classificarResposta(texto: string): "sim" | "nao" | "outro" {
   const t = (texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   if (!t) return "outro";
+  // "Não me lembro, pode me passar como funciona?" — não com pedido de informação = dúvida, a IA decide.
+  if (!pedeParar(texto) && /\?|\b(pode me (passar|mandar|enviar|explicar)|como funciona|quero saber|me (manda|passa|explica))\b/.test(t)) {
+    if (/^(nao|n)\b/.test(t) && !/\b(sem interesse|nao tenho (mais )?interesse|nao quero)\b/.test(t)) return "outro";
+  }
   if (pedeParar(texto) || /^(nao|n|nao obrigad\w*|obrigad\w*,? nao|sem interesse|nao tenho interesse|nao quero|ja comprei|ja comprei outro|nao preciso)\b[.!]*/.test(t) || /\b(sem interesse|nao tenho (mais )?interesse|nao quero|ja comprei|nao (estou|to|tou) (mais )?(procurando|buscando|interessad\w*)|ja (tenho|adquiri|comprei) (minha |meu |um |uma )?(casa|imovel|apartamento|apto|ap)\b|sem condic\w*|nao (tenho|estou com|to com) condic\w*|nao no momento|numero errado|e engano|foi engano|nao (me )?(mande|mandem|envie|enviem|ligue|liguem)|nao e (do )?meu interesse)\b/.test(t) || /\bnao[.!\s]*$/.test(t)) {
     // "Quero não" / "agora não" (fim com "não") também é não.
     return "nao";
@@ -295,7 +299,7 @@ export class ReengajamentoService {
    * responderam NÃO e ainda estão no Kayser + leads chamados (Fila da Equipe / reengajamento)
    * cuja resposta do cliente é negativa. Sem mensagem pro cliente. aplicar=false só lista.
    */
-  async limparNegativos(aplicar: boolean) {
+  async limparNegativos(aplicar: boolean, soIds?: string[]) {
     const rows: { id: string; name: string; texto: string | null; jaNao: boolean }[] = await this.leads.query(
       `SELECT l.id, l.name,
               (SELECT string_agg(m.content, ' | ' ORDER BY m."createdAt") FROM messages m JOIN conversations c ON c.id = m."conversationId"
@@ -313,7 +317,8 @@ export class ReengajamentoService {
     });
     let removidos = 0;
     if (aplicar) {
-      for (const r of alvos) {
+      // O Diretor confere a prévia e manda só os ids que aprovou.
+      for (const r of alvos.filter((a) => !soIds || soIds.includes(a.id))) {
         const lead = await this.leads.findOne({ where: { id: r.id } });
         if (!lead) continue;
         if (!r.jaNao) await this.registrar(lead, "nao", (r.texto || "").slice(-500), lead.filaEquipeId);
@@ -325,7 +330,7 @@ export class ReengajamentoService {
       encontrados: alvos.length,
       removidos,
       jaDisseramNao: alvos.filter((r) => r.jaNao).length,
-      lista: alvos.slice(0, 300).map((r) => ({ nome: r.name, resposta: (r.texto || "").slice(-160) })),
+      lista: alvos.slice(0, 300).map((r) => ({ id: r.id, nome: r.name, resposta: (r.texto || "").slice(-160) })),
     };
   }
 

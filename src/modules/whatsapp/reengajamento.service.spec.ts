@@ -11,6 +11,7 @@ describe("Reengajamento dos clientes 'sem interesse'", () => {
       expect(classificarResposta(t)).toBe("nao");
     }
     expect(classificarResposta("já tenho o FGTS")).not.toBe("nao");
+    expect(classificarResposta("Não me lembro pode me passar como funciona ?")).toBe("outro");
   });
   it("entende SIM (vai pra fila)", () => {
     for (const t of ["Sim", "tenho interesse", "quero saber", "pode mandar", "me conta", "Opa, quais as condições?", "manda mais informações", "Gostei, quero saber mais", "qual o valor?", "estou interessada", "dá pra agendar uma visita?"]) {
