@@ -5,6 +5,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { readFile, unlink } from "fs/promises";
 import { StorageService } from "../storage/storage.service";
+import { DataSource } from "typeorm";
 
 const execAsync = promisify(exec);
 
@@ -14,8 +15,60 @@ export class BackupService {
 
   constructor(
     private readonly config: ConfigService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly db: DataSource
   ) {}
+
+  /** Espaço do banco (volume de 500 MB, alerta 79% em 25/11): tabelas maiores + mídia guardada dentro do banco. */
+  async espaco() {
+    const [total] = await this.db.query(`SELECT pg_database_size(current_database())::bigint AS bytes`);
+    const tabelas = await this.db.query(
+      `SELECT relname AS tabela, pg_total_relation_size(relid)::bigint AS bytes, n_live_tup::bigint AS linhas, n_dead_tup::bigint AS mortas
+         FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 15`
+    );
+    const [midia] = await this.db.query(
+      `SELECT count(*)::int AS qtd, COALESCE(sum(length("mediaKey")), 0)::bigint AS bytes FROM messages WHERE "mediaKey" LIKE 'data:%'`
+    );
+    const mb = (b: any) => Math.round(Number(b) / 1048576);
+    return {
+      totalMB: mb(total.bytes),
+      tabelas: tabelas.map((t: any) => ({ tabela: t.tabela, mb: mb(t.bytes), linhas: Number(t.linhas), mortas: Number(t.mortas) })),
+      midiaNoBanco: { mensagens: midia.qtd, mb: mb(midia.bytes) },
+      r2: this.storage.isEnabled,
+    };
+  }
+
+  /** Tira a mídia (data URI) de dentro do banco e manda pro R2, em lotes. Libera espaço pra reuso. */
+  async moverMidia(lote = 200) {
+    if (!this.storage.isEnabled) return { movidas: 0, motivo: "R2 não configurado." };
+    const rows: { id: string; conversationId: string; mediaKey: string }[] = await this.db.query(
+      `SELECT id, "conversationId", "mediaKey" FROM messages WHERE "mediaKey" LIKE 'data:%' LIMIT $1`,
+      [Math.min(Math.max(lote, 1), 500)]
+    );
+    let movidas = 0;
+    for (const r of rows) {
+      const m = r.mediaKey.match(/^data:(.+?);base64,(.*)$/s);
+      if (!m) continue;
+      const ext = (m[1].split("/")[1] || "bin").split(";")[0];
+      const key = await this.storage.upload(`whatsapp/${r.conversationId}/${r.id}.${ext}`, Buffer.from(m[2], "base64"), m[1]);
+      if (!key) break; // R2 falhou: para e tenta de novo depois
+      await this.db.query(`UPDATE messages SET "mediaKey" = $1 WHERE id = $2`, [key, r.id]);
+      movidas++;
+    }
+    const [resto] = await this.db.query(`SELECT count(*)::int AS n FROM messages WHERE "mediaKey" LIKE 'data:%'`);
+    this.logger.log(`Mídia → R2: ${movidas} movida(s), faltam ${resto.n}.`);
+    return { movidas, faltam: resto.n };
+  }
+
+  /** Devolve ao disco o espaço liberado de uma tabela (VACUUM FULL trava a tabela por alguns segundos). */
+  async compactar(tabela: string) {
+    const ok: string[] = (await this.db.query(`SELECT relname FROM pg_stat_user_tables`)).map((r: any) => r.relname);
+    if (!ok.includes(tabela)) return { ok: false, motivo: "Tabela não existe." };
+    const antes = await this.espaco();
+    await this.db.query(`VACUUM FULL "${tabela}"`);
+    const depois = await this.espaco();
+    return { ok: true, antesMB: antes.totalMB, depoisMB: depois.totalMB };
+  }
 
   /** Backup automático diário (03:00). Salva o dump do banco no R2. */
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
