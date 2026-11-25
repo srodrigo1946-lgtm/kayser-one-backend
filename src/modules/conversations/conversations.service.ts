@@ -98,11 +98,12 @@ export function extrairEmail(texto: string): string | null {
 }
 
 /**
- * Aviso de passagem da fila ("Você agora será atendido pelo nosso especialista X").
- * Os cargos NÃO veem (mostraria por quais corretores o lead já passou) — só o Diretor.
+ * Aviso da fila com o nome do corretor ("[agora] será atendido pelo nosso especialista X"),
+ * inclusive a boas-vindas do anúncio. Os cargos NÃO veem (se o lead passou pro próximo,
+ * mostraria o nome do corretor anterior — Rodrigo 25/11) — só o Diretor.
  */
 export function ehAvisoDaFila(texto?: string | null): boolean {
-  return /agora ser[aá] atendid[oa] pelo nosso especialista/i.test(texto || "");
+  return /ser[aá] atendid[oa] pelo nosso especialista/i.test(texto || "");
 }
 
 @Injectable()
