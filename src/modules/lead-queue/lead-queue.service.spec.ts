@@ -284,6 +284,21 @@ describe("LeadQueueService", () => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ leadId: "L1", swat: true }));
   });
 
+  it("lead 'aguardando' do rodízio normal: mandar pela SWAT refaz e distribui (28/11)", async () => {
+    const { svc } = make(
+      { enabled: true, slaMinutes: 5, pointer: 0 },
+      [], ["A"], undefined, {}, { id: "L1", name: "Ney", phone: "21997786952" }
+    );
+    const repo = (svc as any).assignRepo;
+    jest.spyOn(repo, "findOne").mockResolvedValue({ id: "X1", status: "aguardando", assignedToId: "" });
+    const upd = (repo.update = jest.fn().mockResolvedValue({}));
+    const spy = jest.spyOn(svc, "enqueueLead").mockResolvedValue({ status: "pendente", assignedToId: "S1" } as any);
+    const r = await svc.distribuirLeadManual("L1", true);
+    expect(upd).toHaveBeenCalledWith("X1", { status: "expirado" });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ swat: true }));
+    expect(r).toEqual({ status: "distribuido", assignedToId: "S1" });
+  });
+
   it("agendarLead deixa o lead aguardando com o horário marcado", async () => {
     const { svc, assignments } = make(
       { enabled: true, slaMinutes: 5, pointer: 0 },

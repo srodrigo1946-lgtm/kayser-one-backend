@@ -426,7 +426,10 @@ export class LeadQueueService {
         { conversationId: conv.id, status: "aguardando" },
       ],
     });
-    if (aberta) return { status: aberta.status as any, assignedToId: aberta.assignedToId || undefined };
+    if (aberta?.status === "pendente") return { status: "ja_na_fila", assignedToId: aberta.assignedToId || undefined };
+    // "Aguardando" (ninguém no plantão quando entrou): o Diretor mandou de novo (ex.: pela SWAT,
+    // que tem gente de plantão) → refaz, em vez de devolver o "aguardando" antigo (Rodrigo 28/11).
+    if (aberta) await this.assignRepo.update(aberta.id, { status: "expirado" } as any);
 
     const a = await this.enqueueLead({ conversationId: conv.id, leadId: lead.id, swat });
     if (!a) return { status: "fila_desligada" };
